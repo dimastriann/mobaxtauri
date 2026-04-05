@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 :root {
   font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -10,12 +12,17 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   padding: 0;
   overflow: hidden;
   height: 100vh;
   width: 100vw;
+  background: #0d0d1a;
 }
 
 #root {
@@ -23,24 +30,76 @@ body {
   height: 100%;
 }
 
-/* Xterm overrides */
+/* ── Xterm overrides ──────────────────────────────────────── */
 .xterm {
   padding: 10px;
 }
 
 .xterm-viewport::-webkit-scrollbar {
-  width: 10px;
+  width: 8px;
 }
 
 .xterm-viewport::-webkit-scrollbar-track {
-  background: #000000;
+  background: transparent;
 }
 
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
 }
 
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Tab bar scrollbar ────────────────────────────────────── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.folder-animate {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Ensure icons align perfectly */
+svg {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* ── Animations ───────────────────────────────────────────── */
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Selection styling ────────────────────────────────────── */
+::selection {
+  background: rgba(56, 189, 248, 0.25);
+  color: inherit;
 }

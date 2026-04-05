@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Stack, Input, Button, Text, HStack } from "@chakra-ui/react";
+import { Stack, Input, Button, HStack } from "@chakra-ui/react";
 import { Session, useSessionStore } from '../store/useSessionStore';
 import {
   DialogRoot,
@@ -25,8 +25,10 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const [password, setPassword] = useState('');
   const [port, setPort] = useState(22);
   const [name, setName] = useState('');
+  const [folderId, setFolderId] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   
+  const folders = useSessionStore((state) => state.folders);
   const addSession = useSessionStore((state) => state.addSession);
   const updateSession = useSessionStore((state) => state.updateSession);
   const updateStatus = useSessionStore((state) => state.updateSessionStatus);
@@ -38,12 +40,14 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       setPassword(editingSession.password || '');
       setPort(editingSession.port || 22);
       setName(editingSession.name);
+      setFolderId(editingSession.folderId || null);
     } else {
       setHost('');
       setUser('');
       setPassword('');
       setPort(22);
       setName('');
+      setFolderId(null);
     }
   }, [editingSession, isOpen]);
 
@@ -57,7 +61,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
         user,
         port,
         password: password || undefined,
-        status: 'disconnected'
+        status: 'disconnected',
+        folderId
       });
       onClose();
       return;
@@ -73,7 +78,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       user,
       port,
       password: password || undefined,
-      status: 'connecting'
+      status: 'connecting',
+      folderId
     });
 
     try {
@@ -115,6 +121,31 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
                   placeholder="Display Name"
                   size="sm"
                 />
+              </Field>
+
+              <Field label="Folder">
+                <select 
+                  value={folderId || ''} 
+                  onChange={(e) => setFolderId(e.target.value || null)}
+                  style={{
+                    width: '100%',
+                    height: '32px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '4px',
+                    padding: '0 8px',
+                    fontSize: '14px',
+                    color: 'white',
+                    outline: 'none'
+                  }}
+                >
+                  <option value="" style={{ background: '#1a1a1a' }}>Uncategorized</option>
+                  {folders.map(f => (
+                    <option key={f.id} value={f.id} style={{ background: '#1a1a1a' }}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
               </Field>
               
               <Field label="Remote Host" required>
