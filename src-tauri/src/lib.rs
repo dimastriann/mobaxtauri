@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 use crate::ssh::{ClientHandler, SshSession};
 use bytes::Bytes;
 use russh::{ChannelId};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub struct AppState {
     pub ssh_sessions: Mutex<HashMap<String, (russh::client::Handle<ClientHandler>, ChannelId, russh::Channel<russh::client::Msg>)>>,
@@ -139,6 +140,155 @@ async fn sftp_list_dir(
     }
 }
 
+#[tauri::command]
+async fn sftp_download_file(
+    state: State<'_, AppState>,
+    session_id: String,
+    remote_path: String,
+    local_path: String,
+) -> Result<(), String> {
+    log::info!("Downloading {} to {}", remote_path, local_path);
+    let sftp_sessions = state.sftp_sessions.lock().await;
+    let sftp = sftp_sessions.get(&session_id).ok_or("SFTP session not found")?;
+
+    let mut remote_file = sftp.open(&remote_path).await.map_err(|e| format!("Failed to open remote file: {e:?}"))?;
+    let mut data: Vec<u8> = Vec::new();
+    remote_file.read_to_end(&mut data).await.map_err(|e| format!("Read failed: {e:?}"))?;
+    tokio::fs::write(&local_path, &data).await.map_err(|e| format!("Failed to save local file: {e:?}"))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn sftp_upload_file(
+    state: State<'_, AppState>,
+    session_id: String,
+    local_path: String,
+    remote_path: String,
+) -> Result<(), String> {
+    log::info!("Uploading {} to {}", local_path, remote_path);
+    let sftp_sessions = state.sftp_sessions.lock().await;
+    let sftp = sftp_sessions.get(&session_id).ok_or("SFTP session not found")?;
+
+    let data = tokio::fs::read(&local_path).await.map_err(|e| format!("Failed to read local file: {e:?}"))?;
+    
+    let mut remote_file = sftp.create(&remote_path).await.map_err(|e| format!("Failed to create remote file: {e:?}"))?;
+    remote_file.write_all(&data).await.map_err(|e| format!("Write failed: {e:?}"))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn sftp_copy_file(
+    state: State<'_, AppState>,
+    session_id: String,
+    source_path: String,
+    dest_path: String,
+) -> Result<(), String> {
+    log::info!("Copying {} to {}", source_path, dest_path);
+    let sftp_sessions = state.sftp_sessions.lock().await;
+    let sftp = sftp_sessions.get(&session_id).ok_or("SFTP session not found")?;
+
+    let mut source_file = sftp.open(&source_path).await.map_err(|e| format!("Failed to open source file: {e:?}"))?;
+    let mut data: Vec<u8> = Vec::new();
+    source_file.read_to_end(&mut data).await.map_err(|e| format!("Read failed: {e:?}"))?;
+    
+    let mut dest_file = sftp.create(&dest_path).await.map_err(|e| format!("Failed to create dest file: {e:?}"))?;
+    dest_file.write_all(&data).await.map_err(|e| format!("Write failed: {e:?}"))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn sftp_open_file(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    remote_path: String,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    log::info!("Opening file locally {}", remote_path);
+    let sftp_sessions = state.sftp_sessions.lock().await;
+    let sftp = sftp_sessions.get(&session_id).ok_or("SFTP session not found")?;
+
+    let mut remote_file = sftp.open(&remote_path).await.map_err(|e| format!("Failed to open remote file: {e:?}"))?;
+    let mut data: Vec<u8> = Vec::new();
+    remote_file.read_to_end(&mut data).await.map_err(|e| format!("Read failed: {e:?}"))?;
+    
+    let file_name = std::path::Path::new(&remote_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("temp_sftp_file");
+        
+    let mut temp_path = std::env::temp_dir();
+    temp_path.push(file_name);
+    
+    tokio::fs::write(&temp_path, &data).await.map_err(|e| format!("Failed to write temp file: {e:?}"))?;
+    
+    app_handle.opener().open_path(temp_path.to_string_lossy().to_string(), None::<&str>).map_err(|e| format!("Failed to open: {e:?}"))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn sftp_rename(
+    state: State<'_, AppState>,
+    session_id: String,
+    old_path: String,
+    new_path: String,
+) -> Result<(), String> {
+    log::info!("Renaming SFTP {} to {}", old_path, new_path);
+    let sftp_sessions = state.sftp_sessions.lock().await;
+    let sftp = sftp_sessions.get(&session_id).ok_or("SFTP session not found")?;
+
+    sftp.rename(&old_path, &new_path)
+        .await
+        .map_err(|e| format!("Rename failed: {e:?}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn sftp_remove(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+    is_dir: bool,
+) -> Result<(), String> {
+    log::info!("Removing SFTP path: {} (is_dir: {})", path, is_dir);
+    let sftp_sessions = state.sftp_sessions.lock().await;
+    let sftp = sftp_sessions.get(&session_id).ok_or("SFTP session not found")?;
+
+    if is_dir {
+        // Simple recursive delete implementation
+        async fn recursive_remove(sftp: &russh_sftp::client::SftpSession, path: &str) -> Result<(), String> {
+            let entries = sftp.read_dir(path).await.map_err(|e| format!("Read dir failed during delete: {e:?}"))?;
+            
+            for entry in entries {
+                let name = entry.file_name();
+                if name == "." || name == ".." { continue; }
+                
+                let full_path = if path.ends_with('/') { format!("{path}{name}") } else { format!("{path}/{name}") };
+                let meta = entry.metadata();
+                
+                if meta.is_dir() {
+                    Box::pin(recursive_remove(sftp, &full_path)).await?;
+                } else {
+                    sftp.remove_file(&full_path).await.map_err(|e| format!("Remove file failed: {e:?}"))?;
+                }
+            }
+            sftp.remove_dir(path).await.map_err(|e| format!("Remove directory failed: {e:?}"))?;
+            Ok(())
+        }
+        
+        recursive_remove(sftp, &path).await?;
+    } else {
+        sftp.remove_file(&path).await.map_err(|e| format!("Remove file failed: {e:?}"))?;
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -152,12 +302,19 @@ pub fn run() {
             todo!("Implement secure key derivation")
         }).build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             ssh_connect,
             ssh_send_data,
             ssh_disconnect,
             ssh_resize,
-            sftp_list_dir
+            sftp_list_dir,
+            sftp_download_file,
+            sftp_upload_file,
+            sftp_copy_file,
+            sftp_open_file,
+            sftp_rename,
+            sftp_remove
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import { save, open } from '@tauri-apps/plugin-dialog';
 
 export interface SftpFile {
   name: string;
@@ -21,6 +22,12 @@ interface SftpState {
   cdUp: (sessionId: string) => Promise<void>;
   refresh: (sessionId: string) => Promise<void>;
   reset: () => void;
+  downloadFile: (sessionId: string, fileName: string) => Promise<void>;
+  uploadFile: (sessionId: string) => Promise<void>;
+  copyFile: (sessionId: string, sourceName: string, destName: string) => Promise<void>;
+  openFile: (sessionId: string, fileName: string) => Promise<void>;
+  renameFile: (sessionId: string, oldName: string, newName: string) => Promise<void>;
+  deleteFile: (sessionId: string, name: string, isDir: boolean) => Promise<void>;
 }
 
 export const useSftpStore = create<SftpState>((set, get) => ({
@@ -91,5 +98,122 @@ export const useSftpStore = create<SftpState>((set, get) => ({
 
   reset: () => {
     set({ currentPath: '.', files: [], error: null, isLoading: false, history: [] });
+  },
+
+  downloadFile: async (sessionId, fileName) => {
+    const state = get();
+    const sourcePath = state.currentPath.endsWith('/') ? `${state.currentPath}${fileName}` : `${state.currentPath}/${fileName}`;
+    try {
+      const localPath = await save({ defaultPath: fileName });
+      if (!localPath) return; 
+      
+      set({ isLoading: true, error: null });
+      await invoke('sftp_download_file', {
+        sessionId,
+        remotePath: sourcePath,
+        localPath
+      });
+      set({ isLoading: false });
+    } catch (err) {
+      console.error(err);
+      set({ error: String(err), isLoading: false });
+    }
+  },
+
+  uploadFile: async (sessionId) => {
+    const state = get();
+    try {
+      const localPath = await open({ multiple: false, directory: false });
+      if (!localPath || Array.isArray(localPath)) return;
+      
+      const pathStr = localPath as string;
+      const fileName = pathStr.split(/[/\\]/).pop();
+      if (!fileName) return;
+
+      const destPath = state.currentPath.endsWith('/') ? `${state.currentPath}${fileName}` : `${state.currentPath}/${fileName}`;
+      
+      set({ isLoading: true, error: null });
+      await invoke('sftp_upload_file', {
+        sessionId,
+        localPath: pathStr,
+        remotePath: destPath
+      });
+      await get().fetchDirectory(sessionId);
+    } catch (err) {
+      console.error(err);
+      set({ error: String(err), isLoading: false });
+    }
+  },
+
+  copyFile: async (sessionId, sourceName, destName) => {
+    const state = get();
+    const sourcePath = state.currentPath.endsWith('/') ? `${state.currentPath}${sourceName}` : `${state.currentPath}/${sourceName}`;
+    const destPath = state.currentPath.endsWith('/') ? `${state.currentPath}${destName}` : `${state.currentPath}/${destName}`;
+    
+    try {
+      set({ isLoading: true, error: null });
+      await invoke('sftp_copy_file', {
+        sessionId,
+        sourcePath,
+        destPath
+      });
+      await get().fetchDirectory(sessionId);
+    } catch (err) {
+      console.error(err);
+      set({ error: String(err), isLoading: false });
+    }
+  },
+
+  openFile: async (sessionId, fileName) => {
+    const state = get();
+    const sourcePath = state.currentPath.endsWith('/') ? `${state.currentPath}${fileName}` : `${state.currentPath}/${fileName}`;
+    try {
+      set({ isLoading: true, error: null });
+      await invoke('sftp_open_file', {
+        sessionId,
+        remotePath: sourcePath
+      });
+      set({ isLoading: false });
+    } catch (err) {
+      console.error(err);
+      set({ error: String(err), isLoading: false });
+    }
+  },
+
+  renameFile: async (sessionId, oldName, newName) => {
+    const state = get();
+    const oldPath = state.currentPath.endsWith('/') ? `${state.currentPath}${oldName}` : `${state.currentPath}/${oldName}`;
+    const newPath = state.currentPath.endsWith('/') ? `${state.currentPath}${newName}` : `${state.currentPath}/${newName}`;
+
+    try {
+      set({ isLoading: true, error: null });
+      await invoke('sftp_rename', {
+        sessionId,
+        oldPath,
+        newPath
+      });
+      await get().fetchDirectory(sessionId);
+    } catch (err) {
+      console.error(err);
+      set({ error: String(err), isLoading: false });
+    }
+  },
+
+  deleteFile: async (sessionId, name, isDir) => {
+    const state = get();
+    const path = state.currentPath.endsWith('/') ? `${state.currentPath}${name}` : `${state.currentPath}/${name}`;
+
+    try {
+      set({ isLoading: true, error: null });
+      await invoke('sftp_remove', {
+        sessionId,
+        path,
+        isDir
+      });
+      await get().fetchDirectory(sessionId);
+    } catch (err) {
+      console.error(err);
+      set({ error: String(err), isLoading: false });
+    }
   }
 }));
