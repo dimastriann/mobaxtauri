@@ -31,7 +31,7 @@ interface SftpState {
 }
 
 export const useSftpStore = create<SftpState>((set, get) => ({
-  currentPath: '.',
+  currentPath: '/',
   files: [],
   isLoading: false,
   error: null,
@@ -44,7 +44,7 @@ export const useSftpStore = create<SftpState>((set, get) => ({
       const files = await invoke<SftpFile[]>('sftp_list_dir', {
         sessionId,
         path: targetPath,
-      });
+      }) || [];
       
       // Sort: Directories first, then alphabetically
       const sortedFiles = files.sort((a, b) => {
@@ -97,7 +97,7 @@ export const useSftpStore = create<SftpState>((set, get) => ({
   },
 
   reset: () => {
-    set({ currentPath: '.', files: [], error: null, isLoading: false, history: [] });
+    set({ currentPath: '/', files: [], error: null, isLoading: false, history: [] });
   },
 
   downloadFile: async (sessionId, fileName) => {

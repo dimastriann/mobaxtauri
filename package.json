@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -33,6 +35,11 @@
     "@vitejs/plugin-react": "^4.6.0",
     "lucide-react": "^1.7.0",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^3.0.5",
+    "jsdom": "^26.0.0",
+    "@testing-library/react": "^16.2.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3"
   }
 }

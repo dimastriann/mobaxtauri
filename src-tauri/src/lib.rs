@@ -1,4 +1,5 @@
 mod ssh;
+mod sftp_utils;
 
 use std::collections::HashMap;
 use tauri::{AppHandle, State};
@@ -114,9 +115,9 @@ async fn sftp_list_dir(
     let sftp_sessions = state.sftp_sessions.lock().await;
     if let Some(sftp) = sftp_sessions.get(&session_id) {
         let path = if path.is_empty() { "." } else { &path };
-        let entries = sftp
-            .read_dir(path)
+        let entries = tokio::time::timeout(std::time::Duration::from_secs(30), sftp.read_dir(path))
             .await
+            .map_err(|_| "Failed to read directory: Operation timed out after 30s".to_string())?
             .map_err(|e| format!("Failed to read directory: {e:?}"))?;
 
         let mut result = Vec::new();
@@ -268,7 +269,7 @@ async fn sftp_remove(
                 let name = entry.file_name();
                 if name == "." || name == ".." { continue; }
                 
-                let full_path = if path.ends_with('/') { format!("{path}{name}") } else { format!("{path}/{name}") };
+                let full_path = crate::sftp_utils::join_sftp_path(path, &name);
                 let meta = entry.metadata();
                 
                 if meta.is_dir() {
@@ -318,4 +319,15 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sftp_utils::join_sftp_path;
+
+    #[test]
+    fn test_join_sftp_path_integration() {
+        // Just verify it's correctly linked
+        assert_eq!(join_sftp_path("/etc", "docker"), "/etc/docker");
+    }
 }

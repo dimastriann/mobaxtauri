@@ -9,15 +9,20 @@ import {
   LuUpload, LuDownload, LuCopy, LuExternalLink,
   LuPencil, LuTrash2
 } from "react-icons/lu";
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useSftpStore } from '../store/useSftpStore';
 import { useSessionStore } from '../store/useSessionStore';
 
 const SftpSidebar: React.FC = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const activeSession = useSessionStore((state) => 
+    state.sessions.find(s => s.id === activeSessionId)
+  );
   const { 
     currentPath, files, fetchDirectory, cd, isLoading, error, refresh,
-    uploadFile, downloadFile, copyFile, openFile, renameFile, deleteFile
+    uploadFile, downloadFile, copyFile, openFile, renameFile, deleteFile,
+    reset
   } = useSftpStore();
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, file: any } | null>(null);
@@ -30,11 +35,30 @@ const SftpSidebar: React.FC = () => {
     return () => document.removeEventListener("click", handleClick);
   }, []);
 
+  // Sync SFTP disconnect with SSH session disconnect
   useEffect(() => {
-    if (activeSessionId && activeSessionId !== 'local') {
-      fetchDirectory(activeSessionId, '.');
+    if (!activeSessionId) return;
+
+    let unlisten: UnlistenFn | null = null;
+    
+    const setupListener = async () => {
+      unlisten = await listen(`ssh-disconnected-${activeSessionId}`, () => {
+        console.log('[SFTP] Disconnected event received - resetting store');
+        reset();
+      });
+    };
+
+    setupListener();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [activeSessionId, reset]);
+
+  useEffect(() => {
+    if (activeSessionId && activeSessionId !== 'local' && activeSession?.status === 'connected') {
+      fetchDirectory(activeSessionId, '/');
     }
-  }, [activeSessionId, fetchDirectory]);
+  }, [activeSessionId, activeSession?.status, fetchDirectory]);
 
   if (!activeSessionId || activeSessionId === 'local') {
     return (
@@ -42,6 +66,20 @@ const SftpSidebar: React.FC = () => {
         <Icon as={LuFolder} boxSize="40px" color="rgba(255,255,255,0.05)" />
         <Text fontSize="12px" color="#475569" textAlign="center">
           Terminal only. Connect to an SSH session to use SFTP.
+        </Text>
+      </Flex>
+    );
+  }
+
+  if (activeSession?.status === 'disconnected' || activeSession?.status === 'error') {
+    return (
+      <Flex p={8} h="full" align="center" justify="center" direction="column" gap={4}>
+        <Icon as={LuFolder} boxSize="40px" color="rgba(255,255,255,0.1)" />
+        <Text fontSize="12px" fontWeight="600" color="#ef4444" textAlign="center">
+          SESSION DISCONNECTED
+        </Text>
+        <Text fontSize="11px" color="#64748b" textAlign="center">
+          The SSH connection was lost. Reconnect the session to use SFTP features.
         </Text>
       </Flex>
     );

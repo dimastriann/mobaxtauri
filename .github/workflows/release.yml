@@ -36,6 +36,12 @@ jobs:
       - name: install frontend dependencies
         run: npm install
 
+      - name: run frontend tests
+        run: npm run test -- --run
+
+      - name: run backend tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
       - uses: tauri-apps/tauri-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

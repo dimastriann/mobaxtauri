@@ -157,6 +157,8 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
           console.log('[TERMINAL] Disconnected event received');
           updateStatus('disconnected');
           showReconnectBanner(term);
+          // Clean up backend resources immediately
+          invoke('ssh_disconnect', { sessionId }).catch(() => {});
         })
       ]);
       unlistenDataRef.current = () => {
