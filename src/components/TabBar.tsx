@@ -46,9 +46,9 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
       className="tabbar"
       h="36px"
       minH="36px"
-      bg="#1a1a2e"
+      bg="bg.muted"
       borderBottom="1px solid"
-      borderColor="rgba(255,255,255,0.06)"
+      borderColor="border.subtle"
       display="flex"
       alignItems="stretch"
       onDoubleClick={handleDoubleClickBar}
@@ -84,11 +84,12 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
               position="relative"
               minW="120px"
               maxW="200px"
-              bg={isActive ? 'rgba(56,189,248,0.08)' : 'transparent'}
-              borderRight="1px solid rgba(255,255,255,0.04)"
+              bg={isActive ? 'blue.subtle' : 'transparent'}
+              borderRight="1px solid"
+              borderColor="border.subtle"
               transition="all 0.15s ease"
               _hover={{
-                bg: isActive ? 'rgba(56,189,248,0.12)' : 'rgba(255,255,255,0.04)',
+                bg: isActive ? 'blue.muted' : 'bg.emphasized',
               }}
               title={session.host ? `${session.user || ''}@${session.host}:${session.port || 22}` : session.name}
             >
@@ -100,7 +101,7 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
                   left="0"
                   right="0"
                   h="2px"
-                  bg="linear-gradient(90deg, #38bdf8, #818cf8)"
+                  bg="blue.fg"
                   borderRadius="1px 1px 0 0"
                 />
               )}
@@ -109,7 +110,7 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
               <Text
                 fontSize="10px"
                 fontWeight="bold"
-                color={isActive ? 'rgba(56,189,248,0.7)' : 'rgba(255,255,255,0.25)'}
+                color={isActive ? 'blue.fg' : 'fg.muted'}
                 minW="14px"
                 textAlign="center"
                 userSelect="none"
@@ -132,7 +133,7 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
               <Text
                 fontSize="12px"
                 fontWeight={isActive ? '600' : '400'}
-                color={isActive ? '#e2e8f0' : '#94a3b8'}
+                color={isActive ? 'fg' : 'fg.muted'}
                 overflow="hidden"
                 textOverflow="ellipsis"
                 whiteSpace="nowrap"
@@ -155,12 +156,12 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
                 flexShrink={0}
                 opacity={isActive ? 0.6 : 0}
                 transition="all 0.15s ease"
-                _hover={{ opacity: 1, bg: 'rgba(239,68,68,0.2)' }}
+                _hover={{ opacity: 1, bg: 'red.subtle' }}
                 _groupHover={{ opacity: 0.4 }}
-                color="#94a3b8"
+                color="fg.muted"
                 css={{
                   'div:hover > &': { opacity: 0.4 },
-                  '&:hover': { opacity: '1 !important', color: '#ef4444' },
+                  '&:hover': { opacity: '1 !important', color: 'red.fg' },
                 }}
               >
                 <Icon as={LuX} boxSize="12px" />
@@ -175,18 +176,19 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
         display="flex"
         alignItems="center"
         px="10px"
-        borderLeft="1px solid rgba(255,255,255,0.04)"
+        borderLeft="1px solid"
+        borderColor="border.subtle"
       >
         <IconButton
           aria-label="New Session"
           size="xs"
           variant="ghost"
-          color="#38bdf8"
+          color="blue.fg"
           onClick={onNewSession}
           minW="26px"
           h="26px"
           borderRadius="4px"
-          _hover={{ bg: 'rgba(56,189,248,0.15)' }}
+          _hover={{ bg: 'blue.subtle' }}
         >
           <LuPlus />
         </IconButton>

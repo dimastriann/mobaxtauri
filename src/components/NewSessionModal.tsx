@@ -131,17 +131,18 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
                     width: '100%',
                     height: '32px',
                     backgroundColor: 'transparent',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    border: '1px solid',
+                    borderColor: 'var(--chakra-colors-border-subtle)',
                     borderRadius: '4px',
                     padding: '0 8px',
                     fontSize: '14px',
-                    color: 'white',
+                    color: 'inherit',
                     outline: 'none'
                   }}
                 >
-                  <option value="" style={{ background: '#1a1a1a' }}>Uncategorized</option>
+                  <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>Uncategorized</option>
                   {folders.map(f => (
-                    <option key={f.id} value={f.id} style={{ background: '#1a1a1a' }}>
+                    <option key={f.id} value={f.id} style={{ background: 'var(--chakra-colors-bg-panel)' }}>
                       {f.name}
                     </option>
                   ))}

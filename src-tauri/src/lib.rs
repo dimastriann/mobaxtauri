@@ -304,6 +304,7 @@ pub fn run() {
         }).build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             ssh_connect,
             ssh_send_data,

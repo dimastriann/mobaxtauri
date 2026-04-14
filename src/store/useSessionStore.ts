@@ -41,6 +41,7 @@ interface SessionState {
   openTab: (id: string) => void;
   closeTab: (id: string) => void;
   reorderTabs: (ids: string[]) => void;
+  shutdownAll: () => Promise<void>;
 
   // Folder Management
   folders: Folder[];
@@ -191,6 +192,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   reorderTabs: (ids) => set({ openTabs: ids }),
+
+  shutdownAll: async () => {
+    const { openTabs } = get();
+    // Disconnect all SSH sessions
+    for (const id of openTabs) {
+      if (id.startsWith('ssh-')) {
+        try {
+          await (await import('@tauri-apps/api/core')).invoke('ssh_disconnect', { sessionId: id });
+        } catch (err) {
+          console.warn(`[STORE] Failed to disconnect ${id}:`, err);
+        }
+      }
+    }
+    // Clear all tabs
+    set({ openTabs: ['local'], activeSessionId: 'local' });
+    
+    // Reset SFTP if needed (since it's a separate store, we might need to call its reset)
+    // For now we assume the SftpSidebar listener will handle it when sessions change
+  },
 
   loadSessions: async () => {
     try {

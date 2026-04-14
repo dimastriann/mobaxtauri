@@ -5,12 +5,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
 import { Box } from '@chakra-ui/react';
+import { useColorMode } from './ui/color-mode';
 import '@xterm/xterm/css/xterm.css';
-
-// ─────────────────────────────────────────────────────────────
-// Single terminal instance — mounts once per open tab, persists
-// until the tab is closed (never re-created on tab switch).
-// ─────────────────────────────────────────────────────────────
 
 interface TerminalInstanceProps {
   sessionId: string;
@@ -25,6 +21,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
   const isDisconnectedRef = useRef(false);
   const isPasswordModeRef = useRef(false);
   const passwordBufRef = useRef('');
+  const { colorMode } = useColorMode();
 
   const getSession = useCallback((): Session | undefined => {
     return useSessionStore.getState().sessions.find((s) => s.id === sessionId);
@@ -94,11 +91,34 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
   useEffect(() => {
     if (!terminalRef.current) return;
 
+    const isLight = colorMode === 'light';
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 14,
       fontFamily: '"Cascadia Code", Menlo, "Courier New", monospace',
-      theme: {
+      theme: isLight ? {
+        background: '#ffffff',
+        foreground: '#1e293b',
+        cursor: '#38bdf8',
+        cursorAccent: '#ffffff',
+        selectionBackground: 'rgba(56, 189, 248, 0.3)',
+        black: '#e2e8f0',
+        red: '#ef4444',
+        green: '#22c55e',
+        yellow: '#eab308',
+        blue: '#3b82f6',
+        magenta: '#d946ef',
+        cyan: '#06b6d4',
+        white: '#0f172a',
+        brightBlack: '#94a3b8',
+        brightRed: '#f87171',
+        brightGreen: '#4ade80',
+        brightYellow: '#facc15',
+        brightBlue: '#60a5fa',
+        brightMagenta: '#e879f9',
+        brightCyan: '#22d3ee',
+        brightWhite: '#1e293b',
+      } : {
         background: '#0a0a14',
         foreground: '#e2e8f0',
         cursor: '#38bdf8',
@@ -284,11 +304,62 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     }
   }, [isVisible]);
 
+  // Update xterm theme when colorMode changes
+  useEffect(() => {
+    if (!xtermRef.current) return;
+    const isLight = colorMode === 'light';
+    xtermRef.current.options.theme = isLight ? {
+        background: '#ffffff',
+        foreground: '#1e293b',
+        cursor: '#38bdf8',
+        cursorAccent: '#ffffff',
+        selectionBackground: 'rgba(56, 189, 248, 0.3)',
+        black: '#e2e8f0',
+        red: '#ef4444',
+        green: '#22c55e',
+        yellow: '#eab308',
+        blue: '#3b82f6',
+        magenta: '#d946ef',
+        cyan: '#06b6d4',
+        white: '#0f172a',
+        brightBlack: '#94a3b8',
+        brightRed: '#f87171',
+        brightGreen: '#4ade80',
+        brightYellow: '#facc15',
+        brightBlue: '#60a5fa',
+        brightMagenta: '#e879f9',
+        brightCyan: '#22d3ee',
+        brightWhite: '#1e293b',
+      } : {
+        background: '#0a0a14',
+        foreground: '#e2e8f0',
+        cursor: '#38bdf8',
+        cursorAccent: '#0a0a14',
+        selectionBackground: 'rgba(56, 189, 248, 0.3)',
+        black: '#1e1e2e',
+        red: '#f38ba8',
+        green: '#a6e3a1',
+        yellow: '#f9e2af',
+        blue: '#89b4fa',
+        magenta: '#cba6f7',
+        cyan: '#94e2d5',
+        white: '#cdd6f4',
+        brightBlack: '#585b70',
+        brightRed: '#f38ba8',
+        brightGreen: '#a6e3a1',
+        brightYellow: '#f9e2af',
+        brightBlue: '#89b4fa',
+        brightMagenta: '#cba6f7',
+        brightCyan: '#94e2d5',
+        brightWhite: '#a6adc8',
+      };
+  }, [colorMode]);
+
   return (
     <Box
       h="full"
       w="full"
-      bg="#0a0a14"
+      bg="bg.panel"
       overflow="hidden"
       display={isVisible ? 'block' : 'none'}
     >
@@ -307,7 +378,7 @@ const TerminalContainer: React.FC = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
 
   return (
-    <Box flex={1} position="relative" h="full" w="full" bg="#0a0a14" overflow="hidden">
+    <Box flex={1} position="relative" h="full" w="full" bg="bg.panel" overflow="hidden">
       {openTabs.map((tabId) => (
         <TerminalInstance
           key={tabId}
@@ -322,7 +393,8 @@ const TerminalContainer: React.FC = () => {
           justifyContent="center"
           h="full"
           w="full"
-          color="#4a5568"
+          color="fg.subtle"
+          bg="bg.panel"
         >
           <Box textAlign="center">
             <Box fontSize="48px" mb={4} opacity={0.3}>⌨</Box>

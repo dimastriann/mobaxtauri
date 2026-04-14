@@ -2,27 +2,55 @@
 
 import type { IconButtonProps } from "@chakra-ui/react"
 import { ClientOnly, IconButton, Skeleton } from "@chakra-ui/react"
-import { ThemeProvider, useTheme } from "next-themes"
-import type { ThemeProviderProps } from "next-themes"
 import * as React from "react"
 import { LuMoon, LuSun } from "react-icons/lu"
 
-export interface ColorModeProviderProps extends ThemeProviderProps {}
+export interface ColorModeProviderProps {
+  children: React.ReactNode;
+  defaultTheme?: string;
+}
 
-export function ColorModeProvider(props: ColorModeProviderProps) {
+const ColorModeContext = React.createContext<{ theme: string; setTheme: (t: string) => void }>({ theme: 'dark', setTheme: () => {} });
+
+export function ColorModeProvider({ children, defaultTheme = 'dark' }: ColorModeProviderProps) {
+  const [theme, setThemeState] = React.useState(defaultTheme);
+
+  React.useEffect(() => {
+    const saved = localStorage.getItem('mobaxtauri-theme') || defaultTheme;
+    setTheme(saved);
+  }, []);
+
+  const setTheme = (newTheme: string) => {
+    setThemeState(newTheme);
+    localStorage.setItem('mobaxtauri-theme', newTheme);
+    if (newTheme === 'dark') {
+      document.documentElement.classList.remove('light');
+      document.documentElement.classList.add('dark');
+      document.documentElement.style.colorScheme = 'dark';
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.add('light');
+      document.documentElement.style.colorScheme = 'light';
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  };
+
   return (
-    <ThemeProvider attribute="class" disableTransitionOnChange {...props} />
+    <ColorModeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ColorModeContext.Provider>
   )
 }
 
 export function useColorMode() {
-  const { resolvedTheme, setTheme } = useTheme()
+  const context = React.useContext(ColorModeContext);
   const toggleColorMode = () => {
-    setTheme(resolvedTheme === "light" ? "dark" : "light")
+    context.setTheme(context.theme === "light" ? "dark" : "light")
   }
   return {
-    colorMode: resolvedTheme,
-    setColorMode: setTheme,
+    colorMode: context.theme,
+    setColorMode: context.setTheme,
     toggleColorMode,
   }
 }
@@ -47,12 +75,15 @@ export const ColorModeButton = React.forwardRef<
   return (
     <ClientOnly fallback={<Skeleton boxSize="8" />}>
       <IconButton
-        onClick={toggleColorMode}
         variant="ghost"
         aria-label="Toggle color mode"
         size="sm"
         ref={ref}
         {...props}
+        onClick={(e) => {
+          toggleColorMode();
+          props.onClick?.(e);
+        }}
       >
         <ColorModeIcon />
       </IconButton>

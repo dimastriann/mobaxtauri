@@ -63,8 +63,8 @@ const SftpSidebar: React.FC = () => {
   if (!activeSessionId || activeSessionId === 'local') {
     return (
       <Flex p={8} h="full" align="center" justify="center" direction="column" gap={4}>
-        <Icon as={LuFolder} boxSize="40px" color="rgba(255,255,255,0.05)" />
-        <Text fontSize="12px" color="#475569" textAlign="center">
+        <Icon as={LuFolder} boxSize="40px" color="fg.subtle" opacity={0.1} />
+        <Text fontSize="12px" color="fg.muted" textAlign="center">
           Terminal only. Connect to an SSH session to use SFTP.
         </Text>
       </Flex>
@@ -74,11 +74,11 @@ const SftpSidebar: React.FC = () => {
   if (activeSession?.status === 'disconnected' || activeSession?.status === 'error') {
     return (
       <Flex p={8} h="full" align="center" justify="center" direction="column" gap={4}>
-        <Icon as={LuFolder} boxSize="40px" color="rgba(255,255,255,0.1)" />
-        <Text fontSize="12px" fontWeight="600" color="#ef4444" textAlign="center">
+        <Icon as={LuFolder} boxSize="40px" color="fg.subtle" opacity={0.2} />
+        <Text fontSize="12px" fontWeight="600" color="red.fg" textAlign="center">
           SESSION DISCONNECTED
         </Text>
-        <Text fontSize="11px" color="#64748b" textAlign="center">
+        <Text fontSize="11px" color="fg.muted" textAlign="center">
           The SSH connection was lost. Reconnect the session to use SFTP features.
         </Text>
       </Flex>
@@ -132,16 +132,16 @@ const SftpSidebar: React.FC = () => {
                 <React.Fragment key={crumb.path}>
                     <Text 
                         fontSize="10px" 
-                        color={idx === breadcrumbs.length - 1 ? "#38bdf8" : "#94a3b8"}
+                        color={idx === breadcrumbs.length - 1 ? "blue.fg" : "fg.muted"}
                         cursor="pointer"
-                        _hover={{ color: "#38bdf8" }}
+                        _hover={{ color: "blue.fg" }}
                         onClick={() => cd(activeSessionId, crumb.path)}
                         whiteSpace="nowrap"
                     >
                         {crumb.name}
                     </Text>
                     {idx < breadcrumbs.length - 1 && (
-                        <Text fontSize="10px" color="#475569">/</Text>
+                        <Text fontSize="10px" color="fg.subtle">/</Text>
                     )}
                 </React.Fragment>
             ))}
@@ -164,14 +164,14 @@ const SftpSidebar: React.FC = () => {
   return (
     <VStack align="stretch" h="full" gap={0}>
       {/* SFTP Toolbar */}
-      <HStack p={2} borderBottom="1px solid rgba(255,255,255,0.06)" justify="space-between">
+      <HStack p={2} borderBottom="1px solid" borderColor="border.subtle" justify="space-between" bg="bg.panel">
         <HStack gap={1}>
            <IconButton 
               aria-label="Upload" 
               size="xs" 
               variant="ghost" 
               onClick={() => uploadFile(activeSessionId)}
-              color="#38bdf8"
+              color="blue.fg"
               title="Upload File"
            >
              <LuUpload size={14} />
@@ -181,7 +181,7 @@ const SftpSidebar: React.FC = () => {
               size="xs" 
               variant="ghost" 
               onClick={() => cd(activeSessionId, '..')}
-              color="#94a3b8"
+              color="fg.muted"
            >
              <LuArrowUp size={14} />
            </IconButton>
@@ -191,16 +191,16 @@ const SftpSidebar: React.FC = () => {
               variant="ghost" 
               onClick={() => refresh(activeSessionId)}
               loading={isLoading}
-              color="#38bdf8"
+              color="blue.fg"
            >
               <LuRefreshCw size={14} />
            </IconButton>
         </HStack>
-        <Text fontSize="10px" color="#475569" fontWeight="bold">SFTP EXPLORER</Text>
+        <Text fontSize="10px" color="fg.muted" fontWeight="bold">SFTP EXPLORER</Text>
       </HStack>
 
       {/* Path Display */}
-      <Box p={2} bg="rgba(0,0,0,0.2)" borderBottom="1px solid rgba(255,255,255,0.06)">
+      <Box p={2} bg="bg.muted" borderBottom="1px solid" borderColor="border.subtle">
         {renderBreadcrumbs()}
       </Box>
 
@@ -227,7 +227,7 @@ const SftpSidebar: React.FC = () => {
               p={2}
               borderRadius="4px"
               cursor="pointer"
-              _hover={{ bg: 'rgba(255,255,255,0.04)' }}
+              _hover={{ bg: 'bg.emphasized' }}
               onClick={() => handleFileClick(file)}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -239,7 +239,7 @@ const SftpSidebar: React.FC = () => {
               <Icon 
                 as={getFileIcon(file)} 
                 boxSize="14px" 
-                color={file.is_dir ? "#f59e0b" : "#94a3b8"} 
+                color={file.is_dir ? "orange.fg" : "fg.subtle"} 
               />
               <VStack align="flex-start" gap={0} flex={1} overflow="hidden">
                 {renamingFile === file.name ? (
@@ -255,10 +255,10 @@ const SftpSidebar: React.FC = () => {
                             }}
                             onClick={(e) => e.stopPropagation()}
                             style={{ 
-                                background: 'rgba(255,255,255,0.1)',
-                                border: '1px solid #38bdf8',
+                                background: 'var(--chakra-colors-bg-muted)',
+                                border: '1px solid var(--chakra-colors-blue-fg)',
                                 borderRadius: '2px',
-                                color: 'white',
+                                color: 'var(--chakra-colors-fg)',
                                 fontSize: '12px',
                                 padding: '2px 4px',
                                 width: '100%',
@@ -270,14 +270,14 @@ const SftpSidebar: React.FC = () => {
                     <>
                         <Text 
                             fontSize="12px" 
-                            color="#e2e8f0" 
+                            color="fg" 
                             lineClamp={1} 
                             fontWeight={file.is_dir ? "500" : "400"}
                         >
                             {file.name}
                         </Text>
                         {!file.is_dir && (
-                            <Text fontSize="9px" color="#475569">
+                            <Text fontSize="9px" color="fg.muted">
                                 {(file.size / 1024).toFixed(1)} KB
                             </Text>
                         )}
@@ -294,39 +294,40 @@ const SftpSidebar: React.FC = () => {
           position="fixed"
           left={contextMenu.x}
           top={contextMenu.y}
-          bg="#1e293b"
-          border="1px solid rgba(255,255,255,0.1)"
+          bg="bg.panel"
+          border="1px solid"
+          borderColor="border.subtle"
           borderRadius="md"
-          boxShadow="xl"
+          boxShadow="2xl"
           zIndex={1000}
           py={1}
           minW="140px"
         >
           <VStack align="stretch" gap={0}>
-            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'rgba(255,255,255,0.05)' }} onClick={() => openFile(activeSessionId, contextMenu.file.name)}>
-              <Icon as={LuExternalLink} boxSize="14px" color="#94a3b8" />
-              <Text fontSize="12px" color="#e2e8f0">Open File</Text>
+            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => openFile(activeSessionId, contextMenu.file.name)}>
+              <Icon as={LuExternalLink} boxSize="14px" color="fg.subtle" />
+              <Text fontSize="12px" color="fg">Open File</Text>
             </HStack>
-            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'rgba(255,255,255,0.05)' }} onClick={() => downloadFile(activeSessionId, contextMenu.file.name)}>
-              <Icon as={LuDownload} boxSize="14px" color="#94a3b8" />
-              <Text fontSize="12px" color="#e2e8f0">Download</Text>
+            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => downloadFile(activeSessionId, contextMenu.file.name)}>
+              <Icon as={LuDownload} boxSize="14px" color="fg.subtle" />
+              <Text fontSize="12px" color="fg">Download</Text>
             </HStack>
-            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'rgba(255,255,255,0.05)' }} onClick={() => copyFile(activeSessionId, contextMenu.file.name, `copy_${contextMenu.file.name}`)}>
-              <Icon as={LuCopy} boxSize="14px" color="#94a3b8" />
-              <Text fontSize="12px" color="#e2e8f0">Duplicate</Text>
+            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => copyFile(activeSessionId, contextMenu.file.name, `copy_${contextMenu.file.name}`)}>
+              <Icon as={LuCopy} boxSize="14px" color="fg.subtle" />
+              <Text fontSize="12px" color="fg">Duplicate</Text>
             </HStack>
-            <Box h="1px" bg="rgba(255,255,255,0.06)" my={1} />
-            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'rgba(255,255,255,0.05)' }} onClick={() => {
+            <Box h="1px" bg="border.subtle" my={1} />
+            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => {
                 setRenamingFile(contextMenu.file.name);
                 setRenameValue(contextMenu.file.name);
                 setContextMenu(null);
             }}>
-              <Icon as={LuPencil} boxSize="14px" color="#94a3b8" />
-              <Text fontSize="12px" color="#e2e8f0">Rename</Text>
+              <Icon as={LuPencil} boxSize="14px" color="fg.subtle" />
+              <Text fontSize="12px" color="fg">Rename</Text>
             </HStack>
-            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'rgba(255,255,255,0.05)' }} onClick={(e) => { e.stopPropagation(); handleDelete(contextMenu.file); }}>
-              <Icon as={LuTrash2} boxSize="14px" color="red.400" />
-              <Text fontSize="12px" color="red.400">Delete</Text>
+            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={(e) => { e.stopPropagation(); handleDelete(contextMenu.file); }}>
+              <Icon as={LuTrash2} boxSize="14px" color="red.fg" />
+              <Text fontSize="12px" color="red.fg">Delete</Text>
             </HStack>
           </VStack>
         </Box>
