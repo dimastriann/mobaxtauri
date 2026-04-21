@@ -1,9 +1,11 @@
 import "@testing-library/jest-dom";
 import { vi } from "vitest";
 
-// Mock Tauri's invoke to prevent real backend calls during frontend tests
+// Mock Tauri's internals to prevent real backend calls during frontend tests
 vi.stubGlobal('__TAURI_INTERNALS__', {
   invoke: vi.fn(async () => []),
+  transformCallback: vi.fn().mockReturnValue(0),
+  metadata: {},
 });
 
 // Polyfill matchMedia for next-themes/Chakra UI
