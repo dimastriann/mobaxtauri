@@ -8,6 +8,10 @@ vi.stubGlobal('__TAURI_INTERNALS__', {
   metadata: {},
 });
 
+vi.stubGlobal('__TAURI_EVENT_PLUGIN_INTERNALS__', {
+  unregisterListener: vi.fn(),
+});
+
 // Polyfill matchMedia for next-themes/Chakra UI
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
