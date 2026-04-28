@@ -215,27 +215,31 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   loadSessions: async () => {
     try {
       const store = await load(STORAGE_PATH);
-      const savedSessions = await store.get<Session[]>('sessions');
+      const savedSessions = await store.get<Session[]>('sessions') || [];
       const savedFolders = await store.get<Folder[]>('folders') || [];
       
-      if (savedSessions && savedSessions.length > 0) {
-        const local: Session = { id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' };
-        const filteredSaved = savedSessions
-          .filter((s) => s.id !== 'local')
-          .map((s) => ({ ...s, status: 'disconnected' as SessionStatus }));
-        set({
-          sessions: [local, ...filteredSaved],
-          folders: savedFolders,
-          openTabs: ['local'],
-          activeSessionId: 'local',
-          isLoading: false,
-        });
-      } else {
-        set({ isLoading: false, folders: savedFolders });
-      }
+      const local: Session = { id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' };
+      
+      // Filter out any existing 'local' session from disk to prevent duplicates
+      const filteredSaved = savedSessions
+        .filter((s) => s.id !== 'local')
+        .map((s) => ({ ...s, status: 'disconnected' as SessionStatus }));
+
+      set({
+        sessions: [local, ...filteredSaved],
+        folders: savedFolders,
+        openTabs: ['local'],
+        activeSessionId: 'local',
+        isLoading: false,
+      });
     } catch (err) {
       console.error('Failed to load sessions:', err);
-      set({ isLoading: false });
+      // Fallback to defaults
+      set({ 
+        sessions: [{ id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' }], 
+        folders: [],
+        isLoading: false 
+      });
     }
   },
 
