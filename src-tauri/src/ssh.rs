@@ -2,6 +2,8 @@ use std::sync::Arc;
 use russh::client::{AuthResult, Handler, Session};
 use russh_sftp::client::SftpSession;
 use russh::keys::PublicKey;
+use russh::keys::ssh_key::PrivateKey;
+use russh::keys::PrivateKeyWithHashAlg;
 use tauri::{AppHandle, Emitter};
 
 pub struct ClientHandler {
@@ -85,6 +87,7 @@ impl SshSession {
         port: u16,
         user: String,
         password: Option<String>,
+        private_key_path: Option<String>,
     ) -> Result<(russh::client::Handle<ClientHandler>, russh::ChannelId, russh::Channel<russh::client::Msg>, SftpSession), Box<dyn std::error::Error>> {
         let config = russh::client::Config::default();
         let config = Arc::new(config);
@@ -99,13 +102,42 @@ impl SshSession {
         let mut session = russh::client::connect(config, (host.as_str(), port), sh).await?;
         log::info!("TCP connected. Authenticating...");
         
-        if let Some(pwd) = password {
-            let auth_res = session.authenticate_password(user, pwd).await?;
-            log::info!("Authentication result: {:?}", auth_res);
-            match auth_res {
-                AuthResult::Success => {}
-                _ => return Err("Authentication failed".into()),
+        let mut authenticated = false;
+
+        if let Some(key_path) = private_key_path {
+            log::info!("Attempting public key authentication with {}", key_path);
+            match std::fs::read_to_string(&key_path) {
+                Ok(key_data) => {
+                    match PrivateKey::from_openssh(&key_data) {
+                        Ok(key) => {
+                            let key_arc = std::sync::Arc::new(key);
+                            let key_alg = PrivateKeyWithHashAlg::new(key_arc, None);
+                            let auth_res = session.authenticate_publickey(user.clone(), key_alg).await?;
+                            log::info!("Public key auth result: {:?}", auth_res);
+                            if let AuthResult::Success = auth_res {
+                                authenticated = true;
+                            }
+                        }
+                        Err(e) => log::error!("Failed to parse private key: {}", e),
+                    }
+                }
+                Err(e) => log::error!("Failed to read private key file: {}", e),
             }
+        }
+
+        if !authenticated {
+            if let Some(pwd) = password {
+                log::info!("Attempting password authentication...");
+                let auth_res = session.authenticate_password(user, pwd).await?;
+                log::info!("Password auth result: {:?}", auth_res);
+                if let AuthResult::Success = auth_res {
+                    authenticated = true;
+                }
+            }
+        }
+
+        if !authenticated {
+            return Err("Authentication failed".into());
         }
 
         log::info!("Opening channel...");
@@ -127,7 +159,7 @@ impl SshSession {
         sftp_channel.request_subsystem(true, "sftp").await?;
         let sftp = SftpSession::new(sftp_channel.into_stream()).await?;
         log::info!("SFTP session initialized.");
-        
+
         Ok((session, channel_id, channel, sftp))
     }
 }

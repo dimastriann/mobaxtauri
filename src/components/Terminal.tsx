@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
-import { Box } from '@chakra-ui/react';
+import { Box, HStack, Input, IconButton, Text, Icon } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
+import { LuSearch, LuChevronUp, LuChevronDown, LuX } from 'react-icons/lu';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalInstanceProps {
@@ -17,11 +19,15 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const unlistenDataRef = useRef<UnlistenFn | null>(null);
   const isDisconnectedRef = useRef(false);
   const isPasswordModeRef = useRef(false);
   const passwordBufRef = useRef('');
   const { colorMode } = useColorMode();
+
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchText, setSearchText] = useState('');
 
   const getSession = useCallback((): Session | undefined => {
     return useSessionStore.getState().sessions.find((s) => s.id === sessionId);
@@ -53,6 +59,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
           port: session.port || 22,
           user: session.user,
           password: password ?? session.password ?? null,
+          privateKeyPath: session.privateKeyPath ?? null,
         });
         updateStatus('connected');
         isDisconnectedRef.current = false;
@@ -147,7 +154,28 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
+    
+    const searchAddon = new SearchAddon();
+    term.loadAddon(searchAddon);
+    searchAddonRef.current = searchAddon;
+
     term.open(terminalRef.current);
+
+    // Ctrl+F handler
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.ctrlKey && e.key === 'f') {
+        if (e.type === 'keydown') {
+          setShowSearch(true);
+        }
+        return false;
+      }
+      if (e.key === 'Escape' && e.type === 'keydown') {
+        setShowSearch(false);
+        searchAddon.clearDecorations();
+        return true;
+      }
+      return true;
+    });
     fitAddon.fit();
 
     xtermRef.current = term;
@@ -276,9 +304,28 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       }
     });
 
+    // ── Snippet execution listener (Tauri native event) ────
+    const unlistenSnippet = listen<string>(`snippet-execute-${sessionId}`, (event) => {
+      const data = event.payload;
+      const currentSession = useSessionStore.getState().sessions.find(s => s.id === sessionId);
+      
+      console.log(`[TERMINAL] Snippet received for ${sessionId} (${currentSession?.type}): ${data.trim()}`);
+      
+      if (currentSession?.type === 'ssh') {
+        console.log(`[TERMINAL] Invoking ssh_send_data for ${sessionId}`);
+        invoke('ssh_send_data', { sessionId, data }).catch((err) => {
+          console.error('[TERMINAL] Snippet send failed:', err);
+        });
+      } else {
+        console.log(`[TERMINAL] Writing to local buffer for ${sessionId}`);
+        term.write(data);
+      }
+    });
+
     // ── Cleanup on tab close ───────────────────────────────
     return () => {
       window.removeEventListener('resize', handleResize);
+      unlistenSnippet.then(fn => fn());
       unlistenDataRef.current?.();
 
       // Disconnect SSH when tab is closed
@@ -362,7 +409,77 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       bg="bg.panel"
       overflow="hidden"
       display={isVisible ? 'block' : 'none'}
+      position="relative"
     >
+      {showSearch && (
+        <Box
+          position="absolute"
+          top={2}
+          right={4}
+          zIndex={10}
+          bg="bg.panel"
+          border="1px solid"
+          borderColor="border.subtle"
+          borderRadius="md"
+          boxShadow="lg"
+          p={2}
+        >
+          <HStack gap={2}>
+            <Icon as={LuSearch} color="fg.subtle" boxSize="14px" />
+            <Input
+              autoFocus
+              size="xs"
+              w="150px"
+              placeholder="Find..."
+              value={searchText}
+              onChange={(e) => {
+                const text = e.target.value;
+                setSearchText(text);
+                if (searchAddonRef.current && text) {
+                  searchAddonRef.current.findNext(text, { incremental: true });
+                } else if (!text && searchAddonRef.current) {
+                  searchAddonRef.current.clearDecorations();
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  searchAddonRef.current?.findNext(searchText);
+                } else if (e.key === 'Escape') {
+                  setShowSearch(false);
+                  searchAddonRef.current?.clearDecorations();
+                }
+              }}
+            />
+            <IconButton 
+              aria-label="Previous" 
+              size="xs" 
+              variant="ghost" 
+              onClick={() => searchAddonRef.current?.findPrevious(searchText)}
+            >
+              <LuChevronUp />
+            </IconButton>
+            <IconButton 
+              aria-label="Next" 
+              size="xs" 
+              variant="ghost" 
+              onClick={() => searchAddonRef.current?.findNext(searchText)}
+            >
+              <LuChevronDown />
+            </IconButton>
+            <IconButton 
+              aria-label="Close" 
+              size="xs" 
+              variant="ghost" 
+              onClick={() => {
+                setShowSearch(false);
+                searchAddonRef.current?.clearDecorations();
+              }}
+            >
+              <LuX />
+            </IconButton>
+          </HStack>
+        </Box>
+      )}
       <div ref={terminalRef} style={{ height: '100%', width: '100%' }} />
     </Box>
   );

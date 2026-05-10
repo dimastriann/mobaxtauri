@@ -19,6 +19,7 @@
     "@tauri-apps/plugin-store": "^2.4.2",
     "@tauri-apps/plugin-stronghold": "^2.3.1",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
     "@xterm/xterm": "^6.0.0",
     "framer-motion": "^12.4.7",
     "next-themes": "^0.4.6",
@@ -32,16 +33,16 @@
     "@chakra-ui/react": "^3.34.0",
     "@emotion/react": "^11.14.0",
     "@tauri-apps/cli": "^2",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "jsdom": "^26.0.0",
     "lucide-react": "^1.7.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
-    "vitest": "^3.0.5",
-    "jsdom": "^26.0.0",
-    "@testing-library/react": "^16.2.0",
-    "@testing-library/dom": "^10.4.0",
-    "@testing-library/jest-dom": "^6.6.3"
+    "vitest": "^3.0.5"
   }
 }

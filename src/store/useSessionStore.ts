@@ -11,16 +11,35 @@ export interface Session {
   user?: string;
   port?: number;
   password?: string;
+  privateKeyPath?: string;
   status: SessionStatus;
   error?: string;
   lastActivity?: number;
   folderId?: string | null;  // New field for folder grouping
+  health?: {
+    cpu: number;
+    ram: number;
+    ram_used: number;
+    ram_total: number;
+    swap: number;
+    swap_used: number;
+    swap_total: number;
+    disk: number;
+  };
+  tag?: 'prod' | 'staging' | 'dev' | 'custom';
+  tagColor?: string;
 }
 
 export interface Folder {
   id: string;
   name: string;
   isCollapsed: boolean;
+}
+
+export interface Snippet {
+  id: string;
+  name: string;
+  command: string;
 }
 
 interface SessionState {
@@ -35,6 +54,7 @@ interface SessionState {
   deleteSession: (id: string) => void;
   updateSessionStatus: (id: string, status: SessionStatus, error?: string) => void;
   updateLastActivity: (id: string) => void;
+  updateSessionHealth: (id: string, health: NonNullable<Session['health']>) => void;
 
   // Tab management
   setActiveSession: (id: string) => void;
@@ -54,6 +74,12 @@ interface SessionState {
   // Persistence
   loadSessions: () => Promise<void>;
   saveToDisk: () => Promise<void>;
+
+  // Snippet Management
+  snippets: Snippet[];
+  addSnippet: (name: string, command: string) => void;
+  updateSnippet: (id: string, updates: Partial<Snippet>) => void;
+  deleteSnippet: (id: string) => void;
 }
 
 const STORAGE_PATH = 'sessions.bin';
@@ -64,6 +90,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeSessionId: 'local',
   isLoading: true,
   folders: [],
+  snippets: [],
 
   addSession: (session) => {
     set((state) => ({
@@ -109,12 +136,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       ),
     })),
 
-  updateLastActivity: (id) =>
+  updateLastActivity: (id) => {
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === id ? { ...s, lastActivity: Date.now() } : s
       ),
-    })),
+    }));
+  },
+
+  updateSessionHealth: (id, health) => {
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === id ? { ...s, health } : s
+      ),
+    }));
+  },
 
   setActiveSession: (id) => {
     const state = get();
@@ -210,6 +246,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     
     // Reset SFTP if needed (since it's a separate store, we might need to call its reset)
     // For now we assume the SftpSidebar listener will handle it when sessions change
+    // For now we assume the SftpSidebar listener will handle it when sessions change
+  },
+
+  addSnippet: (name, command) => {
+    const id = `snippet-${Date.now()}`;
+    set((state) => ({ snippets: [...state.snippets, { id, name, command }] }));
+    get().saveToDisk();
+  },
+
+  updateSnippet: (id, updates) => {
+    set((state) => ({
+      snippets: state.snippets.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+    }));
+    get().saveToDisk();
+  },
+
+  deleteSnippet: (id) => {
+    set((state) => ({ snippets: state.snippets.filter((s) => s.id !== id) }));
+    get().saveToDisk();
   },
 
   loadSessions: async () => {
@@ -217,6 +272,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const store = await load(STORAGE_PATH);
       const savedSessions = await store.get<Session[]>('sessions') || [];
       const savedFolders = await store.get<Folder[]>('folders') || [];
+      const savedSnippets = await store.get<Snippet[]>('snippets') || [];
       
       const local: Session = { id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' };
       
@@ -228,6 +284,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set({
         sessions: [local, ...filteredSaved],
         folders: savedFolders,
+        snippets: savedSnippets,
         openTabs: ['local'],
         activeSessionId: 'local',
         isLoading: false,
@@ -238,6 +295,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set({ 
         sessions: [{ id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' }], 
         folders: [],
+        snippets: [],
         isLoading: false 
       });
     }
@@ -251,6 +309,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       console.log('[STORE] Saving to disk, session count:', toSave.length);
       await store.set('sessions', toSave);
       await store.set('folders', state.folders);
+      await store.set('snippets', state.snippets);
       await store.save();
       console.log('[STORE] Successfully saved to disk');
     } catch (err) {

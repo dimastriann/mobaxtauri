@@ -23,10 +23,11 @@ async fn ssh_connect(
     port: u16,
     user: String,
     password: Option<String>,
+    private_key_path: Option<String>,
 ) -> Result<String, String> {
     log::info!("Attempting to connect to {}:{} as {}", host, port, user);
     
-    let connect_future = SshSession::connect(app_handle, session_id.clone(), host, port, user, password);
+    let connect_future = SshSession::connect(app_handle, session_id.clone(), host, port, user, password, private_key_path);
     
     // Add a 15-second timeout to the connection attempt
     let (handle, channel_id, channel, sftp) = match tokio::time::timeout(std::time::Duration::from_secs(15), connect_future).await {
@@ -250,6 +251,40 @@ async fn sftp_rename(
 }
 
 #[tauri::command]
+async fn sftp_read_file_content(
+    state: State<'_, AppState>,
+    session_id: String,
+    remote_path: String,
+) -> Result<String, String> {
+    log::info!("Reading file content {}", remote_path);
+    let sftp_sessions = state.sftp_sessions.lock().await;
+    let sftp = sftp_sessions.get(&session_id).ok_or("SFTP session not found")?;
+
+    let mut remote_file = sftp.open(&remote_path).await.map_err(|e| format!("Failed to open remote file: {e:?}"))?;
+    let mut data: Vec<u8> = Vec::new();
+    remote_file.read_to_end(&mut data).await.map_err(|e| format!("Read failed: {e:?}"))?;
+    
+    String::from_utf8(data).map_err(|e| format!("File is not valid UTF-8: {e:?}"))
+}
+
+#[tauri::command]
+async fn sftp_write_file_content(
+    state: State<'_, AppState>,
+    session_id: String,
+    remote_path: String,
+    content: String,
+) -> Result<(), String> {
+    log::info!("Writing file content {}", remote_path);
+    let sftp_sessions = state.sftp_sessions.lock().await;
+    let sftp = sftp_sessions.get(&session_id).ok_or("SFTP session not found")?;
+
+    let mut remote_file = sftp.create(&remote_path).await.map_err(|e| format!("Failed to create remote file: {e:?}"))?;
+    remote_file.write_all(content.as_bytes()).await.map_err(|e| format!("Write failed: {e:?}"))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
 async fn sftp_remove(
     state: State<'_, AppState>,
     session_id: String,
@@ -290,6 +325,86 @@ async fn sftp_remove(
     Ok(())
 }
 
+#[tauri::command]
+async fn ssh_health_check(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    let mut sessions = state.ssh_sessions.lock().await;
+    let (handle, _channel_id, _channel) = sessions
+        .get_mut(&session_id)
+        .ok_or("Session not found")?;
+
+    let exec_channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| format!("Failed to open health channel: {e}"))?;
+
+    // Line 1: load avg (1min)
+    // Line 2: Mem used_mb total_mb
+    // Line 3: Swap used_mb total_mb
+    // Line 4: disk used %
+    let cmd = "cat /proc/loadavg | awk '{print $1}'; free -m | grep Mem | awk '{print $3,$2}'; free -m | grep Swap | awk '{print $3,$2}'; df -h / | tail -1 | awk '{print $5}' | sed 's/%//'";
+
+    exec_channel
+        .exec(true, cmd)
+        .await
+        .map_err(|e| format!("Failed to exec health cmd: {e}"))?;
+
+    let mut output = String::new();
+    let mut stream = exec_channel.into_stream();
+    use tokio::io::AsyncReadExt;
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        stream.read_to_string(&mut output),
+    )
+    .await
+    .map_err(|_| "Health check timed out".to_string())?;
+
+    let lines: Vec<&str> = output.lines().collect();
+    if lines.len() >= 4 {
+        let load = lines[0].parse::<f32>().unwrap_or(0.0);
+
+        let mem_parts: Vec<&str> = lines[1].split_whitespace().collect();
+        let mut ram_used: f32 = 0.0;
+        let mut ram_total: f32 = 1.0;
+        let mut ram_pct: f32 = 0.0;
+        if mem_parts.len() == 2 {
+            ram_used = mem_parts[0].parse::<f32>().unwrap_or(0.0);
+            ram_total = mem_parts[1].parse::<f32>().unwrap_or(1.0);
+            ram_pct = (ram_used / ram_total) * 100.0;
+        }
+
+        let swap_parts: Vec<&str> = lines[2].split_whitespace().collect();
+        let mut swap_used: f32 = 0.0;
+        let mut swap_total: f32 = 0.0;
+        let mut swap_pct: f32 = 0.0;
+        if swap_parts.len() == 2 {
+            swap_used = swap_parts[0].parse::<f32>().unwrap_or(0.0);
+            swap_total = swap_parts[1].parse::<f32>().unwrap_or(0.0);
+            if swap_total > 0.0 {
+                swap_pct = (swap_used / swap_total) * 100.0;
+            }
+        }
+
+        let disk = lines[3].parse::<f32>().unwrap_or(0.0);
+        let cpu_pct = (load * 100.0).min(100.0);
+
+        Ok(serde_json::json!({
+            "cpu": cpu_pct,
+            "ram": ram_pct,
+            "ram_used": ram_used,
+            "ram_total": ram_total,
+            "swap": swap_pct,
+            "swap_used": swap_used,
+            "swap_total": swap_total,
+            "disk": disk
+        }))
+    } else {
+        Err(format!("Unexpected health output: {}", output))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -316,7 +431,10 @@ pub fn run() {
             sftp_copy_file,
             sftp_open_file,
             sftp_rename,
-            sftp_remove
+            sftp_remove,
+            ssh_health_check,
+            sftp_read_file_content,
+            sftp_write_file_content
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

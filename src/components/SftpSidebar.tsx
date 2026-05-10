@@ -13,6 +13,7 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useSftpStore } from '../store/useSftpStore';
 import { useSessionStore } from '../store/useSessionStore';
+import SftpEditorModal from './SftpEditorModal';
 
 const SftpSidebar: React.FC = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
@@ -28,6 +29,7 @@ const SftpSidebar: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, file: any } | null>(null);
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [editorFile, setEditorFile] = useState<{ path: string, name: string } | null>(null);
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
@@ -304,6 +306,16 @@ const SftpSidebar: React.FC = () => {
           minW="140px"
         >
           <VStack align="stretch" gap={0}>
+            {!contextMenu.file.is_dir && (
+              <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => {
+                const path = currentPath.endsWith('/') ? `${currentPath}${contextMenu.file.name}` : `${currentPath}/${contextMenu.file.name}`;
+                setEditorFile({ path, name: contextMenu.file.name });
+                setContextMenu(null);
+              }}>
+                <Icon as={LuCode} boxSize="14px" color="blue.fg" />
+                <Text fontSize="12px" color="fg">Edit File</Text>
+              </HStack>
+            )}
             <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => openFile(activeSessionId, contextMenu.file.name)}>
               <Icon as={LuExternalLink} boxSize="14px" color="fg.subtle" />
               <Text fontSize="12px" color="fg">Open File</Text>
@@ -332,6 +344,14 @@ const SftpSidebar: React.FC = () => {
           </VStack>
         </Box>
       )}
+
+      <SftpEditorModal
+        isOpen={!!editorFile}
+        onClose={() => setEditorFile(null)}
+        sessionId={activeSessionId}
+        filePath={editorFile?.path || ''}
+        fileName={editorFile?.name || ''}
+      />
     </VStack>
   );
 };

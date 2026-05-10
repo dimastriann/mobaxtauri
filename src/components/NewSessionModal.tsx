@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Stack, Input, Button, HStack } from "@chakra-ui/react";
+import { open } from '@tauri-apps/plugin-dialog';
+import { Stack, Input, Button, HStack, Text } from "@chakra-ui/react";
 import { Session, useSessionStore } from '../store/useSessionStore';
 import {
   DialogRoot,
@@ -23,9 +24,12 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const [host, setHost] = useState('');
   const [user, setUser] = useState('');
   const [password, setPassword] = useState('');
+  const [usePrivateKey, setUsePrivateKey] = useState(false);
+  const [privateKeyPath, setPrivateKeyPath] = useState('');
   const [port, setPort] = useState(22);
   const [name, setName] = useState('');
   const [folderId, setFolderId] = useState<string | null>(null);
+  const [tag, setTag] = useState<'prod' | 'staging' | 'dev' | 'custom' | undefined>(undefined);
   const [isConnecting, setIsConnecting] = useState(false);
   
   const folders = useSessionStore((state) => state.folders);
@@ -41,6 +45,9 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       setPort(editingSession.port || 22);
       setName(editingSession.name);
       setFolderId(editingSession.folderId || null);
+      setTag(editingSession.tag);
+      setUsePrivateKey(!!editingSession.privateKeyPath);
+      setPrivateKeyPath(editingSession.privateKeyPath || '');
     } else {
       setHost('');
       setUser('');
@@ -48,6 +55,9 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       setPort(22);
       setName('');
       setFolderId(null);
+      setTag(undefined);
+      setUsePrivateKey(false);
+      setPrivateKeyPath('');
     }
   }, [editingSession, isOpen]);
 
@@ -62,7 +72,9 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
         port,
         password: password || undefined,
         status: 'disconnected',
-        folderId
+        folderId,
+        tag,
+        privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined
       });
       onClose();
       return;
@@ -79,7 +91,9 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       port,
       password: password || undefined,
       status: 'connecting',
-      folderId
+      folderId,
+      tag,
+      privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined
     });
 
     try {
@@ -88,7 +102,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
         host,
         port,
         user,
-        password: password || null
+        password: password || null,
+        privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : null
       });
       updateStatus(sessionId, 'connected');
       onClose();
@@ -148,6 +163,30 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
                   ))}
                 </select>
               </Field>
+
+              <Field label="Tag">
+                <select 
+                  value={tag || ''} 
+                  onChange={(e) => setTag((e.target.value as any) || undefined)}
+                  style={{
+                    width: '100%',
+                    height: '32px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid',
+                    borderColor: 'var(--chakra-colors-border-subtle)',
+                    borderRadius: '4px',
+                    padding: '0 8px',
+                    fontSize: '14px',
+                    color: 'inherit',
+                    outline: 'none'
+                  }}
+                >
+                  <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>None</option>
+                  <option value="prod" style={{ background: 'var(--chakra-colors-bg-panel)', color: 'var(--chakra-colors-red-400)' }}>Production</option>
+                  <option value="staging" style={{ background: 'var(--chakra-colors-bg-panel)', color: 'var(--chakra-colors-orange-400)' }}>Staging</option>
+                  <option value="dev" style={{ background: 'var(--chakra-colors-bg-panel)', color: 'var(--chakra-colors-green-400)' }}>Development</option>
+                </select>
+              </Field>
               
               <Field label="Remote Host" required>
                 <Input 
@@ -180,14 +219,56 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
                 </Field>
               </HStack>
 
-              <Field label="Password (Optional)" helperText="Leave empty for keys">
-                <Input 
-                  type="password" 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                  size="sm"
+              <HStack gap={2} mt={2}>
+                <input 
+                  type="checkbox" 
+                  id="use-private-key" 
+                  checked={usePrivateKey} 
+                  onChange={(e) => setUsePrivateKey(e.target.checked)} 
                 />
-              </Field>
+                <label htmlFor="use-private-key" style={{ fontSize: '14px', cursor: 'pointer' }}>
+                  Use SSH Private Key
+                </label>
+              </HStack>
+
+              {usePrivateKey ? (
+                <Field label="Private Key Path" required>
+                  <HStack w="full">
+                    <Input 
+                      value={privateKeyPath} 
+                      onChange={(e) => setPrivateKeyPath(e.target.value)} 
+                      placeholder="/path/to/id_rsa"
+                      size="sm"
+                      flex={1}
+                      required 
+                    />
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={async () => {
+                        const selected = await open({
+                          multiple: false,
+                          directory: false,
+                        });
+                        if (selected && typeof selected === 'string') {
+                          setPrivateKeyPath(selected);
+                        }
+                      }}
+                    >
+                      Browse
+                    </Button>
+                  </HStack>
+                </Field>
+              ) : (
+                <Field label="Password (Optional)" helperText="Leave empty for keys">
+                  <Input 
+                    type="password" 
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    size="sm"
+                  />
+                </Field>
+              )}
             </Stack>
           </form>
         </DialogBody>
