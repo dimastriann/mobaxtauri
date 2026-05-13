@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Stack, Input, Button, HStack, Text } from "@chakra-ui/react";
+import { Stack, Input, Button, HStack } from "@chakra-ui/react";
 import { Session, useSessionStore } from '../store/useSessionStore';
 import {
   DialogRoot,

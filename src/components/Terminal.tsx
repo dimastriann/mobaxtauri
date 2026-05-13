@@ -5,7 +5,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
-import { Box, HStack, Input, IconButton, Text, Icon } from '@chakra-ui/react';
+import { Box, HStack, Input, IconButton, Icon } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX } from 'react-icons/lu';
 import '@xterm/xterm/css/xterm.css';
