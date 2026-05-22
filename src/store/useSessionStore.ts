@@ -15,7 +15,7 @@ export interface Session {
   status: SessionStatus;
   error?: string;
   lastActivity?: number;
-  folderId?: string | null;  // New field for folder grouping
+  folderId?: string | null; // New field for folder grouping
   health?: {
     cpu: number;
     ram: number;
@@ -44,7 +44,7 @@ export interface Snippet {
 
 interface SessionState {
   sessions: Session[];
-  openTabs: string[];          // IDs of sessions currently open as tabs
+  openTabs: string[]; // IDs of sessions currently open as tabs
   activeSessionId: string | null;
   isLoading: boolean;
 
@@ -118,8 +118,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           ? newTabs[newTabs.length - 1] || 'local'
           : state.activeSessionId;
 
-      console.log(`[STORE] deleteSession: sessions from ${state.sessions.length} to ${newSessions.length}`);
-      
+      console.log(
+        `[STORE] deleteSession: sessions from ${state.sessions.length} to ${newSessions.length}`,
+      );
+
       return {
         sessions: newSessions,
         openTabs: newTabs,
@@ -132,23 +134,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   updateSessionStatus: (id, status, error) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.id === id ? { ...s, status, error, lastActivity: Date.now() } : s
+        s.id === id ? { ...s, status, error, lastActivity: Date.now() } : s,
       ),
     })),
 
   updateLastActivity: (id) => {
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === id ? { ...s, lastActivity: Date.now() } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === id ? { ...s, lastActivity: Date.now() } : s)),
     }));
   },
 
   updateSessionHealth: (id, health) => {
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === id ? { ...s, health } : s
-      ),
+      sessions: state.sessions.map((s) => (s.id === id ? { ...s, health } : s)),
     }));
   },
 
@@ -175,36 +173,36 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   addFolder: (name) => {
     const id = `folder-${Date.now()}`;
     set((state) => ({
-      folders: [...state.folders, { id, name, isCollapsed: false }]
+      folders: [...state.folders, { id, name, isCollapsed: false }],
     }));
     get().saveToDisk();
   },
 
   renameFolder: (id, name) => {
     set((state) => ({
-      folders: state.folders.map(f => f.id === id ? { ...f, name } : f)
+      folders: state.folders.map((f) => (f.id === id ? { ...f, name } : f)),
     }));
     get().saveToDisk();
   },
 
   deleteFolder: (id) => {
     set((state) => ({
-      folders: state.folders.filter(f => f.id !== id),
-      sessions: state.sessions.map(s => s.folderId === id ? { ...s, folderId: null } : s)
+      folders: state.folders.filter((f) => f.id !== id),
+      sessions: state.sessions.map((s) => (s.folderId === id ? { ...s, folderId: null } : s)),
     }));
     get().saveToDisk();
   },
 
   toggleFolderCollapse: (id) => {
     set((state) => ({
-      folders: state.folders.map(f => f.id === id ? { ...f, isCollapsed: !f.isCollapsed } : f)
+      folders: state.folders.map((f) => (f.id === id ? { ...f, isCollapsed: !f.isCollapsed } : f)),
     }));
     get().saveToDisk();
   },
 
   moveSessionToFolder: (sessionId, folderId) => {
     set((state) => ({
-      sessions: state.sessions.map(s => s.id === sessionId ? { ...s, folderId } : s)
+      sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, folderId } : s)),
     }));
     get().saveToDisk();
   },
@@ -243,7 +241,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
     // Clear all tabs
     set({ openTabs: ['local'], activeSessionId: 'local' });
-    
+
     // Reset SFTP if needed (since it's a separate store, we might need to call its reset)
     // For now we assume the SftpSidebar listener will handle it when sessions change
     // For now we assume the SftpSidebar listener will handle it when sessions change
@@ -270,12 +268,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   loadSessions: async () => {
     try {
       const store = await load(STORAGE_PATH);
-      const savedSessions = await store.get<Session[]>('sessions') || [];
-      const savedFolders = await store.get<Folder[]>('folders') || [];
-      const savedSnippets = await store.get<Snippet[]>('snippets') || [];
-      
-      const local: Session = { id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' };
-      
+      const savedSessions = (await store.get<Session[]>('sessions')) || [];
+      const savedFolders = (await store.get<Folder[]>('folders')) || [];
+      const savedSnippets = (await store.get<Snippet[]>('snippets')) || [];
+
+      const local: Session = {
+        id: 'local',
+        name: 'Local Terminal',
+        type: 'local',
+        status: 'connected',
+      };
+
       // Filter out any existing 'local' session from disk to prevent duplicates
       const filteredSaved = savedSessions
         .filter((s) => s.id !== 'local')
@@ -292,11 +295,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     } catch (err) {
       console.error('Failed to load sessions:', err);
       // Fallback to defaults
-      set({ 
-        sessions: [{ id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' }], 
+      set({
+        sessions: [{ id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' }],
         folders: [],
         snippets: [],
-        isLoading: false 
+        isLoading: false,
       });
     }
   },

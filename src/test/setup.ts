@@ -1,5 +1,5 @@
-import "@testing-library/jest-dom";
-import { vi } from "vitest";
+import '@testing-library/jest-dom';
+import { vi } from 'vitest';
 
 // Mock Tauri's internals to prevent real backend calls during frontend tests
 vi.stubGlobal('__TAURI_INTERNALS__', {
@@ -15,7 +15,7 @@ vi.stubGlobal('__TAURI_EVENT_PLUGIN_INTERNALS__', {
 // Polyfill matchMedia for next-themes/Chakra UI
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: vi.fn().mockImplementation(query => ({
+  value: vi.fn().mockImplementation((query) => ({
     matches: false,
     media: query,
     onchange: null,

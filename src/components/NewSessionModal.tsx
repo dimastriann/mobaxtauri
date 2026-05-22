@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Stack, Input, Button, HStack } from "@chakra-ui/react";
+import { Stack, Input, Button, HStack } from '@chakra-ui/react';
 import { Session, useSessionStore } from '../store/useSessionStore';
 import {
   DialogRoot,
@@ -11,8 +11,8 @@ import {
   DialogFooter,
   DialogTitle,
   DialogCloseTrigger,
-} from "./ui/dialog";
-import { Field } from "./ui/field";
+} from './ui/dialog';
+import { Field } from './ui/field';
 
 interface NewSessionModalProps {
   isOpen: boolean;
@@ -31,7 +31,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const [folderId, setFolderId] = useState<string | null>(null);
   const [tag, setTag] = useState<'prod' | 'staging' | 'dev' | 'custom' | undefined>(undefined);
   const [isConnecting, setIsConnecting] = useState(false);
-  
+
   const folders = useSessionStore((state) => state.folders);
   const addSession = useSessionStore((state) => state.addSession);
   const updateSession = useSessionStore((state) => state.updateSession);
@@ -63,7 +63,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (editingSession) {
       updateSession(editingSession.id, {
         name: name || `${user}@${host}`,
@@ -74,7 +74,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
         status: 'disconnected',
         folderId,
         tag,
-        privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined
+        privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
       });
       onClose();
       return;
@@ -93,7 +93,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       status: 'connecting',
       folderId,
       tag,
-      privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined
+      privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
     });
 
     try {
@@ -103,7 +103,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
         port,
         user,
         password: password || null,
-        privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : null
+        privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : null,
       });
       updateStatus(sessionId, 'connected');
       onClose();
@@ -118,29 +118,34 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   };
 
   return (
-    <DialogRoot open={isOpen} onOpenChange={(e) => !e.open && onClose()} size="sm" placement="center">
+    <DialogRoot
+      open={isOpen}
+      onOpenChange={(e) => !e.open && onClose()}
+      size="sm"
+      placement="center"
+    >
       <DialogContent bg="bg.panel" borderColor="border.subtle">
         <DialogHeader>
           <DialogTitle color="fg.default">
             {editingSession ? 'Edit SSH Session' : 'New SSH Session'}
           </DialogTitle>
         </DialogHeader>
-        
+
         <DialogBody pb={6}>
           <form id="session-form" onSubmit={handleSubmit}>
             <Stack gap={4}>
               <Field label="Session Name (Optional)">
-                <Input 
-                  value={name} 
-                  onChange={(e) => setName(e.target.value)} 
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   placeholder="Display Name"
                   size="sm"
                 />
               </Field>
 
               <Field label="Folder">
-                <select 
-                  value={folderId || ''} 
+                <select
+                  value={folderId || ''}
                   onChange={(e) => setFolderId(e.target.value || null)}
                   style={{
                     width: '100%',
@@ -152,12 +157,18 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
                     padding: '0 8px',
                     fontSize: '14px',
                     color: 'inherit',
-                    outline: 'none'
+                    outline: 'none',
                   }}
                 >
-                  <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>Uncategorized</option>
-                  {folders.map(f => (
-                    <option key={f.id} value={f.id} style={{ background: 'var(--chakra-colors-bg-panel)' }}>
+                  <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
+                    Uncategorized
+                  </option>
+                  {folders.map((f) => (
+                    <option
+                      key={f.id}
+                      value={f.id}
+                      style={{ background: 'var(--chakra-colors-bg-panel)' }}
+                    >
                       {f.name}
                     </option>
                   ))}
@@ -165,8 +176,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
               </Field>
 
               <Field label="Tag">
-                <select 
-                  value={tag || ''} 
+                <select
+                  value={tag || ''}
                   onChange={(e) => setTag((e.target.value as any) || undefined)}
                   style={{
                     width: '100%',
@@ -178,53 +189,79 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
                     padding: '0 8px',
                     fontSize: '14px',
                     color: 'inherit',
-                    outline: 'none'
+                    outline: 'none',
                   }}
                 >
-                  <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>None</option>
-                  <option value="prod" style={{ background: 'var(--chakra-colors-bg-panel)', color: 'var(--chakra-colors-red-400)' }}>Production</option>
-                  <option value="staging" style={{ background: 'var(--chakra-colors-bg-panel)', color: 'var(--chakra-colors-orange-400)' }}>Staging</option>
-                  <option value="dev" style={{ background: 'var(--chakra-colors-bg-panel)', color: 'var(--chakra-colors-green-400)' }}>Development</option>
+                  <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
+                    None
+                  </option>
+                  <option
+                    value="prod"
+                    style={{
+                      background: 'var(--chakra-colors-bg-panel)',
+                      color: 'var(--chakra-colors-red-400)',
+                    }}
+                  >
+                    Production
+                  </option>
+                  <option
+                    value="staging"
+                    style={{
+                      background: 'var(--chakra-colors-bg-panel)',
+                      color: 'var(--chakra-colors-orange-400)',
+                    }}
+                  >
+                    Staging
+                  </option>
+                  <option
+                    value="dev"
+                    style={{
+                      background: 'var(--chakra-colors-bg-panel)',
+                      color: 'var(--chakra-colors-green-400)',
+                    }}
+                  >
+                    Development
+                  </option>
                 </select>
               </Field>
-              
+
               <Field label="Remote Host" required>
-                <Input 
-                  value={host} 
-                  onChange={(e) => setHost(e.target.value)} 
+                <Input
+                  value={host}
+                  onChange={(e) => setHost(e.target.value)}
                   placeholder="e.g. 192.168.1.10"
                   size="sm"
-                  required 
+                  required
                 />
               </Field>
 
               <HStack gap={4} align="flex-start">
                 <Field label="Username" flex={1} required>
-                  <Input 
-                    value={user} 
-                    onChange={(e) => setUser(e.target.value)} 
+                  <Input
+                    value={user}
+                    onChange={(e) => setUser(e.target.value)}
                     placeholder="root"
                     size="sm"
-                    required 
+                    required
                   />
                 </Field>
                 <Field label="Port" w="80px" required>
-                  <Input 
-                    type="number" 
-                    value={port} 
-                    onChange={(e) => setPort(parseInt(e.target.value))} 
+                  <Input
+                    type="number"
+                    value={port}
+                    onChange={(e) => setPort(parseInt(e.target.value))}
                     size="sm"
-                    required 
+                    required
                   />
                 </Field>
               </HStack>
 
               <HStack gap={2} mt={2}>
-                <input 
-                  type="checkbox" 
-                  id="use-private-key" 
-                  checked={usePrivateKey} 
-                  onChange={(e) => setUsePrivateKey(e.target.checked)} 
+                <input
+                  type="checkbox"
+                  id="use-private-key"
+                  checked={usePrivateKey}
+                  onChange={(e) => setUsePrivateKey(e.target.checked)}
                 />
                 <label htmlFor="use-private-key" style={{ fontSize: '14px', cursor: 'pointer' }}>
                   Use SSH Private Key
@@ -234,17 +271,17 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
               {usePrivateKey ? (
                 <Field label="Private Key Path" required>
                   <HStack w="full">
-                    <Input 
-                      value={privateKeyPath} 
-                      onChange={(e) => setPrivateKeyPath(e.target.value)} 
+                    <Input
+                      value={privateKeyPath}
+                      onChange={(e) => setPrivateKeyPath(e.target.value)}
                       placeholder="/path/to/id_rsa"
                       size="sm"
                       flex={1}
-                      required 
+                      required
                     />
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={async () => {
                         const selected = await open({
                           multiple: false,
@@ -261,10 +298,10 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
                 </Field>
               ) : (
                 <Field label="Password (Optional)" helperText="Leave empty for keys">
-                  <Input 
-                    type="password" 
-                    value={password} 
-                    onChange={(e) => setPassword(e.target.value)} 
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     size="sm"
                   />
                 </Field>
@@ -277,11 +314,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
           <Button variant="ghost" size="sm" onClick={onClose} disabled={isConnecting}>
             Cancel
           </Button>
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             form="session-form"
-            colorPalette="blue" 
-            size="sm" 
+            colorPalette="blue"
+            size="sm"
             loading={isConnecting}
           >
             {editingSession ? 'Save Changes' : 'Connect'}

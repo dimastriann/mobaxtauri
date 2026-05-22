@@ -37,7 +37,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     (status: SessionStatus, error?: string) => {
       useSessionStore.getState().updateSessionStatus(sessionId, status, error);
     },
-    [sessionId]
+    [sessionId],
   );
 
   // ── Reconnect logic ────────────────────────────────────────
@@ -50,7 +50,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       if (!term) return;
 
       updateStatus('connecting');
-      term.writeln(`\r\n\x1b[38;5;81m● Connecting to ${session.user}@${session.host}:${session.port || 22}...\x1b[0m`);
+      term.writeln(
+        `\r\n\x1b[38;5;81m● Connecting to ${session.user}@${session.host}:${session.port || 22}...\x1b[0m`,
+      );
 
       try {
         await invoke('ssh_connect', {
@@ -71,7 +73,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
         showReconnectBanner(term);
       }
     },
-    [sessionId, getSession, updateStatus]
+    [sessionId, getSession, updateStatus],
   );
 
   // ── Password prompt inside terminal ─────────────────────────
@@ -81,7 +83,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     const session = getSession();
     isPasswordModeRef.current = true;
     passwordBufRef.current = '';
-    term.write(`\x1b[33mPassword for ${session?.user || 'user'}@${session?.host || 'host'}: \x1b[0m`);
+    term.write(
+      `\x1b[33mPassword for ${session?.user || 'user'}@${session?.host || 'host'}: \x1b[0m`,
+    );
   }, [getSession]);
 
   // ── Reconnect / disconnect banner ────────────────────────────
@@ -90,7 +94,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     term.writeln('');
     term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
     term.writeln('\x1b[33m  ⚠  Session disconnected.\x1b[0m');
-    term.writeln('\x1b[33m  Press \x1b[1mr\x1b[22m to reconnect  •  \x1b[1mq\x1b[22m to close tab\x1b[0m');
+    term.writeln(
+      '\x1b[33m  Press \x1b[1mr\x1b[22m to reconnect  •  \x1b[1mq\x1b[22m to close tab\x1b[0m',
+    );
     term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
   }, []);
 
@@ -103,58 +109,60 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       cursorBlink: true,
       fontSize: 14,
       fontFamily: '"Cascadia Code", Menlo, "Courier New", monospace',
-      theme: isLight ? {
-        background: '#ffffff',
-        foreground: '#1e293b',
-        cursor: '#38bdf8',
-        cursorAccent: '#ffffff',
-        selectionBackground: 'rgba(56, 189, 248, 0.3)',
-        black: '#e2e8f0',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#eab308',
-        blue: '#3b82f6',
-        magenta: '#d946ef',
-        cyan: '#06b6d4',
-        white: '#0f172a',
-        brightBlack: '#94a3b8',
-        brightRed: '#f87171',
-        brightGreen: '#4ade80',
-        brightYellow: '#facc15',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#e879f9',
-        brightCyan: '#22d3ee',
-        brightWhite: '#1e293b',
-      } : {
-        background: '#0a0a14',
-        foreground: '#e2e8f0',
-        cursor: '#38bdf8',
-        cursorAccent: '#0a0a14',
-        selectionBackground: 'rgba(56, 189, 248, 0.3)',
-        black: '#1e1e2e',
-        red: '#f38ba8',
-        green: '#a6e3a1',
-        yellow: '#f9e2af',
-        blue: '#89b4fa',
-        magenta: '#cba6f7',
-        cyan: '#94e2d5',
-        white: '#cdd6f4',
-        brightBlack: '#585b70',
-        brightRed: '#f38ba8',
-        brightGreen: '#a6e3a1',
-        brightYellow: '#f9e2af',
-        brightBlue: '#89b4fa',
-        brightMagenta: '#cba6f7',
-        brightCyan: '#94e2d5',
-        brightWhite: '#a6adc8',
-      },
+      theme: isLight
+        ? {
+            background: '#ffffff',
+            foreground: '#1e293b',
+            cursor: '#38bdf8',
+            cursorAccent: '#ffffff',
+            selectionBackground: 'rgba(56, 189, 248, 0.3)',
+            black: '#e2e8f0',
+            red: '#ef4444',
+            green: '#22c55e',
+            yellow: '#eab308',
+            blue: '#3b82f6',
+            magenta: '#d946ef',
+            cyan: '#06b6d4',
+            white: '#0f172a',
+            brightBlack: '#94a3b8',
+            brightRed: '#f87171',
+            brightGreen: '#4ade80',
+            brightYellow: '#facc15',
+            brightBlue: '#60a5fa',
+            brightMagenta: '#e879f9',
+            brightCyan: '#22d3ee',
+            brightWhite: '#1e293b',
+          }
+        : {
+            background: '#0a0a14',
+            foreground: '#e2e8f0',
+            cursor: '#38bdf8',
+            cursorAccent: '#0a0a14',
+            selectionBackground: 'rgba(56, 189, 248, 0.3)',
+            black: '#1e1e2e',
+            red: '#f38ba8',
+            green: '#a6e3a1',
+            yellow: '#f9e2af',
+            blue: '#89b4fa',
+            magenta: '#cba6f7',
+            cyan: '#94e2d5',
+            white: '#cdd6f4',
+            brightBlack: '#585b70',
+            brightRed: '#f38ba8',
+            brightGreen: '#a6e3a1',
+            brightYellow: '#f9e2af',
+            brightBlue: '#89b4fa',
+            brightMagenta: '#cba6f7',
+            brightCyan: '#94e2d5',
+            brightWhite: '#a6adc8',
+          },
       allowProposedApi: true,
       scrollback: 10000,
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    
+
     const searchAddon = new SearchAddon();
     term.loadAddon(searchAddon);
     searchAddonRef.current = searchAddon;
@@ -187,7 +195,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     term.writeln(`\x1b[38;5;81m● MobaxTauri\x1b[0m v0.1.0`);
     if (session?.type === 'ssh') {
       term.writeln(
-        `  Session: \x1b[32m${session.name}\x1b[0m  → \x1b[36m${session.user}@${session.host}:${session.port || 22}\x1b[0m`
+        `  Session: \x1b[32m${session.name}\x1b[0m  → \x1b[36m${session.user}@${session.host}:${session.port || 22}\x1b[0m`,
       );
     } else {
       term.writeln(`  Session: \x1b[32m${session?.name || 'Local Terminal'}\x1b[0m`);
@@ -207,7 +215,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
           showReconnectBanner(term);
           // Clean up backend resources immediately
           invoke('ssh_disconnect', { sessionId }).catch(() => {});
-        })
+        }),
       ]);
       unlistenDataRef.current = () => {
         unData();
@@ -307,10 +315,12 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     // ── Snippet execution listener (Tauri native event) ────
     const unlistenSnippet = listen<string>(`snippet-execute-${sessionId}`, (event) => {
       const data = event.payload;
-      const currentSession = useSessionStore.getState().sessions.find(s => s.id === sessionId);
-      
-      console.log(`[TERMINAL] Snippet received for ${sessionId} (${currentSession?.type}): ${data.trim()}`);
-      
+      const currentSession = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
+
+      console.log(
+        `[TERMINAL] Snippet received for ${sessionId} (${currentSession?.type}): ${data.trim()}`,
+      );
+
       if (currentSession?.type === 'ssh') {
         console.log(`[TERMINAL] Invoking ssh_send_data for ${sessionId}`);
         invoke('ssh_send_data', { sessionId, data }).catch((err) => {
@@ -325,7 +335,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     // ── Cleanup on tab close ───────────────────────────────
     return () => {
       window.removeEventListener('resize', handleResize);
-      unlistenSnippet.then(fn => fn());
+      unlistenSnippet.then((fn) => fn());
       unlistenDataRef.current?.();
 
       // Disconnect SSH when tab is closed
@@ -355,51 +365,53 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
   useEffect(() => {
     if (!xtermRef.current) return;
     const isLight = colorMode === 'light';
-    xtermRef.current.options.theme = isLight ? {
-        background: '#ffffff',
-        foreground: '#1e293b',
-        cursor: '#38bdf8',
-        cursorAccent: '#ffffff',
-        selectionBackground: 'rgba(56, 189, 248, 0.3)',
-        black: '#e2e8f0',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#eab308',
-        blue: '#3b82f6',
-        magenta: '#d946ef',
-        cyan: '#06b6d4',
-        white: '#0f172a',
-        brightBlack: '#94a3b8',
-        brightRed: '#f87171',
-        brightGreen: '#4ade80',
-        brightYellow: '#facc15',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#e879f9',
-        brightCyan: '#22d3ee',
-        brightWhite: '#1e293b',
-      } : {
-        background: '#0a0a14',
-        foreground: '#e2e8f0',
-        cursor: '#38bdf8',
-        cursorAccent: '#0a0a14',
-        selectionBackground: 'rgba(56, 189, 248, 0.3)',
-        black: '#1e1e2e',
-        red: '#f38ba8',
-        green: '#a6e3a1',
-        yellow: '#f9e2af',
-        blue: '#89b4fa',
-        magenta: '#cba6f7',
-        cyan: '#94e2d5',
-        white: '#cdd6f4',
-        brightBlack: '#585b70',
-        brightRed: '#f38ba8',
-        brightGreen: '#a6e3a1',
-        brightYellow: '#f9e2af',
-        brightBlue: '#89b4fa',
-        brightMagenta: '#cba6f7',
-        brightCyan: '#94e2d5',
-        brightWhite: '#a6adc8',
-      };
+    xtermRef.current.options.theme = isLight
+      ? {
+          background: '#ffffff',
+          foreground: '#1e293b',
+          cursor: '#38bdf8',
+          cursorAccent: '#ffffff',
+          selectionBackground: 'rgba(56, 189, 248, 0.3)',
+          black: '#e2e8f0',
+          red: '#ef4444',
+          green: '#22c55e',
+          yellow: '#eab308',
+          blue: '#3b82f6',
+          magenta: '#d946ef',
+          cyan: '#06b6d4',
+          white: '#0f172a',
+          brightBlack: '#94a3b8',
+          brightRed: '#f87171',
+          brightGreen: '#4ade80',
+          brightYellow: '#facc15',
+          brightBlue: '#60a5fa',
+          brightMagenta: '#e879f9',
+          brightCyan: '#22d3ee',
+          brightWhite: '#1e293b',
+        }
+      : {
+          background: '#0a0a14',
+          foreground: '#e2e8f0',
+          cursor: '#38bdf8',
+          cursorAccent: '#0a0a14',
+          selectionBackground: 'rgba(56, 189, 248, 0.3)',
+          black: '#1e1e2e',
+          red: '#f38ba8',
+          green: '#a6e3a1',
+          yellow: '#f9e2af',
+          blue: '#89b4fa',
+          magenta: '#cba6f7',
+          cyan: '#94e2d5',
+          white: '#cdd6f4',
+          brightBlack: '#585b70',
+          brightRed: '#f38ba8',
+          brightGreen: '#a6e3a1',
+          brightYellow: '#f9e2af',
+          brightBlue: '#89b4fa',
+          brightMagenta: '#cba6f7',
+          brightCyan: '#94e2d5',
+          brightWhite: '#a6adc8',
+        };
   }, [colorMode]);
 
   return (
@@ -450,26 +462,26 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
                 }
               }}
             />
-            <IconButton 
-              aria-label="Previous" 
-              size="xs" 
-              variant="ghost" 
+            <IconButton
+              aria-label="Previous"
+              size="xs"
+              variant="ghost"
               onClick={() => searchAddonRef.current?.findPrevious(searchText)}
             >
               <LuChevronUp />
             </IconButton>
-            <IconButton 
-              aria-label="Next" 
-              size="xs" 
-              variant="ghost" 
+            <IconButton
+              aria-label="Next"
+              size="xs"
+              variant="ghost"
               onClick={() => searchAddonRef.current?.findNext(searchText)}
             >
               <LuChevronDown />
             </IconButton>
-            <IconButton 
-              aria-label="Close" 
-              size="xs" 
-              variant="ghost" 
+            <IconButton
+              aria-label="Close"
+              size="xs"
+              variant="ghost"
               onClick={() => {
                 setShowSearch(false);
                 searchAddonRef.current?.clearDecorations();
@@ -497,11 +509,7 @@ const TerminalContainer: React.FC = () => {
   return (
     <Box flex={1} position="relative" h="full" w="full" bg="bg.panel" overflow="hidden">
       {openTabs.map((tabId) => (
-        <TerminalInstance
-          key={tabId}
-          sessionId={tabId}
-          isVisible={tabId === activeSessionId}
-        />
+        <TerminalInstance key={tabId} sessionId={tabId} isVisible={tabId === activeSessionId} />
       ))}
       {openTabs.length === 0 && (
         <Box
@@ -514,8 +522,12 @@ const TerminalContainer: React.FC = () => {
           bg="bg.panel"
         >
           <Box textAlign="center">
-            <Box fontSize="48px" mb={4} opacity={0.3}>⌨</Box>
-            <Box fontSize="14px" fontWeight="500">No open sessions</Box>
+            <Box fontSize="48px" mb={4} opacity={0.3}>
+              ⌨
+            </Box>
+            <Box fontSize="14px" fontWeight="500">
+              No open sessions
+            </Box>
             <Box fontSize="12px" mt={1} opacity={0.6}>
               Click + or double-click the tab bar to create a new session
             </Box>

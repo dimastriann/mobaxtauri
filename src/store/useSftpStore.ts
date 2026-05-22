@@ -42,11 +42,12 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     const targetPath = path !== undefined ? path : get().currentPath;
     set({ isLoading: true, error: null });
     try {
-      const files = await invoke<SftpFile[]>('sftp_list_dir', {
-        sessionId,
-        path: targetPath,
-      }) || [];
-      
+      const files =
+        (await invoke<SftpFile[]>('sftp_list_dir', {
+          sessionId,
+          path: targetPath,
+        })) || [];
+
       // Sort: Directories first, then alphabetically
       const sortedFiles = files.sort((a, b) => {
         if (a.is_dir === b.is_dir) {
@@ -55,10 +56,10 @@ export const useSftpStore = create<SftpState>((set, get) => ({
         return a.is_dir ? -1 : 1;
       });
 
-      set({ 
-        files: sortedFiles, 
-        currentPath: targetPath, 
-        isLoading: false 
+      set({
+        files: sortedFiles,
+        currentPath: targetPath,
+        isLoading: false,
       });
     } catch (err) {
       console.error('SFTP fetch error:', err);
@@ -69,21 +70,21 @@ export const useSftpStore = create<SftpState>((set, get) => ({
   cd: async (sessionId, subPath) => {
     const state = get();
     let newPath = '';
-    
+
     if (subPath === '..') {
-        const parts = state.currentPath.split('/').filter(p => p !== '');
-        if (parts.length > 0) {
-            parts.pop();
-            newPath = parts.length === 0 ? '/' : '/' + parts.join('/');
-        } else {
-            newPath = '/';
-        }
+      const parts = state.currentPath.split('/').filter((p) => p !== '');
+      if (parts.length > 0) {
+        parts.pop();
+        newPath = parts.length === 0 ? '/' : '/' + parts.join('/');
+      } else {
+        newPath = '/';
+      }
     } else if (subPath.startsWith('/')) {
-        newPath = subPath; // absolute
+      newPath = subPath; // absolute
     } else {
-        // relative
-        const base = state.currentPath.endsWith('/') ? state.currentPath : state.currentPath + '/';
-        newPath = base + subPath;
+      // relative
+      const base = state.currentPath.endsWith('/') ? state.currentPath : state.currentPath + '/';
+      newPath = base + subPath;
     }
 
     await get().fetchDirectory(sessionId, newPath);
@@ -103,16 +104,18 @@ export const useSftpStore = create<SftpState>((set, get) => ({
 
   downloadFile: async (sessionId, fileName) => {
     const state = get();
-    const sourcePath = state.currentPath.endsWith('/') ? `${state.currentPath}${fileName}` : `${state.currentPath}/${fileName}`;
+    const sourcePath = state.currentPath.endsWith('/')
+      ? `${state.currentPath}${fileName}`
+      : `${state.currentPath}/${fileName}`;
     try {
       const localPath = await save({ defaultPath: fileName });
-      if (!localPath) return; 
-      
+      if (!localPath) return;
+
       set({ isLoading: true, error: null });
       await invoke('sftp_download_file', {
         sessionId,
         remotePath: sourcePath,
-        localPath
+        localPath,
       });
       set({ isLoading: false });
     } catch (err) {
@@ -126,18 +129,20 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     try {
       const localPath = await open({ multiple: false, directory: false });
       if (!localPath || Array.isArray(localPath)) return;
-      
+
       const pathStr = localPath as string;
       const fileName = pathStr.split(/[/\\]/).pop();
       if (!fileName) return;
 
-      const destPath = state.currentPath.endsWith('/') ? `${state.currentPath}${fileName}` : `${state.currentPath}/${fileName}`;
-      
+      const destPath = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${fileName}`
+        : `${state.currentPath}/${fileName}`;
+
       set({ isLoading: true, error: null });
       await invoke('sftp_upload_file', {
         sessionId,
         localPath: pathStr,
-        remotePath: destPath
+        remotePath: destPath,
       });
       await get().fetchDirectory(sessionId);
     } catch (err) {
@@ -148,15 +153,19 @@ export const useSftpStore = create<SftpState>((set, get) => ({
 
   copyFile: async (sessionId, sourceName, destName) => {
     const state = get();
-    const sourcePath = state.currentPath.endsWith('/') ? `${state.currentPath}${sourceName}` : `${state.currentPath}/${sourceName}`;
-    const destPath = state.currentPath.endsWith('/') ? `${state.currentPath}${destName}` : `${state.currentPath}/${destName}`;
-    
+    const sourcePath = state.currentPath.endsWith('/')
+      ? `${state.currentPath}${sourceName}`
+      : `${state.currentPath}/${sourceName}`;
+    const destPath = state.currentPath.endsWith('/')
+      ? `${state.currentPath}${destName}`
+      : `${state.currentPath}/${destName}`;
+
     try {
       set({ isLoading: true, error: null });
       await invoke('sftp_copy_file', {
         sessionId,
         sourcePath,
-        destPath
+        destPath,
       });
       await get().fetchDirectory(sessionId);
     } catch (err) {
@@ -167,12 +176,14 @@ export const useSftpStore = create<SftpState>((set, get) => ({
 
   openFile: async (sessionId, fileName) => {
     const state = get();
-    const sourcePath = state.currentPath.endsWith('/') ? `${state.currentPath}${fileName}` : `${state.currentPath}/${fileName}`;
+    const sourcePath = state.currentPath.endsWith('/')
+      ? `${state.currentPath}${fileName}`
+      : `${state.currentPath}/${fileName}`;
     try {
       set({ isLoading: true, error: null });
       await invoke('sftp_open_file', {
         sessionId,
-        remotePath: sourcePath
+        remotePath: sourcePath,
       });
       set({ isLoading: false });
     } catch (err) {
@@ -183,15 +194,19 @@ export const useSftpStore = create<SftpState>((set, get) => ({
 
   renameFile: async (sessionId, oldName, newName) => {
     const state = get();
-    const oldPath = state.currentPath.endsWith('/') ? `${state.currentPath}${oldName}` : `${state.currentPath}/${oldName}`;
-    const newPath = state.currentPath.endsWith('/') ? `${state.currentPath}${newName}` : `${state.currentPath}/${newName}`;
+    const oldPath = state.currentPath.endsWith('/')
+      ? `${state.currentPath}${oldName}`
+      : `${state.currentPath}/${oldName}`;
+    const newPath = state.currentPath.endsWith('/')
+      ? `${state.currentPath}${newName}`
+      : `${state.currentPath}/${newName}`;
 
     try {
       set({ isLoading: true, error: null });
       await invoke('sftp_rename', {
         sessionId,
         oldPath,
-        newPath
+        newPath,
       });
       await get().fetchDirectory(sessionId);
     } catch (err) {
@@ -202,14 +217,16 @@ export const useSftpStore = create<SftpState>((set, get) => ({
 
   deleteFile: async (sessionId, name, isDir) => {
     const state = get();
-    const path = state.currentPath.endsWith('/') ? `${state.currentPath}${name}` : `${state.currentPath}/${name}`;
+    const path = state.currentPath.endsWith('/')
+      ? `${state.currentPath}${name}`
+      : `${state.currentPath}/${name}`;
 
     try {
       set({ isLoading: true, error: null });
       await invoke('sftp_remove', {
         sessionId,
         path,
-        isDir
+        isDir,
       });
       await get().fetchDirectory(sessionId);
     } catch (err) {
@@ -220,18 +237,20 @@ export const useSftpStore = create<SftpState>((set, get) => ({
 
   createDir: async (sessionId, dirName) => {
     const state = get();
-    const path = state.currentPath.endsWith('/') ? `${state.currentPath}${dirName}` : `${state.currentPath}/${dirName}`;
+    const path = state.currentPath.endsWith('/')
+      ? `${state.currentPath}${dirName}`
+      : `${state.currentPath}/${dirName}`;
 
     try {
       set({ isLoading: true, error: null });
       await invoke('sftp_create_dir', {
         sessionId,
-        path
+        path,
       });
       await get().fetchDirectory(sessionId);
     } catch (err) {
       console.error(err);
       set({ error: String(err), isLoading: false });
     }
-  }
+  },
 }));

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, HStack, Button, Text, Spinner, Textarea } from "@chakra-ui/react";
+import { Box, HStack, Button, Text, Spinner, Textarea } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   DialogRoot,
@@ -9,7 +9,7 @@ import {
   DialogFooter,
   DialogTitle,
   DialogCloseTrigger,
-} from "./ui/dialog";
+} from './ui/dialog';
 
 interface SftpEditorModalProps {
   isOpen: boolean;
@@ -19,7 +19,13 @@ interface SftpEditorModalProps {
   fileName: string;
 }
 
-const SftpEditorModal: React.FC<SftpEditorModalProps> = ({ isOpen, onClose, sessionId, filePath, fileName }) => {
+const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
+  isOpen,
+  onClose,
+  sessionId,
+  filePath,
+  fileName,
+}) => {
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -40,11 +46,11 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({ isOpen, onClose, sess
     try {
       const data = await invoke<string>('sftp_read_file_content', {
         sessionId,
-        remotePath: filePath
+        remotePath: filePath,
       });
       setContent(data);
     } catch (err) {
-      console.error("Failed to read file", err);
+      console.error('Failed to read file', err);
       setError(String(err));
     } finally {
       setIsLoading(false);
@@ -58,11 +64,11 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({ isOpen, onClose, sess
       await invoke('sftp_write_file_content', {
         sessionId,
         remotePath: filePath,
-        content
+        content,
       });
       onClose();
     } catch (err) {
-      console.error("Failed to write file", err);
+      console.error('Failed to write file', err);
       setError(String(err));
     } finally {
       setIsSaving(false);
@@ -70,14 +76,26 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({ isOpen, onClose, sess
   };
 
   return (
-    <DialogRoot open={isOpen} onOpenChange={(e) => !e.open && onClose()} size="xl" placement="center">
-      <DialogContent bg="bg.panel" borderColor="border.subtle" maxW="80vw" h="80vh" display="flex" flexDirection="column">
+    <DialogRoot
+      open={isOpen}
+      onOpenChange={(e) => !e.open && onClose()}
+      size="xl"
+      placement="center"
+    >
+      <DialogContent
+        bg="bg.panel"
+        borderColor="border.subtle"
+        maxW="80vw"
+        h="80vh"
+        display="flex"
+        flexDirection="column"
+      >
         <DialogHeader>
           <DialogTitle color="fg.default" fontSize="14px">
             Edit File: {fileName}
           </DialogTitle>
         </DialogHeader>
-        
+
         <DialogBody flex={1} display="flex" flexDirection="column" p={4} overflow="hidden">
           {isLoading ? (
             <Box display="flex" alignItems="center" justifyContent="center" flex={1}>
@@ -105,9 +123,12 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({ isOpen, onClose, sess
               resize="none"
               _focus={{ outline: 'none', borderColor: 'blue.fg' }}
               css={{
-                "&::-webkit-scrollbar": { width: "8px", height: "8px" },
-                "&::-webkit-scrollbar-track": { background: "transparent" },
-                "&::-webkit-scrollbar-thumb": { background: "var(--chakra-colors-border-subtle)", borderRadius: "4px" },
+                '&::-webkit-scrollbar': { width: '8px', height: '8px' },
+                '&::-webkit-scrollbar-track': { background: 'transparent' },
+                '&::-webkit-scrollbar-thumb': {
+                  background: 'var(--chakra-colors-border-subtle)',
+                  borderRadius: '4px',
+                },
               }}
             />
           )}
@@ -118,10 +139,10 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({ isOpen, onClose, sess
             <Button variant="ghost" size="sm" onClick={onClose} disabled={isLoading || isSaving}>
               Cancel
             </Button>
-            <Button 
-              colorPalette="blue" 
-              size="sm" 
-              onClick={handleSave} 
+            <Button
+              colorPalette="blue"
+              size="sm"
+              onClick={handleSave}
               loading={isSaving}
               disabled={isLoading || !!error}
             >

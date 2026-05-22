@@ -1,8 +1,17 @@
 import { useEffect, useState, useRef } from 'react';
-import { Flex } from "@chakra-ui/react";
-import { 
-  LuPlus, LuPencil, LuX, LuFolderPlus, LuCode, LuTag, LuCopy, LuScissors, LuClipboard, LuMousePointer2
-} from "react-icons/lu";
+import { Flex } from '@chakra-ui/react';
+import {
+  LuPlus,
+  LuPencil,
+  LuX,
+  LuFolderPlus,
+  LuCode,
+  LuTag,
+  LuCopy,
+  LuScissors,
+  LuClipboard,
+  LuMousePointer2,
+} from 'react-icons/lu';
 import TerminalContainer from './components/Terminal';
 import TabBar from './components/TabBar';
 import Sidebar from './components/Sidebar';
@@ -33,7 +42,14 @@ function App() {
   const deleteSnippet = useSessionStore((state) => state.deleteSnippet);
 
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'sftp' | 'snippets'>('sessions');
-  const [sidebarMenu, setSidebarMenu] = useState<{ x: number, y: number, type: 'folder' | 'session' | 'empty' | 'snippet' | 'input', id?: string, name?: string, command?: string } | null>(null);
+  const [sidebarMenu, setSidebarMenu] = useState<{
+    x: number;
+    y: number;
+    type: 'folder' | 'session' | 'empty' | 'snippet' | 'input';
+    id?: string;
+    name?: string;
+    command?: string;
+  } | null>(null);
   const [quickConnectStr, setQuickConnectStr] = useState('');
   const quickConnectRef = useRef<HTMLInputElement>(null);
 
@@ -42,23 +58,29 @@ function App() {
     if (e.key === 'Enter') {
       const str = quickConnectStr.trim();
       if (!str) return;
-      
+
       const match = str.match(/^([^@]+)@([^:]+)(?::(\d+))?$/);
       if (!match) {
-        alert("Invalid format. Use user@host or user@host:port");
+        alert('Invalid format. Use user@host or user@host:port');
         return;
       }
-      
+
       const user = match[1];
       const host = match[2];
       const port = match[3] ? parseInt(match[3], 10) : 22;
       const sessionId = `quick-${Date.now()}`;
-      
+
       useSessionStore.getState().addSession({
-        id: sessionId, name: `${user}@${host}`, type: 'ssh', host, user, port, status: 'connecting',
+        id: sessionId,
+        name: `${user}@${host}`,
+        type: 'ssh',
+        host,
+        user,
+        port,
+        status: 'connecting',
       });
       openTab(sessionId);
-      
+
       try {
         await invoke('ssh_connect', { sessionId, host, port, user, password: null });
         useSessionStore.getState().updateSessionStatus(sessionId, 'connected');
@@ -75,7 +97,13 @@ function App() {
     setSidebarMenu({ x: e.clientX, y: e.clientY, type: 'input' });
   };
 
-  const onSidebarContextMenu = (e: React.MouseEvent, type: any, id?: string, name?: string, command?: string) => {
+  const onSidebarContextMenu = (
+    e: React.MouseEvent,
+    type: any,
+    id?: string,
+    name?: string,
+    command?: string,
+  ) => {
     e.preventDefault();
     e.stopPropagation();
     setSidebarMenu({ x: e.clientX, y: e.clientY, type, id, name, command });
@@ -111,9 +139,14 @@ function App() {
         const start = el.selectionStart ?? 0;
         const end = el.selectionEnd ?? 0;
         setQuickConnectStr(el.value.substring(0, start) + text + el.value.substring(end));
-        setTimeout(() => { el.focus(); el.setSelectionRange(start + text.length, start + text.length); }, 0);
+        setTimeout(() => {
+          el.focus();
+          el.setSelectionRange(start + text.length, start + text.length);
+        }, 0);
       }
-    } catch (err) { console.error("Paste failed:", err); }
+    } catch (err) {
+      console.error('Paste failed:', err);
+    }
     setSidebarMenu(null);
   };
 
@@ -132,14 +165,16 @@ function App() {
     return () => window.removeEventListener('click', handleGlobalClick);
   }, []);
 
-  useEffect(() => { loadSessions(); }, [loadSessions]);
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
 
   useEffect(() => {
     const pollHealth = () => {
-      useSessionStore.getState().sessions.forEach(s => {
+      useSessionStore.getState().sessions.forEach((s) => {
         if (s.type === 'ssh' && s.status === 'connected') {
           invoke<NonNullable<Session['health']>>('ssh_health_check', { sessionId: s.id })
-            .then(health => useSessionStore.getState().updateSessionHealth(s.id, health))
+            .then((health) => useSessionStore.getState().updateSessionHealth(s.id, health))
             .catch(() => {});
         }
       });
@@ -150,31 +185,42 @@ function App() {
   }, []);
 
   // ── UI Handlers ────────────────────────────────────────────
-  const handleNewSession = () => { setEditingSession(undefined); setModalOpen(true); };
-  const handleAddFolder = () => { const name = window.prompt('Enter folder name:'); if (name) addFolder(name); };
-  const handleAddSnippet = () => { 
-    const name = window.prompt('Enter snippet name:'); if (!name) return;
-    const command = window.prompt('Enter command:'); if (command) addSnippet(name, command);
+  const handleNewSession = () => {
+    setEditingSession(undefined);
+    setModalOpen(true);
+  };
+  const handleAddFolder = () => {
+    const name = window.prompt('Enter folder name:');
+    if (name) addFolder(name);
+  };
+  const handleAddSnippet = () => {
+    const name = window.prompt('Enter snippet name:');
+    if (!name) return;
+    const command = window.prompt('Enter command:');
+    if (command) addSnippet(name, command);
   };
 
   return (
     <Flex h="100vh" direction="column" bg="bg.panel" color="fg" overflow="hidden">
-      <TitleBar 
-        quickConnectRef={quickConnectRef} 
-        quickConnectStr={quickConnectStr} 
+      <TitleBar
+        quickConnectRef={quickConnectRef}
+        quickConnectStr={quickConnectStr}
         setQuickConnectStr={setQuickConnectStr}
         onQuickConnect={handleQuickConnect}
         onContextMenu={handleInputContextMenu}
       />
 
       <Flex flex={1} overflow="hidden">
-        <Sidebar 
+        <Sidebar
           sidebarTab={sidebarTab}
           setSidebarTab={setSidebarTab}
           onNewSession={handleNewSession}
           onAddFolder={handleAddFolder}
           onAddSnippet={handleAddSnippet}
-          onExecuteSnippet={(c) => { if (activeSessionId) emit(`snippet-execute-${activeSessionId}`, c.endsWith('\n') ? c : c + '\n'); }}
+          onExecuteSnippet={(c) => {
+            if (activeSessionId)
+              emit(`snippet-execute-${activeSessionId}`, c.endsWith('\n') ? c : c + '\n');
+          }}
           onContextMenu={onSidebarContextMenu}
         />
 
@@ -185,47 +231,194 @@ function App() {
         </Flex>
       </Flex>
 
-      <NewSessionModal isOpen={isModalOpen} onClose={() => setModalOpen(false)} editingSession={editingSession} />
+      <NewSessionModal
+        isOpen={isModalOpen}
+        onClose={() => setModalOpen(false)}
+        editingSession={editingSession}
+      />
 
       {sidebarMenu && (
         <ContextMenu x={sidebarMenu.x} y={sidebarMenu.y} onClose={() => setSidebarMenu(null)}>
           {sidebarMenu.type === 'empty' && (
             <>
-              <ContextMenuItem icon={LuPlus} label="New Session" onClick={() => { setSidebarMenu(null); handleNewSession(); }} />
-              <ContextMenuItem icon={LuFolderPlus} label="New Folder" onClick={() => { setSidebarMenu(null); handleAddFolder(); }} />
-              <ContextMenuItem icon={LuCode} label="New Snippet" onClick={() => { setSidebarMenu(null); handleAddSnippet(); }} />
+              <ContextMenuItem
+                icon={LuPlus}
+                label="New Session"
+                onClick={() => {
+                  setSidebarMenu(null);
+                  handleNewSession();
+                }}
+              />
+              <ContextMenuItem
+                icon={LuFolderPlus}
+                label="New Folder"
+                onClick={() => {
+                  setSidebarMenu(null);
+                  handleAddFolder();
+                }}
+              />
+              <ContextMenuItem
+                icon={LuCode}
+                label="New Snippet"
+                onClick={() => {
+                  setSidebarMenu(null);
+                  handleAddSnippet();
+                }}
+              />
             </>
           )}
           {sidebarMenu.type === 'folder' && (
             <>
-              <ContextMenuItem icon={LuPencil} label="Rename Folder" onClick={() => { const id = sidebarMenu.id!; const old = sidebarMenu.name; setSidebarMenu(null); const n = window.prompt('Rename:', old); if (n) renameFolder(id, n); }} />
-              <ContextMenuItem icon={LuX} label="Delete Folder" color="red.fg" onClick={async () => { const id = sidebarMenu.id!; setSidebarMenu(null); if (await ask('Delete?')) deleteFolder(id); }} />
+              <ContextMenuItem
+                icon={LuPencil}
+                label="Rename Folder"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  const old = sidebarMenu.name;
+                  setSidebarMenu(null);
+                  const n = window.prompt('Rename:', old);
+                  if (n) renameFolder(id, n);
+                }}
+              />
+              <ContextMenuItem
+                icon={LuX}
+                label="Delete Folder"
+                color="red.fg"
+                onClick={async () => {
+                  const id = sidebarMenu.id!;
+                  setSidebarMenu(null);
+                  if (await ask('Delete?')) deleteFolder(id);
+                }}
+              />
             </>
           )}
           {sidebarMenu.type === 'session' && (
             <>
-              <ContextMenuItem icon={LuPencil} label="Edit Session" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); setEditingSession(sessions.find(s => s.id === id)); setModalOpen(true); }} />
-              <ContextMenuItem icon={LuTag} label="Tag: Prod" color="red.400" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); updateSession(id, { tag: 'prod' }); }} />
-              <ContextMenuItem icon={LuTag} label="Tag: Staging" color="orange.400" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); updateSession(id, { tag: 'staging' }); }} />
-              <ContextMenuItem icon={LuTag} label="Tag: Dev" color="green.400" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); updateSession(id, { tag: 'dev' }); }} />
-              <ContextMenuItem icon={LuTag} label="Tag: None" color="fg.muted" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); updateSession(id, { tag: undefined }); }} />
+              <ContextMenuItem
+                icon={LuPencil}
+                label="Edit Session"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  setSidebarMenu(null);
+                  setEditingSession(sessions.find((s) => s.id === id));
+                  setModalOpen(true);
+                }}
+              />
+              <ContextMenuItem
+                icon={LuTag}
+                label="Tag: Prod"
+                color="red.400"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  setSidebarMenu(null);
+                  updateSession(id, { tag: 'prod' });
+                }}
+              />
+              <ContextMenuItem
+                icon={LuTag}
+                label="Tag: Staging"
+                color="orange.400"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  setSidebarMenu(null);
+                  updateSession(id, { tag: 'staging' });
+                }}
+              />
+              <ContextMenuItem
+                icon={LuTag}
+                label="Tag: Dev"
+                color="green.400"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  setSidebarMenu(null);
+                  updateSession(id, { tag: 'dev' });
+                }}
+              />
+              <ContextMenuItem
+                icon={LuTag}
+                label="Tag: None"
+                color="fg.muted"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  setSidebarMenu(null);
+                  updateSession(id, { tag: undefined });
+                }}
+              />
               <ContextMenuSeparator />
-              <ContextMenuItem icon={LuX} label="Delete Session" color="red.fg" onClick={async () => { const id = sidebarMenu.id!; setSidebarMenu(null); if (await ask('Delete?')) deleteSession(id); }} />
+              <ContextMenuItem
+                icon={LuX}
+                label="Delete Session"
+                color="red.fg"
+                onClick={async () => {
+                  const id = sidebarMenu.id!;
+                  setSidebarMenu(null);
+                  if (await ask('Delete?')) deleteSession(id);
+                }}
+              />
             </>
           )}
           {sidebarMenu.type === 'snippet' && (
             <>
-              <ContextMenuItem icon={LuPencil} label="Edit Snippet" onClick={() => { const id = sidebarMenu.id!; const oldN = sidebarMenu.name; const oldC = sidebarMenu.command; setSidebarMenu(null); const n = window.prompt('Name:', oldN); const c = window.prompt('Cmd:', oldC); if (n && c) updateSnippet(id, { name: n, command: c }); }} />
-              <ContextMenuItem icon={LuX} label="Delete Snippet" color="red.fg" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); deleteSnippet(id); }} />
+              <ContextMenuItem
+                icon={LuPencil}
+                label="Edit Snippet"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  const oldN = sidebarMenu.name;
+                  const oldC = sidebarMenu.command;
+                  setSidebarMenu(null);
+                  const n = window.prompt('Name:', oldN);
+                  const c = window.prompt('Cmd:', oldC);
+                  if (n && c) updateSnippet(id, { name: n, command: c });
+                }}
+              />
+              <ContextMenuItem
+                icon={LuX}
+                label="Delete Snippet"
+                color="red.fg"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  setSidebarMenu(null);
+                  deleteSnippet(id);
+                }}
+              />
             </>
           )}
           {sidebarMenu.type === 'input' && (
             <>
-              <ContextMenuItem icon={LuScissors} label="Cut" onClick={() => { setSidebarMenu(null); handleCut(); }} />
-              <ContextMenuItem icon={LuCopy} label="Copy" onClick={() => { setSidebarMenu(null); handleCopy(); }} />
-              <ContextMenuItem icon={LuClipboard} label="Paste" onClick={() => { setSidebarMenu(null); handlePaste(); }} />
+              <ContextMenuItem
+                icon={LuScissors}
+                label="Cut"
+                onClick={() => {
+                  setSidebarMenu(null);
+                  handleCut();
+                }}
+              />
+              <ContextMenuItem
+                icon={LuCopy}
+                label="Copy"
+                onClick={() => {
+                  setSidebarMenu(null);
+                  handleCopy();
+                }}
+              />
+              <ContextMenuItem
+                icon={LuClipboard}
+                label="Paste"
+                onClick={() => {
+                  setSidebarMenu(null);
+                  handlePaste();
+                }}
+              />
               <ContextMenuSeparator />
-              <ContextMenuItem icon={LuMousePointer2} label="Select All" onClick={() => { setSidebarMenu(null); handleSelectAll(); }} />
+              <ContextMenuItem
+                icon={LuMousePointer2}
+                label="Select All"
+                onClick={() => {
+                  setSidebarMenu(null);
+                  handleSelectAll();
+                }}
+              />
             </>
           )}
         </ContextMenu>

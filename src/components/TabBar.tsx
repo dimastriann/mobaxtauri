@@ -9,10 +9,14 @@ interface TabBarProps {
 
 const statusColor = (status: Session['status']) => {
   switch (status) {
-    case 'connected': return '#22c55e';
-    case 'connecting': return '#f97316';
-    case 'error': return '#ef4444';
-    default: return '#6b7280';
+    case 'connected':
+      return '#22c55e';
+    case 'connecting':
+      return '#f97316';
+    case 'error':
+      return '#ef4444';
+    default:
+      return '#6b7280';
   }
 };
 
@@ -64,7 +68,10 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
         css={{
           '&::-webkit-scrollbar': { height: '2px' },
           '&::-webkit-scrollbar-track': { background: 'transparent' },
-          '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.1)', borderRadius: '1px' },
+          '&::-webkit-scrollbar-thumb': {
+            background: 'rgba(255,255,255,0.1)',
+            borderRadius: '1px',
+          },
         }}
       >
         {openSessions.map((session, index) => {
@@ -91,7 +98,11 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
               _hover={{
                 bg: isActive ? 'blue.muted' : 'bg.emphasized',
               }}
-              title={session.host ? `${session.user || ''}@${session.host}:${session.port || 22}` : session.name}
+              title={
+                session.host
+                  ? `${session.user || ''}@${session.host}:${session.port || 22}`
+                  : session.name
+              }
             >
               {/* Active indicator bar */}
               {isActive && (
@@ -125,7 +136,11 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
                 borderRadius="full"
                 bg={statusColor(session.status)}
                 flexShrink={0}
-                boxShadow={session.status === 'connected' ? `0 0 6px ${statusColor(session.status)}` : undefined}
+                boxShadow={
+                  session.status === 'connected'
+                    ? `0 0 6px ${statusColor(session.status)}`
+                    : undefined
+                }
                 animation={session.status === 'connecting' ? 'pulse 2s infinite' : undefined}
               />
 

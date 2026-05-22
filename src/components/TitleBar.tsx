@@ -1,7 +1,7 @@
 import React from 'react';
-import { Box, HStack, Icon, Text, Input, IconButton } from "@chakra-ui/react";
+import { Box, HStack, Icon, Text, Input, IconButton } from '@chakra-ui/react';
 import { Tooltip } from './ui/tooltip';
-import { LuTerminal, LuMonitor } from "react-icons/lu";
+import { LuTerminal, LuMonitor } from 'react-icons/lu';
 import { ColorModeButton } from './ui/color-mode';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useSessionStore } from '../store/useSessionStore';
@@ -15,7 +15,11 @@ interface TitleBarProps {
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({
-  quickConnectRef, quickConnectStr, setQuickConnectStr, onQuickConnect, onContextMenu
+  quickConnectRef,
+  quickConnectStr,
+  setQuickConnectStr,
+  onQuickConnect,
+  onContextMenu,
 }) => {
   return (
     <Box
@@ -50,11 +54,11 @@ const TitleBar: React.FC<TitleBarProps> = ({
       </HStack>
 
       <HStack gap={3}>
-        <Input 
+        <Input
           ref={quickConnectRef}
-          size="xs" 
-          placeholder="Quick Connect (user@host:port)" 
-          w="200px" 
+          size="xs"
+          placeholder="Quick Connect (user@host:port)"
+          w="200px"
           value={quickConnectStr}
           onChange={(e) => setQuickConnectStr(e.target.value)}
           onKeyDown={onQuickConnect}
@@ -70,10 +74,13 @@ const TitleBar: React.FC<TitleBarProps> = ({
               color="red.fg"
               _hover={{ bg: 'red.subtle' }}
               onClick={async () => {
-                const confirmed = await ask('Shutdown all active sessions? ALL terminal data will be lost.', {
-                  title: 'MobaXTauri',
-                  kind: 'warning'
-                });
+                const confirmed = await ask(
+                  'Shutdown all active sessions? ALL terminal data will be lost.',
+                  {
+                    title: 'MobaXTauri',
+                    kind: 'warning',
+                  },
+                );
                 if (confirmed) {
                   useSessionStore.getState().shutdownAll();
                 }
@@ -84,11 +91,11 @@ const TitleBar: React.FC<TitleBarProps> = ({
           </Tooltip>
 
           <Tooltip content="Toggle Dark/Light Mode" showArrow>
-            <ColorModeButton 
-              size="xs" 
+            <ColorModeButton
+              size="xs"
               zIndex={20}
               position="relative"
-              _hover={{ bg: "bg.emphasized" }} 
+              _hover={{ bg: 'bg.emphasized' }}
             />
           </Tooltip>
         </HStack>
