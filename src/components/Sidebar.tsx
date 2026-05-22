@@ -10,20 +10,15 @@ interface SidebarProps {
   sidebarTab: 'sessions' | 'sftp' | 'snippets';
   setSidebarTab: (tab: 'sessions' | 'sftp' | 'snippets') => void;
   onNewSession: () => void;
-  onEditSession: (session: Session) => void;
-  onDeleteSession: (id: string) => void;
   onAddFolder: () => void;
-  onRenameFolder: (id: string, name: string) => void;
-  onDeleteFolder: (id: string) => void;
   onAddSnippet: () => void;
-  onEditSnippet: (id: string, name: string, command: string) => void;
   onExecuteSnippet: (command: string) => void;
   onContextMenu: (e: React.MouseEvent, type: any, id?: string, name?: string, command?: string) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
-  sidebarTab, setSidebarTab, onNewSession, onEditSession, onDeleteSession,
-  onAddFolder, onRenameFolder, onDeleteFolder, onAddSnippet, onEditSnippet, onExecuteSnippet,
+  sidebarTab, setSidebarTab, onNewSession,
+  onAddFolder, onAddSnippet, onExecuteSnippet,
   onContextMenu
 }) => {
   const sessions = useSessionStore((state) => state.sessions);

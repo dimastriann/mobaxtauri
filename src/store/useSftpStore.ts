@@ -28,6 +28,7 @@ interface SftpState {
   openFile: (sessionId: string, fileName: string) => Promise<void>;
   renameFile: (sessionId: string, oldName: string, newName: string) => Promise<void>;
   deleteFile: (sessionId: string, name: string, isDir: boolean) => Promise<void>;
+  createDir: (sessionId: string, dirName: string) => Promise<void>;
 }
 
 export const useSftpStore = create<SftpState>((set, get) => ({
@@ -209,6 +210,23 @@ export const useSftpStore = create<SftpState>((set, get) => ({
         sessionId,
         path,
         isDir
+      });
+      await get().fetchDirectory(sessionId);
+    } catch (err) {
+      console.error(err);
+      set({ error: String(err), isLoading: false });
+    }
+  },
+
+  createDir: async (sessionId, dirName) => {
+    const state = get();
+    const path = state.currentPath.endsWith('/') ? `${state.currentPath}${dirName}` : `${state.currentPath}/${dirName}`;
+
+    try {
+      set({ isLoading: true, error: null });
+      await invoke('sftp_create_dir', {
+        sessionId,
+        path
       });
       await get().fetchDirectory(sessionId);
     } catch (err) {

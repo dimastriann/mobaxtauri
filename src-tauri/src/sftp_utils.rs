@@ -14,7 +14,7 @@ pub fn get_parent_path(path: &str) -> String {
     if path == "/" || path.is_empty() {
         return "/".to_string();
     }
-    
+
     let trimmed = path.trim_end_matches('/');
     match trimmed.rfind('/') {
         Some(0) => "/".to_string(),
@@ -43,7 +43,7 @@ mod tests {
         assert_eq!(get_parent_path("/home/user"), "/home");
         assert_eq!(get_parent_path("/home"), "/");
         assert_eq!(get_parent_path("/"), "/");
-        assert_eq!(get_parent_path("/home/"), "/"); 
+        assert_eq!(get_parent_path("/home/"), "/");
         assert_eq!(get_parent_path(""), "/");
         assert_eq!(get_parent_path("/etc/docker/daemon.json"), "/etc/docker");
     }

@@ -7,7 +7,7 @@ import {
   LuFolder, LuFile, LuRefreshCw, LuArrowUp,
   LuFileText, LuImage, LuCode, LuArchive,
   LuUpload, LuDownload, LuCopy, LuExternalLink,
-  LuPencil, LuTrash2
+  LuPencil, LuTrash2, LuFolderPlus
 } from "react-icons/lu";
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { ask } from '@tauri-apps/plugin-dialog';
@@ -23,13 +23,21 @@ const SftpSidebar: React.FC = () => {
   const { 
     currentPath, files, fetchDirectory, cd, isLoading, error, refresh,
     uploadFile, downloadFile, copyFile, openFile, renameFile, deleteFile,
-    reset
+    createDir, reset
   } = useSftpStore();
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, file: any } | null>(null);
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [editorFile, setEditorFile] = useState<{ path: string, name: string } | null>(null);
+
+  const handleCreateFolder = async () => {
+    if (!activeSessionId) return;
+    const name = window.prompt("Enter folder name:");
+    if (name) {
+      await createDir(activeSessionId, name);
+    }
+  };
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
@@ -179,6 +187,16 @@ const SftpSidebar: React.FC = () => {
              <LuUpload size={14} />
            </IconButton>
            <IconButton 
+              aria-label="New Folder" 
+              size="xs" 
+              variant="ghost" 
+              onClick={handleCreateFolder}
+              color="blue.fg"
+              title="New Folder"
+           >
+             <LuFolderPlus size={14} />
+           </IconButton>
+           <IconButton 
               aria-label="Up" 
               size="xs" 
               variant="ghost" 
@@ -230,7 +248,7 @@ const SftpSidebar: React.FC = () => {
               borderRadius="4px"
               cursor="pointer"
               _hover={{ bg: 'bg.emphasized' }}
-              onClick={() => handleFileClick(file)}
+              onDoubleClick={() => handleFileClick(file)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setContextMenu({ x: e.clientX, y: e.clientY, file });
@@ -316,15 +334,19 @@ const SftpSidebar: React.FC = () => {
                 <Text fontSize="12px" color="fg">Edit File</Text>
               </HStack>
             )}
-            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => openFile(activeSessionId, contextMenu.file.name)}>
+            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => { setContextMenu(null); handleCreateFolder(); }}>
+              <Icon as={LuFolderPlus} boxSize="14px" color="blue.fg" />
+              <Text fontSize="12px" color="fg">New Folder</Text>
+            </HStack>
+            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => { const name = contextMenu.file.name; setContextMenu(null); openFile(activeSessionId, name); }}>
               <Icon as={LuExternalLink} boxSize="14px" color="fg.subtle" />
               <Text fontSize="12px" color="fg">Open File</Text>
             </HStack>
-            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => downloadFile(activeSessionId, contextMenu.file.name)}>
+            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => { const name = contextMenu.file.name; setContextMenu(null); downloadFile(activeSessionId, name); }}>
               <Icon as={LuDownload} boxSize="14px" color="fg.subtle" />
               <Text fontSize="12px" color="fg">Download</Text>
             </HStack>
-            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => copyFile(activeSessionId, contextMenu.file.name, `copy_${contextMenu.file.name}`)}>
+            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={() => { const name = contextMenu.file.name; setContextMenu(null); copyFile(activeSessionId, name, `copy_${name}`); }}>
               <Icon as={LuCopy} boxSize="14px" color="fg.subtle" />
               <Text fontSize="12px" color="fg">Duplicate</Text>
             </HStack>
@@ -337,7 +359,7 @@ const SftpSidebar: React.FC = () => {
               <Icon as={LuPencil} boxSize="14px" color="fg.subtle" />
               <Text fontSize="12px" color="fg">Rename</Text>
             </HStack>
-            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={(e) => { e.stopPropagation(); handleDelete(contextMenu.file); }}>
+            <HStack px={3} py={2} cursor="pointer" transition="background 0.1s" _hover={{ bg: 'bg.emphasized' }} onClick={(e) => { e.stopPropagation(); const file = contextMenu.file; setContextMenu(null); handleDelete(file); }}>
               <Icon as={LuTrash2} boxSize="14px" color="red.fg" />
               <Text fontSize="12px" color="red.fg">Delete</Text>
             </HStack>

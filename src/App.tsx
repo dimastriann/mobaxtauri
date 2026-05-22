@@ -172,25 +172,8 @@ function App() {
           sidebarTab={sidebarTab}
           setSidebarTab={setSidebarTab}
           onNewSession={handleNewSession}
-          onEditSession={(s) => { setEditingSession(s); setModalOpen(true); }}
-          onDeleteSession={async (id) => {
-            const confirmed = await ask('Delete session?', { title: 'MobaXTauri', kind: 'warning' });
-            if (confirmed) {
-              if (id.startsWith('ssh-')) try { await invoke('ssh_disconnect', { sessionId: id }); } catch {}
-              deleteSession(id);
-            }
-          }}
           onAddFolder={handleAddFolder}
-          onRenameFolder={(id, old) => { const n = window.prompt('Rename:', old); if (n) renameFolder(id, n); }}
-          onDeleteFolder={async (id) => {
-            const confirmed = await ask('Delete folder?', { title: 'MobaXTauri', kind: 'warning' });
-            if (confirmed) deleteFolder(id);
-          }}
           onAddSnippet={handleAddSnippet}
-          onEditSnippet={(id, n, c) => {
-            const newN = window.prompt('Name:', n); if (!newN) return;
-            const newC = window.prompt('Command:', c); if (newC) updateSnippet(id, { name: newN, command: newC });
-          }}
           onExecuteSnippet={(c) => { if (activeSessionId) emit(`snippet-execute-${activeSessionId}`, c.endsWith('\n') ? c : c + '\n'); }}
           onContextMenu={onSidebarContextMenu}
         />
@@ -208,41 +191,41 @@ function App() {
         <ContextMenu x={sidebarMenu.x} y={sidebarMenu.y} onClose={() => setSidebarMenu(null)}>
           {sidebarMenu.type === 'empty' && (
             <>
-              <ContextMenuItem icon={LuPlus} label="New Session" onClick={handleNewSession} />
-              <ContextMenuItem icon={LuFolderPlus} label="New Folder" onClick={handleAddFolder} />
-              <ContextMenuItem icon={LuCode} label="New Snippet" onClick={handleAddSnippet} />
+              <ContextMenuItem icon={LuPlus} label="New Session" onClick={() => { setSidebarMenu(null); handleNewSession(); }} />
+              <ContextMenuItem icon={LuFolderPlus} label="New Folder" onClick={() => { setSidebarMenu(null); handleAddFolder(); }} />
+              <ContextMenuItem icon={LuCode} label="New Snippet" onClick={() => { setSidebarMenu(null); handleAddSnippet(); }} />
             </>
           )}
           {sidebarMenu.type === 'folder' && (
             <>
-              <ContextMenuItem icon={LuPencil} label="Rename Folder" onClick={() => { const n = window.prompt('Rename:', sidebarMenu.name); if (n) renameFolder(sidebarMenu.id!, n); }} />
-              <ContextMenuItem icon={LuX} label="Delete Folder" color="red.fg" onClick={async () => { if (await ask('Delete?')) deleteFolder(sidebarMenu.id!); }} />
+              <ContextMenuItem icon={LuPencil} label="Rename Folder" onClick={() => { const id = sidebarMenu.id!; const old = sidebarMenu.name; setSidebarMenu(null); const n = window.prompt('Rename:', old); if (n) renameFolder(id, n); }} />
+              <ContextMenuItem icon={LuX} label="Delete Folder" color="red.fg" onClick={async () => { const id = sidebarMenu.id!; setSidebarMenu(null); if (await ask('Delete?')) deleteFolder(id); }} />
             </>
           )}
           {sidebarMenu.type === 'session' && (
             <>
-              <ContextMenuItem icon={LuPencil} label="Edit Session" onClick={() => { setEditingSession(sessions.find(s => s.id === sidebarMenu.id!)); setModalOpen(true); }} />
-              <ContextMenuItem icon={LuTag} label="Tag: Prod" color="red.400" onClick={() => updateSession(sidebarMenu.id!, { tag: 'prod' })} />
-              <ContextMenuItem icon={LuTag} label="Tag: Staging" color="orange.400" onClick={() => updateSession(sidebarMenu.id!, { tag: 'staging' })} />
-              <ContextMenuItem icon={LuTag} label="Tag: Dev" color="green.400" onClick={() => updateSession(sidebarMenu.id!, { tag: 'dev' })} />
-              <ContextMenuItem icon={LuTag} label="Tag: None" color="fg.muted" onClick={() => updateSession(sidebarMenu.id!, { tag: undefined })} />
+              <ContextMenuItem icon={LuPencil} label="Edit Session" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); setEditingSession(sessions.find(s => s.id === id)); setModalOpen(true); }} />
+              <ContextMenuItem icon={LuTag} label="Tag: Prod" color="red.400" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); updateSession(id, { tag: 'prod' }); }} />
+              <ContextMenuItem icon={LuTag} label="Tag: Staging" color="orange.400" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); updateSession(id, { tag: 'staging' }); }} />
+              <ContextMenuItem icon={LuTag} label="Tag: Dev" color="green.400" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); updateSession(id, { tag: 'dev' }); }} />
+              <ContextMenuItem icon={LuTag} label="Tag: None" color="fg.muted" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); updateSession(id, { tag: undefined }); }} />
               <ContextMenuSeparator />
-              <ContextMenuItem icon={LuX} label="Delete Session" color="red.fg" onClick={async () => { if (await ask('Delete?')) deleteSession(sidebarMenu.id!); }} />
+              <ContextMenuItem icon={LuX} label="Delete Session" color="red.fg" onClick={async () => { const id = sidebarMenu.id!; setSidebarMenu(null); if (await ask('Delete?')) deleteSession(id); }} />
             </>
           )}
           {sidebarMenu.type === 'snippet' && (
             <>
-              <ContextMenuItem icon={LuPencil} label="Edit Snippet" onClick={() => { const n = window.prompt('Name:', sidebarMenu.name); const c = window.prompt('Cmd:', sidebarMenu.command); if (n && c) updateSnippet(sidebarMenu.id!, { name: n, command: c }); }} />
-              <ContextMenuItem icon={LuX} label="Delete Snippet" color="red.fg" onClick={() => deleteSnippet(sidebarMenu.id!)} />
+              <ContextMenuItem icon={LuPencil} label="Edit Snippet" onClick={() => { const id = sidebarMenu.id!; const oldN = sidebarMenu.name; const oldC = sidebarMenu.command; setSidebarMenu(null); const n = window.prompt('Name:', oldN); const c = window.prompt('Cmd:', oldC); if (n && c) updateSnippet(id, { name: n, command: c }); }} />
+              <ContextMenuItem icon={LuX} label="Delete Snippet" color="red.fg" onClick={() => { const id = sidebarMenu.id!; setSidebarMenu(null); deleteSnippet(id); }} />
             </>
           )}
           {sidebarMenu.type === 'input' && (
             <>
-              <ContextMenuItem icon={LuScissors} label="Cut" onClick={handleCut} />
-              <ContextMenuItem icon={LuCopy} label="Copy" onClick={handleCopy} />
-              <ContextMenuItem icon={LuClipboard} label="Paste" onClick={handlePaste} />
+              <ContextMenuItem icon={LuScissors} label="Cut" onClick={() => { setSidebarMenu(null); handleCut(); }} />
+              <ContextMenuItem icon={LuCopy} label="Copy" onClick={() => { setSidebarMenu(null); handleCopy(); }} />
+              <ContextMenuItem icon={LuClipboard} label="Paste" onClick={() => { setSidebarMenu(null); handlePaste(); }} />
               <ContextMenuSeparator />
-              <ContextMenuItem icon={LuMousePointer2} label="Select All" onClick={handleSelectAll} />
+              <ContextMenuItem icon={LuMousePointer2} label="Select All" onClick={() => { setSidebarMenu(null); handleSelectAll(); }} />
             </>
           )}
         </ContextMenu>

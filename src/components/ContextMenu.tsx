@@ -4,7 +4,7 @@ import { Box, HStack, Text, Icon } from "@chakra-ui/react";
 interface ContextMenuProps {
   x: number;
   y: number;
-  onClose: () => void;
+  onClose?: () => void;
   children: React.ReactNode;
 }
 
@@ -14,6 +14,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, childre
       position="fixed" top={y} left={x}
       bg="bg.panel" border="1px solid" borderColor="border.subtle"
       borderRadius="8px" boxShadow="xl" zIndex={1000} py={1} minW="160px"
+      onClick={() => onClose?.()}
     >
       {children}
     </Box>

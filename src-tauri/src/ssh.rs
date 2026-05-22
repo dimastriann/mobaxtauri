@@ -1,9 +1,9 @@
-use std::sync::Arc;
 use russh::client::{AuthResult, Handler, Session};
-use russh_sftp::client::SftpSession;
-use russh::keys::PublicKey;
 use russh::keys::ssh_key::PrivateKey;
 use russh::keys::PrivateKeyWithHashAlg;
+use russh::keys::PublicKey;
+use russh_sftp::client::SftpSession;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 pub struct ClientHandler {
@@ -88,7 +88,15 @@ impl SshSession {
         user: String,
         password: Option<String>,
         private_key_path: Option<String>,
-    ) -> Result<(russh::client::Handle<ClientHandler>, russh::ChannelId, russh::Channel<russh::client::Msg>, SftpSession), Box<dyn std::error::Error>> {
+    ) -> Result<
+        (
+            russh::client::Handle<ClientHandler>,
+            russh::ChannelId,
+            russh::Channel<russh::client::Msg>,
+            SftpSession,
+        ),
+        Box<dyn std::error::Error>,
+    > {
         let config = russh::client::Config::default();
         let config = Arc::new(config);
         let shell_channel_id = Arc::new(tokio::sync::Mutex::new(None));
@@ -97,30 +105,30 @@ impl SshSession {
             session_id,
             shell_channel_id: shell_channel_id.clone(),
         };
-        
+
         log::info!("TCP connecting to {}:{}...", host, port);
         let mut session = russh::client::connect(config, (host.as_str(), port), sh).await?;
         log::info!("TCP connected. Authenticating...");
-        
+
         let mut authenticated = false;
 
         if let Some(key_path) = private_key_path {
             log::info!("Attempting public key authentication with {}", key_path);
             match std::fs::read_to_string(&key_path) {
-                Ok(key_data) => {
-                    match PrivateKey::from_openssh(&key_data) {
-                        Ok(key) => {
-                            let key_arc = std::sync::Arc::new(key);
-                            let key_alg = PrivateKeyWithHashAlg::new(key_arc, None);
-                            let auth_res = session.authenticate_publickey(user.clone(), key_alg).await?;
-                            log::info!("Public key auth result: {:?}", auth_res);
-                            if let AuthResult::Success = auth_res {
-                                authenticated = true;
-                            }
+                Ok(key_data) => match PrivateKey::from_openssh(&key_data) {
+                    Ok(key) => {
+                        let key_arc = std::sync::Arc::new(key);
+                        let key_alg = PrivateKeyWithHashAlg::new(key_arc, None);
+                        let auth_res = session
+                            .authenticate_publickey(user.clone(), key_alg)
+                            .await?;
+                        log::info!("Public key auth result: {:?}", auth_res);
+                        if let AuthResult::Success = auth_res {
+                            authenticated = true;
                         }
-                        Err(e) => log::error!("Failed to parse private key: {}", e),
                     }
-                }
+                    Err(e) => log::error!("Failed to parse private key: {}", e),
+                },
                 Err(e) => log::error!("Failed to read private key file: {}", e),
             }
         }
@@ -146,14 +154,16 @@ impl SshSession {
         log::info!("Channel opened with ID: {}", channel.id());
         let channel_id = channel.id();
         *shell_channel_id.lock().await = Some(channel_id);
-        
+
         log::info!("Requesting PTY...");
-        channel.request_pty(true, "xterm-256color", 80, 24, 0, 0, &[]).await?;
-        
+        channel
+            .request_pty(true, "xterm-256color", 80, 24, 0, 0, &[])
+            .await?;
+
         log::info!("Requesting Shell...");
         channel.request_shell(true).await?;
         log::info!("Shell session established.");
-        
+
         log::info!("Opening SFTP channel...");
         let sftp_channel = session.channel_open_session().await?;
         sftp_channel.request_subsystem(true, "sftp").await?;
