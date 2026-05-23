@@ -5959,6 +5959,7 @@ dependencies = [
 name = "tauri-app"
 version = "0.1.0"
 dependencies = [
+ "argon2",
  "async-trait",
  "bytes",
  "log",

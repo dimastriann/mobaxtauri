@@ -9,8 +9,11 @@ import {
   LuTerminal,
   LuMonitor,
   LuCode,
+  LuDownload,
+  LuUpload,
 } from 'react-icons/lu';
 import { Session, useSessionStore } from '../store/useSessionStore';
+import { useExportImport } from '../hooks/useExportImport';
 import SftpSidebar from './SftpSidebar';
 
 interface SidebarProps {
@@ -46,6 +49,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const isLoading = useSessionStore((state) => state.isLoading);
   const toggleFolderCollapse = useSessionStore((state) => state.toggleFolderCollapse);
   const openTab = useSessionStore((state) => state.openTab);
+  const { handleExport } = useExportImport();
 
   const handleDragStart = (e: React.DragEvent, sessionId: string) => {
     e.dataTransfer.setData('sessionId', sessionId);
@@ -107,6 +111,24 @@ const Sidebar: React.FC<SidebarProps> = ({
               LIST
             </Text>
             <HStack gap={1}>
+              <IconButton
+                aria-label="Import Bookmarks"
+                size="xs"
+                variant="ghost"
+                onClick={(e) => onContextMenu(e, 'import')}
+                color="fg.muted"
+              >
+                <LuUpload size={14} />
+              </IconButton>
+              <IconButton
+                aria-label="Export Bookmarks"
+                size="xs"
+                variant="ghost"
+                onClick={handleExport}
+                color="fg.muted"
+              >
+                <LuDownload size={14} />
+              </IconButton>
               <IconButton
                 aria-label="New Session"
                 size="xs"

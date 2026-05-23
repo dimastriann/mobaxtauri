@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Stack, Input, Button, HStack } from '@chakra-ui/react';
 import { Session, useSessionStore } from '../store/useSessionStore';
+import { useCredentialStore } from '../store/useCredentialStore';
 import {
   DialogRoot,
   DialogContent,
@@ -30,6 +31,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const [name, setName] = useState('');
   const [folderId, setFolderId] = useState<string | null>(null);
   const [tag, setTag] = useState<'prod' | 'staging' | 'dev' | 'custom' | undefined>(undefined);
+  const [savePassword, setSavePassword] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
 
   const folders = useSessionStore((state) => state.folders);
@@ -41,13 +43,24 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
     if (editingSession) {
       setHost(editingSession.host || '');
       setUser(editingSession.user || '');
-      setPassword(editingSession.password || '');
       setPort(editingSession.port || 22);
       setName(editingSession.name);
       setFolderId(editingSession.folderId || null);
       setTag(editingSession.tag);
       setUsePrivateKey(!!editingSession.privateKeyPath);
       setPrivateKeyPath(editingSession.privateKeyPath || '');
+      setSavePassword(editingSession.savePassword ?? true);
+      setPassword('');
+
+      // Fetch password from stronghold securely if available
+      useCredentialStore
+        .getState()
+        .getCredential(editingSession.id)
+        .then((pwd) => {
+          if (pwd) {
+            setPassword(pwd);
+          }
+        });
     } else {
       setHost('');
       setUser('');
@@ -58,6 +71,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       setTag(undefined);
       setUsePrivateKey(false);
       setPrivateKeyPath('');
+      setSavePassword(true);
     }
   }, [editingSession, isOpen]);
 
@@ -65,16 +79,22 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
     e.preventDefault();
 
     if (editingSession) {
+      if (savePassword && password) {
+        await useCredentialStore.getState().saveCredential(editingSession.id, password);
+      } else {
+        await useCredentialStore.getState().deleteCredential(editingSession.id);
+      }
+
       updateSession(editingSession.id, {
         name: name || `${user}@${host}`,
         host,
         user,
         port,
-        password: password || undefined,
         status: 'disconnected',
         folderId,
         tag,
         privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
+        savePassword,
       });
       onClose();
       return;
@@ -82,6 +102,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
 
     setIsConnecting(true);
     const sessionId = `ssh-${Date.now()}`;
+
+    if (savePassword && password) {
+      await useCredentialStore.getState().saveCredential(sessionId, password);
+    }
+
     addSession({
       id: sessionId,
       name: name || `${user}@${host}`,
@@ -89,11 +114,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       host,
       user,
       port,
-      password: password || undefined,
       status: 'connecting',
       folderId,
       tag,
       privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
+      savePassword,
     });
 
     try {
@@ -110,7 +135,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
     } catch (err) {
       console.error('SSH Connection failed:', err);
       updateStatus(sessionId, 'error', String(err));
-      // Keep modal open or show error? Usually onClose() then user sees red dot.
       onClose();
     } finally {
       setIsConnecting(false);
@@ -297,14 +321,34 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
                   </HStack>
                 </Field>
               ) : (
-                <Field label="Password (Optional)" helperText="Leave empty for keys">
-                  <Input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    size="sm"
-                  />
-                </Field>
+                <Stack gap={2}>
+                  <Field label="Password (Optional)" helperText="Leave empty for keys">
+                    <Input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      size="sm"
+                    />
+                  </Field>
+                  <HStack gap={2} mt={1}>
+                    <input
+                      type="checkbox"
+                      id="save-password"
+                      checked={savePassword}
+                      onChange={(e) => setSavePassword(e.target.checked)}
+                    />
+                    <label
+                      htmlFor="save-password"
+                      style={{
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        color: 'var(--chakra-colors-fg-muted)',
+                      }}
+                    >
+                      Save Password Securely in Vault
+                    </label>
+                  </HStack>
+                </Stack>
               )}
             </Stack>
           </form>

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { load } from '@tauri-apps/plugin-store';
+import { useCredentialStore } from './useCredentialStore';
 
 export type SessionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -28,6 +29,7 @@ export interface Session {
   };
   tag?: 'prod' | 'staging' | 'dev' | 'custom';
   tagColor?: string;
+  savePassword?: boolean;
 }
 
 export interface Folder {
@@ -272,6 +274,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const savedFolders = (await store.get<Folder[]>('folders')) || [];
       const savedSnippets = (await store.get<Snippet[]>('snippets')) || [];
 
+      // Unlock credential store
+      await useCredentialStore.getState().unlock();
+
+      let needsMigration = false;
+      const migratedSessions = await Promise.all(
+        savedSessions.map(async (s) => {
+          if (s.password) {
+            console.log(
+              `[STORE] Migrating plaintext password for session: ${s.id} to Stronghold...`,
+            );
+            try {
+              await useCredentialStore.getState().saveCredential(s.id, s.password);
+              needsMigration = true;
+              return { ...s, savePassword: true }; // password is deleted automatically in saveToDisk
+            } catch (err) {
+              console.error(`[STORE] Migration failed for session ${s.id}:`, err);
+              return s;
+            }
+          }
+          return s;
+        }),
+      );
+
       const local: Session = {
         id: 'local',
         name: 'Local Terminal',
@@ -280,7 +305,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       };
 
       // Filter out any existing 'local' session from disk to prevent duplicates
-      const filteredSaved = savedSessions
+      const filteredSaved = migratedSessions
         .filter((s) => s.id !== 'local')
         .map((s) => ({ ...s, status: 'disconnected' as SessionStatus }));
 
@@ -292,6 +317,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         activeSessionId: 'local',
         isLoading: false,
       });
+
+      if (needsMigration) {
+        console.log(
+          '[STORE] Plaintext passwords migrated successfully. Saving clean list to disk.',
+        );
+        await get().saveToDisk();
+      }
     } catch (err) {
       console.error('Failed to load sessions:', err);
       // Fallback to defaults
@@ -308,7 +340,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       const state = get();
       const store = await load(STORAGE_PATH);
-      const toSave = state.sessions.map(({ status, error, lastActivity, ...s }) => s);
+      const toSave = state.sessions.map(({ status, error, lastActivity, password, ...s }) => s);
       console.log('[STORE] Saving to disk, session count:', toSave.length);
       await store.set('sessions', toSave);
       await store.set('folders', state.folders);

@@ -519,6 +519,18 @@ async fn ssh_health_check(
     }
 }
 
+#[tauri::command]
+async fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content)
+        .map_err(|e| format!("Failed to write file: {e}"))
+}
+
+#[tauri::command]
+async fn read_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read file: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -531,8 +543,28 @@ pub fn run() {
         .plugin(
             tauri_plugin_stronghold::Builder::new(|_pass| {
                 let mut key = [0u8; 32];
-                let dummy = b"mobaxtauri_stronghold_secure_key";
-                key.copy_from_slice(&dummy[..32]);
+                if _pass.is_empty() {
+                    let dummy = b"mobaxtauri_stronghold_secure_key";
+                    key.copy_from_slice(&dummy[..32]);
+                } else {
+                    use argon2::{Argon2, Params, Version};
+                    let salt = b"mobaxtaurisaltval"; // 17 bytes (min 8)
+                    let params = Params::new(
+                        Params::DEFAULT_M_COST,
+                        Params::DEFAULT_T_COST,
+                        Params::DEFAULT_P_COST,
+                        Some(32),
+                    )
+                    .unwrap();
+                    let argon_instance = Argon2::new(argon2::Algorithm::Argon2id, Version::default(), params);
+                    let mut hash = [0u8; 32];
+                    if argon_instance.hash_password_into(_pass.as_bytes(), salt, &mut hash).is_ok() {
+                        key.copy_from_slice(&hash);
+                    } else {
+                        let dummy = b"mobaxtauri_stronghold_secure_key";
+                        key.copy_from_slice(&dummy[..32]);
+                    }
+                }
                 key.to_vec()
             })
             .build(),
@@ -555,7 +587,9 @@ pub fn run() {
             ssh_health_check,
             sftp_read_file_content,
             sftp_write_file_content,
-            sftp_create_dir
+            sftp_create_dir,
+            write_text_file,
+            read_text_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

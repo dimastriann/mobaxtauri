@@ -5,6 +5,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
+import { useCredentialStore } from '../store/useCredentialStore';
 import { Box, HStack, Input, IconButton, Icon } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX } from 'react-icons/lu';
@@ -55,12 +56,18 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       );
 
       try {
+        let activePassword = password;
+        if (!activePassword) {
+          activePassword =
+            (await useCredentialStore.getState().getCredential(sessionId)) || undefined;
+        }
+
         await invoke('ssh_connect', {
           sessionId,
           host: session.host,
           port: session.port || 22,
           user: session.user,
-          password: password ?? session.password ?? null,
+          password: activePassword ?? session.password ?? null,
           privateKeyPath: session.privateKeyPath ?? null,
         });
         updateStatus('connected');

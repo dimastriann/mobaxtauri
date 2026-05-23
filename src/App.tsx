@@ -11,6 +11,8 @@ import {
   LuScissors,
   LuClipboard,
   LuMousePointer2,
+  LuTerminal,
+  LuMonitor,
 } from 'react-icons/lu';
 import TerminalContainer from './components/Terminal';
 import TabBar from './components/TabBar';
@@ -18,6 +20,7 @@ import Sidebar from './components/Sidebar';
 import TitleBar from './components/TitleBar';
 import HealthBar from './components/HealthBar';
 import NewSessionModal from './components/NewSessionModal';
+import { useExportImport } from './hooks/useExportImport';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './components/ContextMenu';
 import { Session, useSessionStore } from './store/useSessionStore';
 import { invoke } from '@tauri-apps/api/core';
@@ -45,13 +48,14 @@ function App() {
   const [sidebarMenu, setSidebarMenu] = useState<{
     x: number;
     y: number;
-    type: 'folder' | 'session' | 'empty' | 'snippet' | 'input';
+    type: 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
     id?: string;
     name?: string;
     command?: string;
   } | null>(null);
   const [quickConnectStr, setQuickConnectStr] = useState('');
   const quickConnectRef = useRef<HTMLInputElement>(null);
+  const { handleImportJSON, handleImportSSHConfig, handleImportMobaXterm } = useExportImport();
 
   // ── Connection Logic ───────────────────────────────────────
   const handleQuickConnect = async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -417,6 +421,34 @@ function App() {
                 onClick={() => {
                   setSidebarMenu(null);
                   handleSelectAll();
+                }}
+              />
+            </>
+          )}
+          {sidebarMenu.type === 'import' && (
+            <>
+              <ContextMenuItem
+                icon={LuCode}
+                label="Import MobaXTauri Backup (JSON)"
+                onClick={() => {
+                  setSidebarMenu(null);
+                  handleImportJSON();
+                }}
+              />
+              <ContextMenuItem
+                icon={LuTerminal}
+                label="Import SSH Config File"
+                onClick={() => {
+                  setSidebarMenu(null);
+                  handleImportSSHConfig();
+                }}
+              />
+              <ContextMenuItem
+                icon={LuMonitor}
+                label="Import MobaXterm Bookmarks"
+                onClick={() => {
+                  setSidebarMenu(null);
+                  handleImportMobaXterm();
                 }}
               />
             </>
