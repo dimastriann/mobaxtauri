@@ -43,6 +43,7 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - uses: tauri-apps/tauri-action@v0
+        id: tauri_build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -51,3 +52,19 @@ jobs:
           releaseBody: "See the assets below to download MobaXTauri for your platform."
           releaseDraft: true
           prerelease: false
+
+      - name: Prepare Portable Executable (Windows Only)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          cp src-tauri/target/release/MobaXTauri.exe src-tauri/target/release/MobaXTauri_Portable.exe
+        shell: bash
+
+      - name: Upload Portable Executable to Release (Windows Only)
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/target/release/MobaXTauri_Portable.exe
+          tag_name: v${{ steps.tauri_build.outputs.appVersion }}
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
