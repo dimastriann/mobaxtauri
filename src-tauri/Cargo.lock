@@ -3286,6 +3286,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "mobaxtauri"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "async-trait",
+ "bytes",
+ "log",
+ "russh",
+ "russh-cryptovec 0.58.0",
+ "russh-keys",
+ "russh-sftp",
+ "serde",
+ "serde_json",
+ "ssh-key",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-opener",
+ "tauri-plugin-store",
+ "tauri-plugin-stronghold",
+ "tokio",
+]
+
+[[package]]
 name = "moxcms"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5953,32 +5979,6 @@ dependencies = [
  "webview2-com",
  "window-vibrancy",
  "windows 0.61.3",
-]
-
-[[package]]
-name = "tauri-app"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "async-trait",
- "bytes",
- "log",
- "russh",
- "russh-cryptovec 0.58.0",
- "russh-keys",
- "russh-sftp",
- "serde",
- "serde_json",
- "ssh-key",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-opener",
- "tauri-plugin-store",
- "tauri-plugin-stronghold",
- "tokio",
 ]
 
 [[package]]

@@ -55,9 +55,10 @@ jobs:
 
       - name: Prepare Portable Executable (Windows Only)
         if: matrix.platform == 'windows-latest'
+        shell: pwsh
         run: |
-          cp src-tauri/target/release/MobaXTauri.exe src-tauri/target/release/MobaXTauri_Portable.exe
-        shell: bash
+          Copy-Item "src-tauri/target/release/mobaxtauri.exe" `
+                    "src-tauri/target/release/MobaXTauri_Portable.exe"
 
       - name: Upload Portable Executable to Release (Windows Only)
         if: matrix.platform == 'windows-latest'
