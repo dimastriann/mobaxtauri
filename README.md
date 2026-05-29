@@ -1,98 +1,193 @@
-# MobaXTauri - Modern Remote Management Dashboard
+# MobaXTauri
 
-An open-source, cross-platform alternative to MobaXterm built with **Tauri v2**, **Rust**, and **Xterm.js**.
+> A lightweight, cross-platform SSH terminal & SFTP manager — inspired by MobaXterm, built with Tauri v2 and Rust.
 
-## 🚀 Vision
-MobaXTauri aims to provide a lightweight (<10MB), GPU-accelerated, and highly customizable terminal for developers who need to manage multiple SSH, SFTP, and local sessions.
-
-## 🛠 Features
-- **Multi-Tab Terminal:** High-performance terminal emulator using Xterm.js.
-- **SSH Manager:** Secure session management with custom folder grouping.
-- **SFTP Sidebar:** Fully integrated file manager for SSH sessions with upload, download, and file manipulation.
-- **Native Experience:** Native dialogs, context menus, and window management.
-- **Theme Sync:** Dynamic light/dark mode support across all components.
+[![Release](https://img.shields.io/github/v/release/dimastriann/mobaxtauri?style=flat-square)](https://github.com/dimastriann/mobaxtauri/releases)
+[![License](https://img.shields.io/github/license/dimastriann/mobaxtauri?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](#-download)
 
 ---
 
-## 💻 Getting Started
+## ✨ Features
+
+| Feature | Description |
+| :--- | :--- |
+| 🖥️ **Multi-Tab SSH Terminal** | High-performance terminal via Xterm.js with tab management |
+| 📁 **Session Manager** | Organize sessions into folders with drag-and-drop support |
+| 🔐 **Secure Password Vault** | Passwords stored encrypted using Tauri Stronghold + Argon2id — never plain-text |
+| 📂 **SFTP File Explorer** | Browse, upload, download, rename, and delete remote files |
+| 🏷️ **Session Tagging** | Tag sessions as `prod`, `staging`, or `dev` for at-a-glance identification |
+| 🧩 **Snippets** | Save and execute frequently-used commands from the sidebar |
+| 💾 **Session Export / Import** | Back up and restore your full session library as a JSON file |
+| 🔄 **Import from SSH Config** | Import existing sessions directly from `~/.ssh/config` |
+| 📥 **Import from MobaXterm** | Import bookmarks from a MobaXterm `.ini` export file |
+| ⚡ **Quick Connect** | Connect instantly using `user@host` or `user@host:port` syntax from the title bar |
+| 🌗 **Dark Mode** | Full dark theme support with Chakra UI v3 |
+| 🪶 **Lightweight** | Single binary, no Electron — under 10 MB for the core app |
+
+---
+
+## 📥 Download
+
+Download the latest release for your platform from the [Releases page](https://github.com/yourusername/mobaxtauri/releases):
+
+| Platform | Installer | Portable |
+| :--- | :--- | :--- |
+| **Windows** | `MobaXTauri_x64-setup.exe` (NSIS) or `.msi` | `MobaXTauri_Portable.exe` ✅ |
+| **macOS** | `MobaXTauri.dmg` | — |
+| **Linux** | `mobaxtauri_amd64.deb` | `mobaxtauri_amd64.AppImage` ✅ |
+
+> **Windows Portable**: No installation required — just download and run `MobaXTauri_Portable.exe`.
+> **Linux Portable**: The `.AppImage` is a fully self-contained executable.
+
+---
+
+## 💻 Getting Started (Development)
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (v20+)
-- [Rust](https://www.rust-lang.org/) (Stable)
-- **Linux only**: `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev`
+- [Node.js](https://nodejs.org/) v20+
+- [Rust](https://www.rust-lang.org/) (stable toolchain)
+- **Linux only**: system WebKit libraries
 
-### Development Mode
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/yourusername/mobaxtauri.git
-   cd mobaxtauri
-   ```
+```bash
+sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+```
 
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+### Run in Development Mode
 
-3. **Run in development**:
-   ```bash
-   npm run tauri dev
-   ```
+```bash
+# 1. Clone the repository
+git clone https://github.com/yourusername/mobaxtauri.git
+cd mobaxtauri
 
----
+# 2. Install frontend dependencies
+npm install
 
-## 📦 Building and Releases
+# 3. Start the dev server + Tauri window
+npm run tauri dev
+```
 
-### Local Build
-To create a production executable for your current platform:
+### Build for Production (Local)
+
 ```bash
 npm run tauri build
 ```
-Once complete, the installers will be available in:
-`src-tauri/target/release/bundle/`
 
-### Automated Releases
-MobaXTauri uses GitHub Actions for automated cross-platform releases.
-- **Trigger**: Pushing a tag starting with `v*` (e.g., `v0.1.0`) will trigger a full build for Windows, macOS, and Linux.
-- **Artifacts**: Binaries and installers are automatically attached to a GitHub Release draft.
+Installers will be output to:
+```
+src-tauri/target/release/bundle/
+```
 
 ---
 
-## 📂 Data Storage & Save Locations
+## 🛠 Available Scripts
 
-MobaXTauri respects system standards for data storage. All sensitive session configuration is stored locally on your machine.
+| Command | Description |
+| :--- | :--- |
+| `npm run tauri dev` | Start development mode |
+| `npm run tauri build` | Build release bundles for the current platform |
+| `npm run test` | Run Vitest frontend unit tests |
+| `npm run lint` | Lint frontend TypeScript/TSX with ESLint |
+| `npm run lint:fix` | Auto-fix linting issues |
+| `npm run format` | Format frontend code with Prettier |
+| `npm run format:check` | Check formatting without writing |
+| `npm run lint:rust` | Run Clippy on the Rust backend |
+| `npm run format:rust` | Format Rust code with `cargo fmt` |
+| `npm run project:check` | Full project validation (TS + ESLint + Prettier + Clippy) |
 
-### 🔐 Session Data (`sessions.bin`)
-Your session profiles, folder structures, and settings are saved in a binary format managed by `tauri-plugin-store`.
+---
 
-- **Windows**: `%APPDATA%\com.dn201.mobaxtauri\sessions.bin`
-- **macOS**: `~/Library/Application Support/com.dn201.mobaxtauri/sessions.bin`
-- **Linux**: `~/.config/com.dn201.mobaxtauri/sessions.bin`
+## 🔐 Secure Password Vault
 
-### 📥 SFTP Downloads
-When you download a file via the SFTP Sidebar, a **native save dialog** will appear.
-- There is no default "hidden" download folder.
-- You explicitly choose the destination for every file to ensure privacy and organization.
+Passwords are **never** stored in plain text. When you enable "Save Password Securely in Vault" on a session:
+
+- The password is encrypted using **Tauri Stronghold** with an **Argon2id** key derivation.
+- The vault file is stored locally at the app data path (see below).
+- Session files (`sessions.bin`) are fully scrubbed of any password data.
+- On first launch, any legacy plain-text passwords in old session files are **automatically migrated** to the vault.
+
+---
+
+## 📂 Data Storage Locations
+
+All data is stored locally on your machine. Nothing is sent to any external server.
+
+| Data | Windows | macOS | Linux |
+| :--- | :--- | :--- | :--- |
+| Sessions & folders | `%APPDATA%\com.dn201.mobaxtauri\sessions.bin` | `~/Library/Application Support/com.dn201.mobaxtauri/sessions.bin` | `~/.config/com.dn201.mobaxtauri/sessions.bin` |
+| Encrypted vault | `%APPDATA%\com.dn201.mobaxtauri\vault.hold` | `~/Library/Application Support/com.dn201.mobaxtauri/vault.hold` | `~/.config/com.dn201.mobaxtauri/vault.hold` |
 
 ---
 
 ## 📂 Project Structure
+
 ```text
-├── src-tauri/          # Rust Backend logic
-│   ├── src/
-│   │   ├── main.rs     # App entry & Plugin init
-│   │   └── ssh.rs      # SSH & SFTP implementations
-│   └── Cargo.toml      # Rust dependencies
-├── src/                # Frontend UI
-│   ├── components/     # Terminal, Sidebar, TabBar
-│   ├── store/          # Session management
-│   └── App.tsx         # Main layout
-└── README.md
+mobaxtauri/
+├── src/                        # React frontend
+│   ├── components/
+│   │   ├── Terminal.tsx        # SSH terminal with xterm.js
+│   │   ├── Sidebar.tsx         # Session, snippet, SFTP tabs
+│   │   ├── SftpSidebar.tsx     # Remote file explorer
+│   │   ├── NewSessionModal.tsx # Create/edit session form
+│   │   ├── TabBar.tsx          # Multi-tab management
+│   │   ├── TitleBar.tsx        # Quick connect & window controls
+│   │   └── ContextMenu.tsx     # Right-click menus
+│   ├── store/
+│   │   ├── useSessionStore.ts  # Sessions, folders, snippets state
+│   │   ├── useCredentialStore.ts # Stronghold vault wrapper
+│   │   └── useSftpStore.ts     # SFTP browsing state
+│   ├── hooks/
+│   │   └── useExportImport.ts  # Session backup & import logic
+│   └── utils/
+│       └── importParsers.ts    # SSH config & MobaXterm INI parsers
+│
+└── src-tauri/                  # Rust backend
+    ├── src/
+    │   ├── main.rs             # App entry point
+    │   ├── lib.rs              # Tauri commands & plugin setup
+    │   ├── ssh.rs              # SSH session management
+    │   └── sftp_utils.rs       # SFTP path utilities
+    ├── capabilities/
+    │   └── default.json        # Tauri permission declarations
+    ├── icons/                  # App icons (all platforms)
+    └── Cargo.toml              # Rust dependencies
 ```
 
+---
+
+## 🚀 Automated Releases
+
+Releases are built automatically via GitHub Actions for all three platforms when a tag is pushed:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The workflow will:
+1. Run all frontend tests (Vitest) and backend tests (`cargo test`)
+2. Build platform-specific installers using `tauri-action`
+3. Package a **Windows Portable** `.exe` and attach it to the same release draft
+4. Create a GitHub Release draft — you review it then publish
+
+---
+
 ## 🏗 Tech Stack
-- **Engine:** [Tauri v2](https://v2.tauri.app/)
-- **Core:** [Rust](https://www.rust-lang.org/)
-- **Networking:** `russh` (SSH2 protocol) & `russh-sftp`
-- **UI:** [React](https://react.dev/) + [Chakra UI v3](https://chakra-ui.com/)
-- **Terminal:** [Xterm.js](https://xtermjs.org/)
-- **State:** [Zustand](https://github.com/pmndrs/zustand)
+
+| Layer | Technology |
+| :--- | :--- |
+| **Desktop Runtime** | [Tauri v2](https://v2.tauri.app/) |
+| **Backend** | [Rust](https://www.rust-lang.org/) |
+| **SSH / SFTP** | [`russh`](https://github.com/warp-tech/russh) + `russh-sftp` |
+| **Credential Security** | [`tauri-plugin-stronghold`](https://github.com/tauri-apps/tauri-plugin-stronghold) + `argon2` |
+| **UI Framework** | [React 19](https://react.dev/) + [Chakra UI v3](https://chakra-ui.com/) |
+| **Terminal** | [Xterm.js](https://xtermjs.org/) |
+| **State Management** | [Zustand](https://github.com/pmndrs/zustand) |
+| **Build Tool** | [Vite](https://vitejs.dev/) |
+| **Testing** | [Vitest](https://vitest.dev/) + Testing Library |
+
+---
+
+## 📄 License
+
+MIT License — see [LICENSE](LICENSE) for details.
