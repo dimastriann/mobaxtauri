@@ -20,6 +20,7 @@ import Sidebar from './components/Sidebar';
 import TitleBar from './components/TitleBar';
 import HealthBar from './components/HealthBar';
 import NewSessionModal from './components/NewSessionModal';
+import PromptModal from './components/PromptModal';
 import { useExportImport } from './hooks/useExportImport';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './components/ContextMenu';
 import { Session, useSessionStore } from './store/useSessionStore';
@@ -27,6 +28,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { emit } from '@tauri-apps/api/event';
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
+
+type SidebarMenuType = 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
+
+interface PromptConfig {
+  title: string;
+  fields: { key: string; label: string; placeholder?: string }[];
+  onConfirm: (values: Record<string, string>) => void;
+}
 
 function App() {
   const [isModalOpen, setModalOpen] = useState(false);
@@ -45,14 +54,17 @@ function App() {
   const deleteSnippet = useSessionStore((state) => state.deleteSnippet);
 
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'sftp' | 'snippets'>('sessions');
+
   const [sidebarMenu, setSidebarMenu] = useState<{
     x: number;
     y: number;
-    type: 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
+    type: SidebarMenuType;
     id?: string;
     name?: string;
     command?: string;
   } | null>(null);
+
+  const [promptConfig, setPromptConfig] = useState<PromptConfig | null>(null);
   const [quickConnectStr, setQuickConnectStr] = useState('');
   const quickConnectRef = useRef<HTMLInputElement>(null);
   const { handleImportJSON, handleImportSSHConfig, handleImportMobaXterm } = useExportImport();
@@ -103,7 +115,7 @@ function App() {
 
   const onSidebarContextMenu = (
     e: React.MouseEvent,
-    type: any,
+    type: 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import',
     id?: string,
     name?: string,
     command?: string,
@@ -188,20 +200,27 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // ── UI Handlers ────────────────────────────────────────────
+  // ── UI Handlers ─────────────────────────────────────────────────
   const handleNewSession = () => {
     setEditingSession(undefined);
     setModalOpen(true);
   };
   const handleAddFolder = () => {
-    const name = window.prompt('Enter folder name:');
-    if (name) addFolder(name);
+    setPromptConfig({
+      title: 'New Folder',
+      fields: [{ key: 'name', label: 'Folder Name', placeholder: 'e.g. Production' }],
+      onConfirm: ({ name }) => addFolder(name),
+    });
   };
   const handleAddSnippet = () => {
-    const name = window.prompt('Enter snippet name:');
-    if (!name) return;
-    const command = window.prompt('Enter command:');
-    if (command) addSnippet(name, command);
+    setPromptConfig({
+      title: 'New Snippet',
+      fields: [
+        { key: 'name', label: 'Snippet Name', placeholder: 'e.g. Check disk usage' },
+        { key: 'command', label: 'Command', placeholder: 'e.g. df -h' },
+      ],
+      onConfirm: ({ name, command }) => addSnippet(name, command),
+    });
   };
 
   return (
@@ -239,6 +258,14 @@ function App() {
         isOpen={isModalOpen}
         onClose={() => setModalOpen(false)}
         editingSession={editingSession}
+      />
+
+      <PromptModal
+        isOpen={!!promptConfig}
+        title={promptConfig?.title ?? ''}
+        fields={promptConfig?.fields ?? []}
+        onConfirm={(values) => promptConfig?.onConfirm(values)}
+        onClose={() => setPromptConfig(null)}
       />
 
       {sidebarMenu && (
@@ -280,8 +307,11 @@ function App() {
                   const id = sidebarMenu.id!;
                   const old = sidebarMenu.name;
                   setSidebarMenu(null);
-                  const n = window.prompt('Rename:', old);
-                  if (n) renameFolder(id, n);
+                  setPromptConfig({
+                    title: 'Rename Folder',
+                    fields: [{ key: 'name', label: 'Folder Name', placeholder: old }],
+                    onConfirm: ({ name }) => renameFolder(id, name),
+                  });
                 }}
               />
               <ContextMenuItem
@@ -371,9 +401,14 @@ function App() {
                   const oldN = sidebarMenu.name;
                   const oldC = sidebarMenu.command;
                   setSidebarMenu(null);
-                  const n = window.prompt('Name:', oldN);
-                  const c = window.prompt('Cmd:', oldC);
-                  if (n && c) updateSnippet(id, { name: n, command: c });
+                  setPromptConfig({
+                    title: 'Edit Snippet',
+                    fields: [
+                      { key: 'name', label: 'Snippet Name', placeholder: oldN },
+                      { key: 'command', label: 'Command', placeholder: oldC },
+                    ],
+                    onConfirm: ({ name, command }) => updateSnippet(id, { name, command }),
+                  });
                 }}
               />
               <ContextMenuItem

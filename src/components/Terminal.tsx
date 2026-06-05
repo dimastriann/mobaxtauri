@@ -11,6 +11,55 @@ import { useColorMode } from './ui/color-mode';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX } from 'react-icons/lu';
 import '@xterm/xterm/css/xterm.css';
 
+// ── XTerm colour themes ────────────────────────────────────────
+const XTERM_THEME_LIGHT: XTerm['options']['theme'] = {
+  background: '#ffffff',
+  foreground: '#1e293b',
+  cursor: '#38bdf8',
+  cursorAccent: '#ffffff',
+  selectionBackground: 'rgba(56, 189, 248, 0.3)',
+  black: '#e2e8f0',
+  red: '#ef4444',
+  green: '#22c55e',
+  yellow: '#eab308',
+  blue: '#3b82f6',
+  magenta: '#d946ef',
+  cyan: '#06b6d4',
+  white: '#0f172a',
+  brightBlack: '#94a3b8',
+  brightRed: '#f87171',
+  brightGreen: '#4ade80',
+  brightYellow: '#facc15',
+  brightBlue: '#60a5fa',
+  brightMagenta: '#e879f9',
+  brightCyan: '#22d3ee',
+  brightWhite: '#1e293b',
+};
+
+const XTERM_THEME_DARK: XTerm['options']['theme'] = {
+  background: '#0a0a14',
+  foreground: '#e2e8f0',
+  cursor: '#38bdf8',
+  cursorAccent: '#0a0a14',
+  selectionBackground: 'rgba(56, 189, 248, 0.3)',
+  black: '#1e1e2e',
+  red: '#f38ba8',
+  green: '#a6e3a1',
+  yellow: '#f9e2af',
+  blue: '#89b4fa',
+  magenta: '#cba6f7',
+  cyan: '#94e2d5',
+  white: '#cdd6f4',
+  brightBlack: '#585b70',
+  brightRed: '#f38ba8',
+  brightGreen: '#a6e3a1',
+  brightYellow: '#f9e2af',
+  brightBlue: '#89b4fa',
+  brightMagenta: '#cba6f7',
+  brightCyan: '#94e2d5',
+  brightWhite: '#a6adc8',
+};
+
 interface TerminalInstanceProps {
   sessionId: string;
   isVisible: boolean;
@@ -116,53 +165,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       cursorBlink: true,
       fontSize: 14,
       fontFamily: '"Cascadia Code", Menlo, "Courier New", monospace',
-      theme: isLight
-        ? {
-            background: '#ffffff',
-            foreground: '#1e293b',
-            cursor: '#38bdf8',
-            cursorAccent: '#ffffff',
-            selectionBackground: 'rgba(56, 189, 248, 0.3)',
-            black: '#e2e8f0',
-            red: '#ef4444',
-            green: '#22c55e',
-            yellow: '#eab308',
-            blue: '#3b82f6',
-            magenta: '#d946ef',
-            cyan: '#06b6d4',
-            white: '#0f172a',
-            brightBlack: '#94a3b8',
-            brightRed: '#f87171',
-            brightGreen: '#4ade80',
-            brightYellow: '#facc15',
-            brightBlue: '#60a5fa',
-            brightMagenta: '#e879f9',
-            brightCyan: '#22d3ee',
-            brightWhite: '#1e293b',
-          }
-        : {
-            background: '#0a0a14',
-            foreground: '#e2e8f0',
-            cursor: '#38bdf8',
-            cursorAccent: '#0a0a14',
-            selectionBackground: 'rgba(56, 189, 248, 0.3)',
-            black: '#1e1e2e',
-            red: '#f38ba8',
-            green: '#a6e3a1',
-            yellow: '#f9e2af',
-            blue: '#89b4fa',
-            magenta: '#cba6f7',
-            cyan: '#94e2d5',
-            white: '#cdd6f4',
-            brightBlack: '#585b70',
-            brightRed: '#f38ba8',
-            brightGreen: '#a6e3a1',
-            brightYellow: '#f9e2af',
-            brightBlue: '#89b4fa',
-            brightMagenta: '#cba6f7',
-            brightCyan: '#94e2d5',
-            brightWhite: '#a6adc8',
-          },
+      theme: isLight ? XTERM_THEME_LIGHT : XTERM_THEME_DARK,
       allowProposedApi: true,
       scrollback: 10000,
     });
@@ -217,7 +220,6 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
           useSessionStore.getState().updateLastActivity(sessionId);
         }),
         listen<void>(`ssh-disconnected-${sessionId}`, () => {
-          console.log('[TERMINAL] Disconnected event received');
           updateStatus('disconnected');
           showReconnectBanner(term);
           // Clean up backend resources immediately
@@ -284,10 +286,10 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       }
 
       // Normal mode: send data to SSH backend
-      if (session?.type === 'ssh') {
+      const currentSession = getSession();
+      if (currentSession?.type === 'ssh') {
         invoke('ssh_send_data', { sessionId, data }).catch((err: unknown) => {
           console.error('Failed to send terminal data:', err);
-          // Detect disconnect from send errors
           const errStr = String(err);
           if (errStr.includes('Send failed') || errStr.includes('Session not found')) {
             updateStatus('disconnected', errStr);
@@ -323,18 +325,11 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     const unlistenSnippet = listen<string>(`snippet-execute-${sessionId}`, (event) => {
       const data = event.payload;
       const currentSession = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
-
-      console.log(
-        `[TERMINAL] Snippet received for ${sessionId} (${currentSession?.type}): ${data.trim()}`,
-      );
-
       if (currentSession?.type === 'ssh') {
-        console.log(`[TERMINAL] Invoking ssh_send_data for ${sessionId}`);
         invoke('ssh_send_data', { sessionId, data }).catch((err) => {
           console.error('[TERMINAL] Snippet send failed:', err);
         });
       } else {
-        console.log(`[TERMINAL] Writing to local buffer for ${sessionId}`);
         term.write(data);
       }
     });
@@ -372,53 +367,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
   useEffect(() => {
     if (!xtermRef.current) return;
     const isLight = colorMode === 'light';
-    xtermRef.current.options.theme = isLight
-      ? {
-          background: '#ffffff',
-          foreground: '#1e293b',
-          cursor: '#38bdf8',
-          cursorAccent: '#ffffff',
-          selectionBackground: 'rgba(56, 189, 248, 0.3)',
-          black: '#e2e8f0',
-          red: '#ef4444',
-          green: '#22c55e',
-          yellow: '#eab308',
-          blue: '#3b82f6',
-          magenta: '#d946ef',
-          cyan: '#06b6d4',
-          white: '#0f172a',
-          brightBlack: '#94a3b8',
-          brightRed: '#f87171',
-          brightGreen: '#4ade80',
-          brightYellow: '#facc15',
-          brightBlue: '#60a5fa',
-          brightMagenta: '#e879f9',
-          brightCyan: '#22d3ee',
-          brightWhite: '#1e293b',
-        }
-      : {
-          background: '#0a0a14',
-          foreground: '#e2e8f0',
-          cursor: '#38bdf8',
-          cursorAccent: '#0a0a14',
-          selectionBackground: 'rgba(56, 189, 248, 0.3)',
-          black: '#1e1e2e',
-          red: '#f38ba8',
-          green: '#a6e3a1',
-          yellow: '#f9e2af',
-          blue: '#89b4fa',
-          magenta: '#cba6f7',
-          cyan: '#94e2d5',
-          white: '#cdd6f4',
-          brightBlack: '#585b70',
-          brightRed: '#f38ba8',
-          brightGreen: '#a6e3a1',
-          brightYellow: '#f9e2af',
-          brightBlue: '#89b4fa',
-          brightMagenta: '#cba6f7',
-          brightCyan: '#94e2d5',
-          brightWhite: '#a6adc8',
-        };
+    xtermRef.current.options.theme = isLight ? XTERM_THEME_LIGHT : XTERM_THEME_DARK;
   }, [colorMode]);
 
   return (

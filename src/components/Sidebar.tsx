@@ -12,10 +12,333 @@ import {
   LuDownload,
   LuUpload,
 } from 'react-icons/lu';
-import { Session, useSessionStore } from '../store/useSessionStore';
+import { Session, Folder, Snippet, useSessionStore } from '../store/useSessionStore';
 import { useExportImport } from '../hooks/useExportImport';
 import SftpSidebar from './SftpSidebar';
 
+type SidebarMenuType = 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
+
+// ── Sub-component: SessionItem ──────────────────────────────────────
+interface SessionItemProps {
+  session: Session;
+  isActive: boolean;
+  isOpen: boolean;
+  onDragStart: (e: React.DragEvent, sessionId: string) => void;
+  onContextMenu: (e: React.MouseEvent, id: string, name: string) => void;
+  onClick: () => void;
+}
+
+const SessionItem: React.FC<SessionItemProps> = ({
+  session,
+  isActive,
+  isOpen,
+  onDragStart,
+  onContextMenu,
+  onClick,
+}) => {
+  let tagColorStr = 'transparent';
+  if (session.tag === 'prod') tagColorStr = 'red.400';
+  else if (session.tag === 'staging') tagColorStr = 'orange.400';
+  else if (session.tag === 'dev') tagColorStr = 'green.400';
+  else if (session.tag === 'custom' && session.tagColor) tagColorStr = session.tagColor;
+
+  return (
+    <HStack
+      p={2}
+      mb={1}
+      borderRadius="8px"
+      cursor="pointer"
+      bg={isActive ? 'blue.subtle' : 'transparent'}
+      borderLeft="3px solid"
+      borderColor={tagColorStr}
+      _hover={{ bg: isActive ? 'blue.muted' : 'whiteAlpha.100' }}
+      onContextMenu={(e) => onContextMenu(e, session.id, session.name)}
+      draggable={session.id !== 'local'}
+      onDragStart={(e) => onDragStart(e, session.id)}
+      onClick={onClick}
+    >
+      <Icon
+        as={session.type === 'ssh' ? LuTerminal : LuMonitor}
+        boxSize="14px"
+        color={isActive ? 'blue.fg' : 'fg.muted'}
+      />
+      <Text fontSize="13px" color={isActive ? 'fg' : 'fg.muted'} flex={1} lineClamp={1}>
+        {session.name}
+      </Text>
+      {isOpen && <Box w="4px" h="4px" borderRadius="full" bg="blue.fg" />}
+    </HStack>
+  );
+};
+
+// ── Sub-component: SessionsTab ──────────────────────────────────────
+interface SessionsTabProps {
+  sessions: Session[];
+  folders: Folder[];
+  isLoading: boolean;
+  activeSessionId: string | null;
+  openTabs: string[];
+  onNewSession: () => void;
+  onAddFolder: () => void;
+  onContextMenu: (e: React.MouseEvent, type: SidebarMenuType, id?: string, name?: string) => void;
+  handleExport: () => void;
+  handleDropOnFolder: (e: React.DragEvent, folderId: string | null) => void;
+  handleDragStart: (e: React.DragEvent, sessionId: string) => void;
+  toggleFolderCollapse: (id: string) => void;
+  openTab: (id: string) => void;
+}
+
+const SessionsTab: React.FC<SessionsTabProps> = ({
+  sessions,
+  folders,
+  isLoading,
+  activeSessionId,
+  openTabs,
+  onNewSession,
+  onAddFolder,
+  onContextMenu,
+  handleExport,
+  handleDropOnFolder,
+  handleDragStart,
+  toggleFolderCollapse,
+  openTab,
+}) => {
+  const localSession = sessions.find((s) => s.id === 'local');
+
+  return (
+    <>
+      <HStack p={3} justify="space-between">
+        <Text fontSize="11px" fontWeight="bold" color="fg.subtle" letterSpacing="0.05em">
+          LIST
+        </Text>
+        <HStack gap={1}>
+          <IconButton
+            aria-label="Import Bookmarks"
+            size="xs"
+            variant="ghost"
+            onClick={(e) => onContextMenu(e, 'import')}
+            color="fg.muted"
+          >
+            <LuUpload size={14} />
+          </IconButton>
+          <IconButton
+            aria-label="Export Bookmarks"
+            size="xs"
+            variant="ghost"
+            onClick={handleExport}
+            color="fg.muted"
+          >
+            <LuDownload size={14} />
+          </IconButton>
+          <IconButton
+            aria-label="New Session"
+            size="xs"
+            variant="ghost"
+            onClick={onNewSession}
+            color="blue.fg"
+          >
+            <LuPlus size={14} />
+          </IconButton>
+          <IconButton
+            aria-label="New Folder"
+            size="xs"
+            variant="ghost"
+            onClick={onAddFolder}
+            color="fg.muted"
+          >
+            <LuFolderPlus size={14} />
+          </IconButton>
+        </HStack>
+      </HStack>
+
+      <VStack
+        align="stretch"
+        flex={1}
+        overflowY="auto"
+        gap={0}
+        px={2}
+        pb={4}
+        className="custom-scrollbar"
+        onContextMenu={(e) => onContextMenu(e, 'empty')}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => handleDropOnFolder(e, null)}
+      >
+        {isLoading ? (
+          <Flex p={4} justify="center">
+            <Spinner size="sm" color="blue.fg" />
+          </Flex>
+        ) : (
+          <>
+            {folders.map((folder) => {
+              const folderSessions = sessions.filter((s) => s.folderId === folder.id);
+              return (
+                <Box
+                  key={folder.id}
+                  mb={1}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => handleDropOnFolder(e, folder.id)}
+                  onContextMenu={(e) => onContextMenu(e, 'folder', folder.id, folder.name)}
+                >
+                  <HStack
+                    p={2}
+                    borderRadius="6px"
+                    cursor="pointer"
+                    _hover={{ bg: 'bg.emphasized' }}
+                    onClick={() => toggleFolderCollapse(folder.id)}
+                  >
+                    <Icon
+                      as={folder.isCollapsed ? LuChevronRight : LuChevronDown}
+                      boxSize="12px"
+                      color="fg.muted"
+                    />
+                    <Icon as={LuFolder} boxSize="14px" color="orange.fg" />
+                    <Text fontSize="13px" color="fg" fontWeight="500" flex={1} lineClamp={1}>
+                      {folder.name}
+                    </Text>
+                  </HStack>
+                  {!folder.isCollapsed && (
+                    <VStack align="stretch" gap={0} pl={4} mt={1}>
+                      {folderSessions.map((session) => (
+                        <SessionItem
+                          key={session.id}
+                          session={session}
+                          isActive={activeSessionId === session.id}
+                          isOpen={openTabs.includes(session.id)}
+                          onDragStart={handleDragStart}
+                          onContextMenu={(e, id, name) => onContextMenu(e, 'session', id, name)}
+                          onClick={() => openTab(session.id)}
+                        />
+                      ))}
+                    </VStack>
+                  )}
+                </Box>
+              );
+            })}
+            {sessions
+              .filter(
+                (s) =>
+                  s.id !== 'local' && (!s.folderId || !folders.some((f) => f.id === s.folderId)),
+              )
+              .map((session) => (
+                <SessionItem
+                  key={session.id}
+                  session={session}
+                  isActive={activeSessionId === session.id}
+                  isOpen={openTabs.includes(session.id)}
+                  onDragStart={handleDragStart}
+                  onContextMenu={(e, id, name) => onContextMenu(e, 'session', id, name)}
+                  onClick={() => openTab(session.id)}
+                />
+              ))}
+            {localSession && (
+              <SessionItem
+                session={localSession}
+                isActive={activeSessionId === localSession.id}
+                isOpen={openTabs.includes(localSession.id)}
+                onDragStart={handleDragStart}
+                onContextMenu={(e, id, name) => onContextMenu(e, 'session', id, name)}
+                onClick={() => openTab(localSession.id)}
+              />
+            )}
+          </>
+        )}
+      </VStack>
+    </>
+  );
+};
+
+// ── Sub-component: SnippetsTab ──────────────────────────────────────
+interface SnippetsTabProps {
+  snippets: Snippet[];
+  onAddSnippet: () => void;
+  onExecuteSnippet: (command: string) => void;
+  onContextMenu: (
+    e: React.MouseEvent,
+    type: SidebarMenuType,
+    id?: string,
+    name?: string,
+    command?: string,
+  ) => void;
+}
+
+const SnippetsTab: React.FC<SnippetsTabProps> = ({
+  snippets,
+  onAddSnippet,
+  onExecuteSnippet,
+  onContextMenu,
+}) => {
+  return (
+    <>
+      <HStack p={3} justify="space-between">
+        <Text fontSize="11px" fontWeight="bold" color="fg.subtle" letterSpacing="0.05em">
+          QUICK COMMANDS
+        </Text>
+        <IconButton
+          aria-label="New Snippet"
+          size="xs"
+          variant="ghost"
+          onClick={onAddSnippet}
+          color="blue.fg"
+        >
+          <LuPlus size={14} />
+        </IconButton>
+      </HStack>
+      <VStack
+        align="stretch"
+        flex={1}
+        overflowY="auto"
+        gap={0}
+        px={2}
+        pb={4}
+        className="custom-scrollbar"
+        onContextMenu={(e) => onContextMenu(e, 'empty')}
+      >
+        {snippets.length === 0 ? (
+          <Flex
+            p={4}
+            direction="column"
+            align="center"
+            justify="center"
+            gap={2}
+            opacity={0.5}
+            mt={10}
+          >
+            <Icon as={LuCode} boxSize="24px" />
+            <Text fontSize="11px" textAlign="center">
+              No snippets yet. Save common commands here.
+            </Text>
+          </Flex>
+        ) : (
+          snippets.map((snippet) => (
+            <HStack
+              key={snippet.id}
+              p={2}
+              mb={1}
+              borderRadius="8px"
+              cursor="pointer"
+              _hover={{ bg: 'bg.emphasized' }}
+              onClick={() => onExecuteSnippet(snippet.command)}
+              onContextMenu={(e) =>
+                onContextMenu(e, 'snippet', snippet.id, snippet.name, snippet.command)
+              }
+            >
+              <Icon as={LuCode} boxSize="14px" color="blue.fg" />
+              <VStack align="flex-start" gap={0} flex={1} overflow="hidden">
+                <Text fontSize="13px" color="fg" fontWeight="500" lineClamp={1}>
+                  {snippet.name}
+                </Text>
+                <Text fontSize="10px" color="fg.muted" lineClamp={1} fontFamily="monospace">
+                  {snippet.command}
+                </Text>
+              </VStack>
+            </HStack>
+          ))
+        )}
+      </VStack>
+    </>
+  );
+};
+
+// ── Main Component: Sidebar ──────────────────────────────────────────
 interface SidebarProps {
   sidebarTab: 'sessions' | 'sftp' | 'snippets';
   setSidebarTab: (tab: 'sessions' | 'sftp' | 'snippets') => void;
@@ -25,7 +348,7 @@ interface SidebarProps {
   onExecuteSnippet: (command: string) => void;
   onContextMenu: (
     e: React.MouseEvent,
-    type: any,
+    type: SidebarMenuType,
     id?: string,
     name?: string,
     command?: string,
@@ -60,235 +383,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     const sessionId = e.dataTransfer.getData('sessionId');
     if (sessionId) {
       useSessionStore.getState().moveSessionToFolder(sessionId, folderId);
-    }
-  };
-
-  const renderSessionItem = (session: Session) => {
-    if (!session) return null;
-    const isActive = activeSessionId === session.id;
-    const isOpen = openTabs.includes(session.id);
-    let tagColorStr = 'transparent';
-    if (session.tag === 'prod') tagColorStr = 'red.400';
-    else if (session.tag === 'staging') tagColorStr = 'orange.400';
-    else if (session.tag === 'dev') tagColorStr = 'green.400';
-    else if (session.tag === 'custom' && session.tagColor) tagColorStr = session.tagColor;
-
-    return (
-      <HStack
-        key={session.id}
-        p={2}
-        mb={1}
-        borderRadius="8px"
-        cursor="pointer"
-        bg={isActive ? 'blue.subtle' : 'transparent'}
-        borderLeft="3px solid"
-        borderColor={tagColorStr}
-        _hover={{ bg: isActive ? 'blue.muted' : 'whiteAlpha.100' }}
-        onContextMenu={(e) => onContextMenu(e, 'session', session.id, session.name)}
-        draggable={session.id !== 'local'}
-        onDragStart={(e) => handleDragStart(e, session.id)}
-        onClick={() => openTab(session.id)}
-      >
-        <Icon
-          as={session.type === 'ssh' ? LuTerminal : LuMonitor}
-          boxSize="14px"
-          color={isActive ? 'blue.fg' : 'fg.muted'}
-        />
-        <Text fontSize="13px" color={isActive ? 'fg' : 'fg.muted'} flex={1} lineClamp={1}>
-          {session.name}
-        </Text>
-        {isOpen && <Box w="4px" h="4px" borderRadius="full" bg="blue.fg" />}
-      </HStack>
-    );
-  };
-
-  const renderSidebarContent = () => {
-    if (sidebarTab === 'sessions') {
-      return (
-        <>
-          <HStack p={3} justify="space-between">
-            <Text fontSize="11px" fontWeight="bold" color="fg.subtle" letterSpacing="0.05em">
-              LIST
-            </Text>
-            <HStack gap={1}>
-              <IconButton
-                aria-label="Import Bookmarks"
-                size="xs"
-                variant="ghost"
-                onClick={(e) => onContextMenu(e, 'import')}
-                color="fg.muted"
-              >
-                <LuUpload size={14} />
-              </IconButton>
-              <IconButton
-                aria-label="Export Bookmarks"
-                size="xs"
-                variant="ghost"
-                onClick={handleExport}
-                color="fg.muted"
-              >
-                <LuDownload size={14} />
-              </IconButton>
-              <IconButton
-                aria-label="New Session"
-                size="xs"
-                variant="ghost"
-                onClick={onNewSession}
-                color="blue.fg"
-              >
-                <LuPlus size={14} />
-              </IconButton>
-              <IconButton
-                aria-label="New Folder"
-                size="xs"
-                variant="ghost"
-                onClick={onAddFolder}
-                color="fg.muted"
-              >
-                <LuFolderPlus size={14} />
-              </IconButton>
-            </HStack>
-          </HStack>
-
-          <VStack
-            align="stretch"
-            flex={1}
-            overflowY="auto"
-            gap={0}
-            px={2}
-            pb={4}
-            className="custom-scrollbar"
-            onContextMenu={(e) => onContextMenu(e, 'empty')}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => handleDropOnFolder(e, null)}
-          >
-            {isLoading ? (
-              <Flex p={4} justify="center">
-                <Spinner size="sm" color="blue.fg" />
-              </Flex>
-            ) : (
-              <>
-                {folders.map((folder) => {
-                  const folderSessions = sessions.filter((s) => s.folderId === folder.id);
-                  return (
-                    <Box
-                      key={folder.id}
-                      mb={1}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => handleDropOnFolder(e, folder.id)}
-                      onContextMenu={(e) => onContextMenu(e, 'folder', folder.id, folder.name)}
-                    >
-                      <HStack
-                        p={2}
-                        borderRadius="6px"
-                        cursor="pointer"
-                        _hover={{ bg: 'bg.emphasized' }}
-                        onClick={() => toggleFolderCollapse(folder.id)}
-                      >
-                        <Icon
-                          as={folder.isCollapsed ? LuChevronRight : LuChevronDown}
-                          boxSize="12px"
-                          color="fg.muted"
-                        />
-                        <Icon as={LuFolder} boxSize="14px" color="orange.fg" />
-                        <Text fontSize="13px" color="fg" fontWeight="500" flex={1} lineClamp={1}>
-                          {folder.name}
-                        </Text>
-                      </HStack>
-                      {!folder.isCollapsed && (
-                        <VStack align="stretch" gap={0} pl={4} mt={1}>
-                          {folderSessions.map((session) => renderSessionItem(session))}
-                        </VStack>
-                      )}
-                    </Box>
-                  );
-                })}
-                {sessions
-                  .filter(
-                    (s) =>
-                      s.id !== 'local' &&
-                      (!s.folderId || !folders.find((f) => f.id === s.folderId)),
-                  )
-                  .map((session) => renderSessionItem(session))}
-                {renderSessionItem(sessions.find((s) => s.id === 'local')!)}
-              </>
-            )}
-          </VStack>
-        </>
-      );
-    } else if (sidebarTab === 'sftp') {
-      return <SftpSidebar />;
-    } else {
-      return (
-        <>
-          <HStack p={3} justify="space-between">
-            <Text fontSize="11px" fontWeight="bold" color="fg.subtle" letterSpacing="0.05em">
-              QUICK COMMANDS
-            </Text>
-            <IconButton
-              aria-label="New Snippet"
-              size="xs"
-              variant="ghost"
-              onClick={onAddSnippet}
-              color="blue.fg"
-            >
-              <LuPlus size={14} />
-            </IconButton>
-          </HStack>
-          <VStack
-            align="stretch"
-            flex={1}
-            overflowY="auto"
-            gap={0}
-            px={2}
-            pb={4}
-            className="custom-scrollbar"
-            onContextMenu={(e) => onContextMenu(e, 'empty')}
-          >
-            {snippets.length === 0 ? (
-              <Flex
-                p={4}
-                direction="column"
-                align="center"
-                justify="center"
-                gap={2}
-                opacity={0.5}
-                mt={10}
-              >
-                <Icon as={LuCode} boxSize="24px" />
-                <Text fontSize="11px" textAlign="center">
-                  No snippets yet. Save common commands here.
-                </Text>
-              </Flex>
-            ) : (
-              snippets.map((snippet) => (
-                <HStack
-                  key={snippet.id}
-                  p={2}
-                  mb={1}
-                  borderRadius="8px"
-                  cursor="pointer"
-                  _hover={{ bg: 'bg.emphasized' }}
-                  onClick={() => onExecuteSnippet(snippet.command)}
-                  onContextMenu={(e) =>
-                    onContextMenu(e, 'snippet', snippet.id, snippet.name, snippet.command)
-                  }
-                >
-                  <Icon as={LuCode} boxSize="14px" color="blue.fg" />
-                  <VStack align="flex-start" gap={0} flex={1} overflow="hidden">
-                    <Text fontSize="13px" color="fg" fontWeight="500" lineClamp={1}>
-                      {snippet.name}
-                    </Text>
-                    <Text fontSize="10px" color="fg.muted" lineClamp={1} fontFamily="monospace">
-                      {snippet.command}
-                    </Text>
-                  </VStack>
-                </HStack>
-              ))
-            )}
-          </VStack>
-        </>
-      );
     }
   };
 
@@ -352,7 +446,32 @@ const Sidebar: React.FC<SidebarProps> = ({
         </Box>
       </HStack>
 
-      {renderSidebarContent()}
+      {sidebarTab === 'sessions' && (
+        <SessionsTab
+          sessions={sessions}
+          folders={folders}
+          isLoading={isLoading}
+          activeSessionId={activeSessionId}
+          openTabs={openTabs}
+          onNewSession={onNewSession}
+          onAddFolder={onAddFolder}
+          onContextMenu={onContextMenu}
+          handleExport={handleExport}
+          handleDropOnFolder={handleDropOnFolder}
+          handleDragStart={handleDragStart}
+          toggleFolderCollapse={toggleFolderCollapse}
+          openTab={openTab}
+        />
+      )}
+      {sidebarTab === 'sftp' && <SftpSidebar />}
+      {sidebarTab === 'snippets' && (
+        <SnippetsTab
+          snippets={snippets}
+          onAddSnippet={onAddSnippet}
+          onExecuteSnippet={onExecuteSnippet}
+          onContextMenu={onContextMenu}
+        />
+      )}
     </VStack>
   );
 };

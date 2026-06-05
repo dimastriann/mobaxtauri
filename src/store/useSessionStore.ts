@@ -16,7 +16,7 @@ export interface Session {
   status: SessionStatus;
   error?: string;
   lastActivity?: number;
-  folderId?: string | null; // New field for folder grouping
+  folderId?: string | null;
   health?: {
     cpu: number;
     ram: number;
@@ -111,7 +111,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   deleteSession: (id) => {
-    console.log('[STORE] deleteSession starting for ID:', id);
     set((state) => {
       const newSessions = state.sessions.filter((s) => s.id !== id);
       const newTabs = state.openTabs.filter((t) => t !== id);
@@ -119,11 +118,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         state.activeSessionId === id
           ? newTabs[newTabs.length - 1] || 'local'
           : state.activeSessionId;
-
-      console.log(
-        `[STORE] deleteSession: sessions from ${state.sessions.length} to ${newSessions.length}`,
-      );
-
       return {
         sessions: newSessions,
         openTabs: newTabs,
@@ -153,8 +147,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   setActiveSession: (id) => {
+    // Alias kept for interface compatibility — delegates to openTab logic
     const state = get();
-    // If not already open as a tab, open it
     if (!state.openTabs.includes(id)) {
       set({ openTabs: [...state.openTabs, id], activeSessionId: id });
     } else {
@@ -244,9 +238,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // Clear all tabs
     set({ openTabs: ['local'], activeSessionId: 'local' });
 
-    // Reset SFTP if needed (since it's a separate store, we might need to call its reset)
-    // For now we assume the SftpSidebar listener will handle it when sessions change
-    // For now we assume the SftpSidebar listener will handle it when sessions change
+    // SFTP store resets automatically when activeSessionId changes in SftpSidebar
   },
 
   addSnippet: (name, command) => {
@@ -281,13 +273,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const migratedSessions = await Promise.all(
         savedSessions.map(async (s) => {
           if (s.password) {
-            console.log(
-              `[STORE] Migrating plaintext password for session: ${s.id} to Stronghold...`,
-            );
             try {
               await useCredentialStore.getState().saveCredential(s.id, s.password);
               needsMigration = true;
-              return { ...s, savePassword: true }; // password is deleted automatically in saveToDisk
+              return { ...s, savePassword: true };
             } catch (err) {
               console.error(`[STORE] Migration failed for session ${s.id}:`, err);
               return s;
@@ -319,9 +308,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       });
 
       if (needsMigration) {
-        console.log(
-          '[STORE] Plaintext passwords migrated successfully. Saving clean list to disk.',
-        );
         await get().saveToDisk();
       }
     } catch (err) {
@@ -341,12 +327,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const state = get();
       const store = await load(STORAGE_PATH);
       const toSave = state.sessions.map(({ status, error, lastActivity, password, ...s }) => s);
-      console.log('[STORE] Saving to disk, session count:', toSave.length);
       await store.set('sessions', toSave);
       await store.set('folders', state.folders);
       await store.set('snippets', state.snippets);
       await store.save();
-      console.log('[STORE] Successfully saved to disk');
     } catch (err) {
       console.error('[STORE] Failed to save sessions:', err);
     }

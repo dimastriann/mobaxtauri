@@ -49,7 +49,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
           MOBAXTAURI
         </Text>
         <Text fontSize="10px" color="fg.subtle" ml={1}>
-          v0.1.0
+          v{__APP_VERSION__}
         </Text>
       </HStack>
 
