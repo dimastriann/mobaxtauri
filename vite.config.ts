@@ -1,6 +1,6 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import pkg from "./package.json";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import pkg from './package.json';
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -13,7 +13,7 @@ export default defineConfig(async () => ({
   },
   resolve: {
     alias: {
-      "@": "/src",
+      '@': '/src',
     },
   },
 
@@ -28,20 +28,41 @@ export default defineConfig(async () => ({
     host: host || false,
     hmr: host
       ? {
-          protocol: "ws",
+          protocol: 'ws',
           host,
           port: 1421,
         }
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      ignored: ['**/src-tauri/**'],
     },
   },
   test: {
     globals: true,
-    environment: "jsdom",
-    setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@xterm')) {
+              return 'vendor-xterm';
+            }
+            if (
+              id.includes('@chakra-ui') ||
+              id.includes('framer-motion') ||
+              id.includes('react-icons')
+            ) {
+              return 'vendor-ui';
+            }
+            return 'vendor';
+          }
+        },
+      },
+    },
   },
 }));
