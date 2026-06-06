@@ -131,6 +131,15 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
         privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : null,
       });
       updateStatus(sessionId, 'connected');
+
+      // Detect OS
+      try {
+        const detectedOs = await invoke<string>('ssh_detect_os', { sessionId });
+        useSessionStore.getState().updateSession(sessionId, { os: detectedOs });
+      } catch (osErr) {
+        console.warn('OS detection failed:', osErr);
+      }
+
       onClose();
     } catch (err) {
       console.error('SSH Connection failed:', err);

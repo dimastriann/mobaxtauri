@@ -30,6 +30,8 @@ export interface Session {
   tag?: 'prod' | 'staging' | 'dev' | 'custom';
   tagColor?: string;
   savePassword?: boolean;
+  isFavorite?: boolean;
+  os?: string;
 }
 
 export interface Folder {

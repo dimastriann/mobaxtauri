@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Flex } from '@chakra-ui/react';
+import { Flex, Box } from '@chakra-ui/react';
 import {
   LuPlus,
   LuPencil,
@@ -13,8 +13,11 @@ import {
   LuMousePointer2,
   LuTerminal,
   LuMonitor,
+  LuLayoutDashboard,
+  LuSettings,
 } from 'react-icons/lu';
 import TerminalContainer from './components/Terminal';
+import Dashboard from './components/Dashboard';
 import TabBar from './components/TabBar';
 import Sidebar from './components/Sidebar';
 import TitleBar from './components/TitleBar';
@@ -54,6 +57,7 @@ function App() {
   const deleteSnippet = useSessionStore((state) => state.deleteSnippet);
 
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'sftp' | 'snippets'>('sessions');
+  const [mainView, setMainView] = useState<'dashboard' | 'terminals'>('dashboard');
 
   const [sidebarMenu, setSidebarMenu] = useState<{
     x: number;
@@ -95,16 +99,33 @@ function App() {
         port,
         status: 'connecting',
       });
+
+      if (mainView === 'dashboard') {
+        setMainView('terminals');
+      }
       openTab(sessionId);
 
       try {
         await invoke('ssh_connect', { sessionId, host, port, user, password: null });
         useSessionStore.getState().updateSessionStatus(sessionId, 'connected');
         setQuickConnectStr('');
+
+        // Detect OS
+        try {
+          const detectedOs = await invoke<string>('ssh_detect_os', { sessionId });
+          useSessionStore.getState().updateSession(sessionId, { os: detectedOs });
+        } catch (osErr) {
+          console.warn('OS detection failed:', osErr);
+        }
       } catch (err) {
         useSessionStore.getState().updateSessionStatus(sessionId, 'error', String(err));
       }
     }
+  };
+
+  const handleConnectSession = (session: Session) => {
+    setMainView('terminals');
+    openTab(session.id);
   };
 
   // ── Context Menu Handlers ──────────────────────────────────
@@ -234,23 +255,94 @@ function App() {
       />
 
       <Flex flex={1} overflow="hidden">
-        <Sidebar
-          sidebarTab={sidebarTab}
-          setSidebarTab={setSidebarTab}
-          onNewSession={handleNewSession}
-          onAddFolder={handleAddFolder}
-          onAddSnippet={handleAddSnippet}
-          onExecuteSnippet={(c) => {
-            if (activeSessionId)
-              emit(`snippet-execute-${activeSessionId}`, c.endsWith('\n') ? c : c + '\n');
-          }}
-          onContextMenu={onSidebarContextMenu}
-        />
+        {/* Navigation Rail */}
+        <Flex
+          direction="column"
+          w="60px"
+          bg="bg.surface"
+          borderRight="1px solid"
+          borderColor="border.subtle"
+          py={4}
+          align="center"
+          gap={4}
+        >
+          <Flex
+            p={3}
+            borderRadius="xl"
+            cursor="pointer"
+            color={mainView === 'dashboard' ? 'brand.500' : 'fg.muted'}
+            bg={mainView === 'dashboard' ? 'brand.subtle' : 'transparent'}
+            _hover={{
+              bg: mainView === 'dashboard' ? 'brand.subtle' : 'bg.muted',
+              color: mainView === 'dashboard' ? 'brand.500' : 'fg',
+            }}
+            onClick={() => setMainView('dashboard')}
+            title="Dashboard"
+          >
+            <LuLayoutDashboard size={22} />
+          </Flex>
+          <Flex
+            p={3}
+            borderRadius="xl"
+            cursor="pointer"
+            color={mainView === 'terminals' ? 'brand.500' : 'fg.muted'}
+            bg={mainView === 'terminals' ? 'brand.subtle' : 'transparent'}
+            _hover={{
+              bg: mainView === 'terminals' ? 'brand.subtle' : 'bg.muted',
+              color: mainView === 'terminals' ? 'brand.500' : 'fg',
+            }}
+            onClick={() => setMainView('terminals')}
+            title="Terminals"
+          >
+            <LuTerminal size={22} />
+          </Flex>
+          <Flex flex={1} />
+          <Flex
+            p={3}
+            borderRadius="xl"
+            cursor="pointer"
+            color="fg.muted"
+            _hover={{ bg: 'bg.muted', color: 'fg' }}
+            title="Settings"
+          >
+            <LuSettings size={22} />
+          </Flex>
+        </Flex>
 
-        <Flex flex={1} direction="column" overflow="hidden">
-          <TabBar onNewSession={handleNewSession} />
-          <TerminalContainer />
-          <HealthBar />
+        <Box
+          display={mainView === 'dashboard' ? 'block' : 'none'}
+          flex={1}
+          minH={0}
+          overflowY="auto"
+        >
+          <Dashboard
+            onQuickConnect={(str) => {
+              setQuickConnectStr(str);
+              handleQuickConnect({ key: 'Enter', target: { value: str } } as any);
+            }}
+            onConnectSession={handleConnectSession}
+          />
+        </Box>
+
+        <Flex flex={1} overflow="hidden" display={mainView !== 'dashboard' ? 'flex' : 'none'}>
+          <Sidebar
+            sidebarTab={sidebarTab}
+            setSidebarTab={setSidebarTab}
+            onNewSession={handleNewSession}
+            onAddFolder={handleAddFolder}
+            onAddSnippet={handleAddSnippet}
+            onExecuteSnippet={(c) => {
+              if (activeSessionId)
+                emit(`snippet-execute-${activeSessionId}`, c.endsWith('\n') ? c : c + '\n');
+            }}
+            onContextMenu={onSidebarContextMenu}
+          />
+
+          <Flex flex={1} direction="column" overflow="hidden">
+            <TabBar onNewSession={handleNewSession} />
+            <TerminalContainer />
+            <HealthBar />
+          </Flex>
         </Flex>
       </Flex>
 

@@ -520,15 +520,48 @@ async fn ssh_health_check(
 }
 
 #[tauri::command]
+async fn ssh_detect_os(state: State<'_, AppState>, session_id: String) -> Result<String, String> {
+    let mut sessions = state.ssh_sessions.lock().await;
+    let (handle, _channel_id, _channel) =
+        sessions.get_mut(&session_id).ok_or("Session not found")?;
+
+    let exec_channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| format!("Failed to open exec channel: {e}"))?;
+
+    let cmd = "OS_ID=$(cat /etc/os-release 2>/dev/null | grep '^ID=' | cut -d= -f2 | tr -d '\"'); if [ -n \"$OS_ID\" ]; then echo \"$OS_ID\"; else uname -s 2>/dev/null || echo \"unknown\"; fi";
+
+    exec_channel
+        .exec(true, cmd)
+        .await
+        .map_err(|e| format!("Failed to exec detect cmd: {e}"))?;
+
+    let mut output = String::new();
+    let mut stream = exec_channel.into_stream();
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        stream.read_to_string(&mut output),
+    )
+    .await
+    .map_err(|_| "OS detection timed out".to_string())?;
+
+    let os = output.trim().to_lowercase();
+    if os.is_empty() {
+        Ok("unknown".to_string())
+    } else {
+        Ok(os)
+    }
+}
+
+#[tauri::command]
 async fn write_text_file(path: String, content: String) -> Result<(), String> {
-    std::fs::write(&path, content)
-        .map_err(|e| format!("Failed to write file: {e}"))
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))
 }
 
 #[tauri::command]
 async fn read_text_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read file: {e}"))
+    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {e}"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -556,9 +589,13 @@ pub fn run() {
                         Some(32),
                     )
                     .unwrap();
-                    let argon_instance = Argon2::new(argon2::Algorithm::Argon2id, Version::default(), params);
+                    let argon_instance =
+                        Argon2::new(argon2::Algorithm::Argon2id, Version::default(), params);
                     let mut hash = [0u8; 32];
-                    if argon_instance.hash_password_into(_pass.as_bytes(), salt, &mut hash).is_ok() {
+                    if argon_instance
+                        .hash_password_into(_pass.as_bytes(), salt, &mut hash)
+                        .is_ok()
+                    {
                         key.copy_from_slice(&hash);
                     } else {
                         let dummy = b"mobaxtauri_stronghold_secure_key";
@@ -585,6 +622,7 @@ pub fn run() {
             sftp_rename,
             sftp_remove,
             ssh_health_check,
+            ssh_detect_os,
             sftp_read_file_content,
             sftp_write_file_content,
             sftp_create_dir,

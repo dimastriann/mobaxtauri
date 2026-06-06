@@ -122,6 +122,16 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
         updateStatus('connected');
         isDisconnectedRef.current = false;
         term.writeln(`\x1b[32m✔ Connected.\x1b[0m\r\n`);
+
+        // Detect OS if not already set
+        if (!session.os) {
+          try {
+            const detectedOs = await invoke<string>('ssh_detect_os', { sessionId });
+            useSessionStore.getState().updateSession(sessionId, { os: detectedOs });
+          } catch (osErr) {
+            console.warn('OS detection failed:', osErr);
+          }
+        }
       } catch (err) {
         const errMsg = String(err);
         updateStatus('error', errMsg);
@@ -300,11 +310,22 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     });
 
     // ── Auto-connect SSH sessions ──────────────────────────
-    if (session?.type === 'ssh' && session.status !== 'connected') {
-      if (session.password) {
-        doConnect();
-      } else {
-        promptPassword();
+    if (session?.type === 'ssh') {
+      if (session.status !== 'connected') {
+        if (session.password) {
+          doConnect();
+        } else {
+          promptPassword();
+        }
+      } else if (!session.os) {
+        // Already connected but OS not detected yet
+        invoke<string>('ssh_detect_os', { sessionId })
+          .then((detectedOs) => {
+            useSessionStore.getState().updateSession(sessionId, { os: detectedOs });
+          })
+          .catch((osErr) => {
+            console.warn('OS detection failed on mount:', osErr);
+          });
       }
     }
 

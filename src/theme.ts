@@ -17,6 +17,15 @@ const config = defineConfig({
             value: { _light: '{colors.gray.200}', _dark: 'rgba(255,255,255,0.06)' },
           },
         },
+        brand: {
+          value: { _light: '{colors.blue.600}', _dark: '#38bdf8' },
+          500: {
+            value: { _light: '{colors.blue.600}', _dark: '#38bdf8' },
+          },
+          subtle: {
+            value: { _light: '{colors.blue.50}', _dark: 'rgba(56,189,248,0.1)' },
+          },
+        },
         blue: {
           fg: {
             value: { _light: '{colors.blue.600}', _dark: '#38bdf8' },

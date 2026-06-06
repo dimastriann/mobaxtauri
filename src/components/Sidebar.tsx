@@ -6,8 +6,6 @@ import {
   LuChevronRight,
   LuChevronDown,
   LuFolder,
-  LuTerminal,
-  LuMonitor,
   LuCode,
   LuDownload,
   LuUpload,
@@ -15,6 +13,7 @@ import {
 import { Session, Folder, Snippet, useSessionStore } from '../store/useSessionStore';
 import { useExportImport } from '../hooks/useExportImport';
 import SftpSidebar from './SftpSidebar';
+import OSIcon from './OSIcon';
 
 type SidebarMenuType = 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
 
@@ -57,9 +56,9 @@ const SessionItem: React.FC<SessionItemProps> = ({
       onDragStart={(e) => onDragStart(e, session.id)}
       onClick={onClick}
     >
-      <Icon
-        as={session.type === 'ssh' ? LuTerminal : LuMonitor}
-        boxSize="14px"
+      <OSIcon
+        os={session.type === 'ssh' ? session.os : 'local'}
+        boxSize={3.5}
         color={isActive ? 'blue.fg' : 'fg.muted'}
       />
       <Text fontSize="13px" color={isActive ? 'fg' : 'fg.muted'} flex={1} lineClamp={1}>
