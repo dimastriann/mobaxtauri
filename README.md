@@ -13,15 +13,18 @@
 | Feature | Description |
 | :--- | :--- |
 | 🖥️ **Multi-Tab SSH Terminal** | High-performance terminal via Xterm.js with tab management |
+| 🔄 **Background Terminals** | Keep active connections mounted; switch tabs and views without disconnecting |
+| 🐧 **Dynamic OS Detection** | Auto-detect SSH host OS versions (Ubuntu, Debian, macOS, Windows, etc.) to update icons |
 | 📁 **Session Manager** | Organize sessions into folders with drag-and-drop support |
 | 🔐 **Secure Password Vault** | Passwords stored encrypted using Tauri Stronghold + Argon2id — never plain-text |
 | 📂 **SFTP File Explorer** | Browse, upload, download, rename, and delete remote files |
-| 🏷️ **Session Tagging** | Tag sessions as `prod`, `staging`, or `dev` for at-a-glance identification |
+| 🏷️ **Session Tagging** | Tag sessions as `prod`, `staging`, or `dev` with visual corner ribbons |
 | 🧩 **Snippets** | Save and execute frequently-used commands from the sidebar |
 | 💾 **Session Export / Import** | Back up and restore your full session library as a JSON file |
 | 🔄 **Import from SSH Config** | Import existing sessions directly from `~/.ssh/config` |
 | 📥 **Import from MobaXterm** | Import bookmarks from a MobaXterm `.ini` export file |
 | ⚡ **Quick Connect** | Connect instantly using `user@host` or `user@host:port` syntax from the title bar |
+| 📱 **Responsive Dashboard** | Adaptive layout shifting Stats & Environments based on display size |
 | 🌗 **Dark Mode** | Full dark theme support with Chakra UI v3 |
 | 🪶 **Lightweight** | Single binary, no Electron — under 10 MB for the core app |
 
@@ -131,7 +134,9 @@ mobaxtauri/
 │   │   ├── NewSessionModal.tsx # Create/edit session form
 │   │   ├── TabBar.tsx          # Multi-tab management
 │   │   ├── TitleBar.tsx        # Quick connect & window controls
-│   │   └── ContextMenu.tsx     # Right-click menus
+│   │   ├── ContextMenu.tsx     # Right-click menus
+│   │   ├── OSIcon.tsx          # Dynamic OS status icon
+│   │   └── Dashboard.tsx       # Main analytics & folders dashboard
 │   ├── store/
 │   │   ├── useSessionStore.ts  # Sessions, folders, snippets state
 │   │   ├── useCredentialStore.ts # Stronghold vault wrapper
