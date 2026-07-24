@@ -62,7 +62,7 @@ jobs:
 
       - name: Upload Portable Executable to Release (Windows Only)
         if: matrix.platform == 'windows-latest'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: src-tauri/target/release/MobaXTauri_Portable.exe
           tag_name: v${{ steps.tauri_build.outputs.appVersion }}
