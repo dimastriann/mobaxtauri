@@ -32,7 +32,7 @@
 
 ## 📥 Download
 
-Download the latest release for your platform from the [Releases page](https://github.com/yourusername/mobaxtauri/releases):
+Download the latest release for your platform from the [Releases page](https://github.com/dimastriann/mobaxtauri/releases):
 
 | Platform | Installer | Portable |
 | :--- | :--- | :--- |
