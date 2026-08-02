@@ -27,7 +27,10 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const [password, setPassword] = useState('');
   const [usePrivateKey, setUsePrivateKey] = useState(false);
   const [privateKeyPath, setPrivateKeyPath] = useState('');
-  const [port, setPort] = useState(22);
+  const [port, setPort] = useState(() => {
+    const saved = localStorage.getItem('ssh-default-port');
+    return saved ? parseInt(saved, 10) : 22;
+  });
   const [name, setName] = useState('');
   const [folderId, setFolderId] = useState<string | null>(null);
   const [tag, setTag] = useState<'prod' | 'staging' | 'dev' | 'custom' | undefined>(undefined);
@@ -43,7 +46,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
     if (editingSession) {
       setHost(editingSession.host || '');
       setUser(editingSession.user || '');
-      setPort(editingSession.port || 22);
+      setPort(editingSession.port || parseInt(localStorage.getItem('ssh-default-port') || '22', 10));
       setName(editingSession.name);
       setFolderId(editingSession.folderId || null);
       setTag(editingSession.tag);
@@ -65,7 +68,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       setHost('');
       setUser('');
       setPassword('');
-      setPort(22);
+      setPort(parseInt(localStorage.getItem('ssh-default-port') || '22', 10));
       setName('');
       setFolderId(null);
       setTag(undefined);

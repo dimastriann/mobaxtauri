@@ -24,6 +24,7 @@ import TitleBar from './components/TitleBar';
 import HealthBar from './components/HealthBar';
 import NewSessionModal from './components/NewSessionModal';
 import PromptModal from './components/PromptModal';
+import SettingsModal from './components/SettingsModal';
 import { useExportImport } from './hooks/useExportImport';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './components/ContextMenu';
 import { Session, useSessionStore } from './store/useSessionStore';
@@ -58,6 +59,8 @@ function App() {
 
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'sftp' | 'snippets'>('sessions');
   const [mainView, setMainView] = useState<'dashboard' | 'terminals'>('dashboard');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [sidebarMenu, setSidebarMenu] = useState<{
     x: number;
@@ -304,6 +307,7 @@ function App() {
             color="fg.muted"
             _hover={{ bg: 'bg.muted', color: 'fg' }}
             title="Settings"
+            onClick={() => setSettingsOpen(true)}
           >
             <LuSettings size={22} />
           </Flex>
@@ -326,6 +330,8 @@ function App() {
 
         <Flex flex={1} overflow="hidden" display={mainView !== 'dashboard' ? 'flex' : 'none'}>
           <Sidebar
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             sidebarTab={sidebarTab}
             setSidebarTab={setSidebarTab}
             onNewSession={handleNewSession}
@@ -350,6 +356,11 @@ function App() {
         isOpen={isModalOpen}
         onClose={() => setModalOpen(false)}
         editingSession={editingSession}
+      />
+
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
       />
 
       <PromptModal

@@ -172,10 +172,12 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     if (!terminalRef.current) return;
 
     const isLight = colorMode === 'light';
+    const savedFontSize = parseInt(localStorage.getItem('terminal-font-size') || '14', 10);
+    const savedFontFamily = localStorage.getItem('terminal-font-family') || '"Cascadia Code", Menlo, "Courier New", monospace';
     const term = new XTerm({
       cursorBlink: true,
-      fontSize: 14,
-      fontFamily: '"Cascadia Code", Menlo, "Courier New", monospace',
+      fontSize: savedFontSize,
+      fontFamily: savedFontFamily,
       theme: isLight ? XTERM_THEME_LIGHT : XTERM_THEME_DARK,
       allowProposedApi: true,
       scrollback: 10000,

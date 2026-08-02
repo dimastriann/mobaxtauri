@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { VStack, HStack, Text, Box, Icon, IconButton, Spinner, Flex } from '@chakra-ui/react';
 import {
   LuPlus,
@@ -9,6 +9,8 @@ import {
   LuCode,
   LuDownload,
   LuUpload,
+  LuPanelLeftClose,
+  LuPanelLeftOpen,
 } from 'react-icons/lu';
 import { Session, Folder, Snippet, useSessionStore } from '../store/useSessionStore';
 import { useExportImport } from '../hooks/useExportImport';
@@ -339,6 +341,8 @@ const SnippetsTab: React.FC<SnippetsTabProps> = ({
 
 // ── Main Component: Sidebar ──────────────────────────────────────────
 interface SidebarProps {
+  collapsed: boolean;
+  onToggleCollapse: () => void;
   sidebarTab: 'sessions' | 'sftp' | 'snippets';
   setSidebarTab: (tab: 'sessions' | 'sftp' | 'snippets') => void;
   onNewSession: () => void;
@@ -354,7 +358,12 @@ interface SidebarProps {
   ) => void;
 }
 
+const SIDEBAR_MIN_WIDTH = 100;
+const SIDEBAR_MAX_WIDTH = 500;
+
 const Sidebar: React.FC<SidebarProps> = ({
+  collapsed,
+  onToggleCollapse,
   sidebarTab,
   setSidebarTab,
   onNewSession,
@@ -373,6 +382,40 @@ const Sidebar: React.FC<SidebarProps> = ({
   const openTab = useSessionStore((state) => state.openTab);
   const { handleExport } = useExportImport();
 
+  // ── Resize logic ────────────────────────────────────────────
+  const [width, setWidth] = useState(240);
+  const resizing = useRef(false);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    resizing.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizing.current) return;
+      const newWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, e.clientX - 60));
+      setWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (resizing.current) {
+        resizing.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
   const handleDragStart = (e: React.DragEvent, sessionId: string) => {
     e.dataTransfer.setData('sessionId', sessionId);
   };
@@ -385,93 +428,153 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  return (
-    <VStack
-      w="240px"
-      minW="240px"
-      bg="bg.panel"
-      borderRight="1px solid"
-      borderColor="border.subtle"
-      align="stretch"
-      gap={0}
-    >
-      <HStack w="full" px={2} pt={2} gap={1} borderBottom="1px solid" borderColor="border.subtle">
-        <Box
-          flex={1}
-          pb={2}
-          cursor="pointer"
-          textAlign="center"
-          borderBottom="2px solid"
-          borderColor={sidebarTab === 'sessions' ? 'blue.fg' : 'transparent'}
-          onClick={() => setSidebarTab('sessions')}
+  // Collapsed: just show a thin bar with a toggle button
+  if (collapsed) {
+    return (
+      <Flex
+        w="36px"
+        minW="36px"
+        direction="column"
+        bg="bg.panel"
+        borderRight="1px solid"
+        borderColor="border.subtle"
+        align="center"
+        py={2}
+        gap={2}
+      >
+        <IconButton
+          aria-label="Expand sidebar"
+          size="xs"
+          variant="ghost"
+          onClick={onToggleCollapse}
+          color="fg.muted"
+          _hover={{ color: 'fg' }}
         >
-          <Text
-            fontSize="11px"
-            fontWeight="bold"
-            color={sidebarTab === 'sessions' ? 'fg' : 'fg.muted'}
-          >
-            SESSIONS
-          </Text>
-        </Box>
-        <Box
-          flex={1}
-          pb={2}
-          cursor="pointer"
-          textAlign="center"
-          borderBottom="2px solid"
-          borderColor={sidebarTab === 'sftp' ? 'blue.fg' : 'transparent'}
-          onClick={() => setSidebarTab('sftp')}
-        >
-          <Text fontSize="11px" fontWeight="bold" color={sidebarTab === 'sftp' ? 'fg' : 'fg.muted'}>
-            SFTP
-          </Text>
-        </Box>
-        <Box
-          flex={1}
-          pb={2}
-          cursor="pointer"
-          textAlign="center"
-          borderBottom="2px solid"
-          borderColor={sidebarTab === 'snippets' ? 'blue.fg' : 'transparent'}
-          onClick={() => setSidebarTab('snippets')}
-        >
-          <Text
-            fontSize="11px"
-            fontWeight="bold"
-            color={sidebarTab === 'snippets' ? 'fg' : 'fg.muted'}
-          >
-            SNIPPETS
-          </Text>
-        </Box>
-      </HStack>
+          <LuPanelLeftOpen size={16} />
+        </IconButton>
+        <Box flex={1} />
+      </Flex>
+    );
+  }
 
-      {sidebarTab === 'sessions' && (
-        <SessionsTab
-          sessions={sessions}
-          folders={folders}
-          isLoading={isLoading}
-          activeSessionId={activeSessionId}
-          openTabs={openTabs}
-          onNewSession={onNewSession}
-          onAddFolder={onAddFolder}
-          onContextMenu={onContextMenu}
-          handleExport={handleExport}
-          handleDropOnFolder={handleDropOnFolder}
-          handleDragStart={handleDragStart}
-          toggleFolderCollapse={toggleFolderCollapse}
-          openTab={openTab}
-        />
-      )}
-      {sidebarTab === 'sftp' && <SftpSidebar />}
-      {sidebarTab === 'snippets' && (
-        <SnippetsTab
-          snippets={snippets}
-          onAddSnippet={onAddSnippet}
-          onExecuteSnippet={onExecuteSnippet}
-          onContextMenu={onContextMenu}
-        />
-      )}
-    </VStack>
+  return (
+    <HStack gap={0} position="relative" flexShrink={0}>
+      <VStack
+        w={`${width}px`}
+        minW={`${width}px`}
+        h="full"
+        bg="bg.panel"
+        borderRight="1px solid"
+        borderColor="border.subtle"
+        align="stretch"
+        gap={0}
+      >
+        {/* Tab switcher with collapse button */}
+        <HStack w="full" gap={0} borderBottom="1px solid" borderColor="border.subtle">
+          <Box
+            flex={1}
+            py="6px"
+            cursor="pointer"
+            textAlign="center"
+            borderBottom="2px solid"
+            borderColor={sidebarTab === 'sessions' ? 'blue.fg' : 'transparent'}
+            onClick={() => setSidebarTab('sessions')}
+          >
+            <Text
+              fontSize="11px"
+              fontWeight="bold"
+              color={sidebarTab === 'sessions' ? 'fg' : 'fg.muted'}
+            >
+              SESSIONS
+            </Text>
+          </Box>
+          <Box
+            flex={1}
+            py="6px"
+            cursor="pointer"
+            textAlign="center"
+            borderBottom="2px solid"
+            borderColor={sidebarTab === 'sftp' ? 'blue.fg' : 'transparent'}
+            onClick={() => setSidebarTab('sftp')}
+          >
+            <Text fontSize="11px" fontWeight="bold" color={sidebarTab === 'sftp' ? 'fg' : 'fg.muted'}>
+              SFTP
+            </Text>
+          </Box>
+          <Box
+            flex={1}
+            py="6px"
+            cursor="pointer"
+            textAlign="center"
+            borderBottom="2px solid"
+            borderColor={sidebarTab === 'snippets' ? 'blue.fg' : 'transparent'}
+            onClick={() => setSidebarTab('snippets')}
+          >
+            <Text
+              fontSize="11px"
+              fontWeight="bold"
+              color={sidebarTab === 'snippets' ? 'fg' : 'fg.muted'}
+            >
+              SNIPPETS
+            </Text>
+          </Box>
+          <Box py="6px" px={1} display="flex" alignItems="center">
+            <IconButton
+              aria-label="Collapse sidebar"
+              size="xs"
+              variant="ghost"
+              onClick={onToggleCollapse}
+              color="fg.muted"
+              _hover={{ color: 'fg' }}
+              minW="20px"
+              h="20px"
+            >
+              <LuPanelLeftClose size={12} />
+            </IconButton>
+          </Box>
+        </HStack>
+
+        {sidebarTab === 'sessions' && (
+          <SessionsTab
+            sessions={sessions}
+            folders={folders}
+            isLoading={isLoading}
+            activeSessionId={activeSessionId}
+            openTabs={openTabs}
+            onNewSession={onNewSession}
+            onAddFolder={onAddFolder}
+            onContextMenu={onContextMenu}
+            handleExport={handleExport}
+            handleDropOnFolder={handleDropOnFolder}
+            handleDragStart={handleDragStart}
+            toggleFolderCollapse={toggleFolderCollapse}
+            openTab={openTab}
+          />
+        )}
+        {sidebarTab === 'sftp' && <SftpSidebar />}
+        {sidebarTab === 'snippets' && (
+          <SnippetsTab
+            snippets={snippets}
+            onAddSnippet={onAddSnippet}
+            onExecuteSnippet={onExecuteSnippet}
+            onContextMenu={onContextMenu}
+          />
+        )}
+      </VStack>
+
+      {/* Resize handle */}
+      <Box
+        w="4px"
+        h="full"
+        cursor="col-resize"
+        bg="transparent"
+        _hover={{ bg: 'blue.500', opacity: 0.4 }}
+        _active={{ bg: 'blue.500', opacity: 0.6 }}
+        transition="background 0.15s"
+        flexShrink={0}
+        onMouseDown={handleMouseDown}
+      />
+    </HStack>
   );
 };
 
