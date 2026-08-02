@@ -2,6 +2,7 @@ import React from 'react';
 import { HStack, Box, Text, IconButton, Icon } from '@chakra-ui/react';
 import { LuPlus, LuX } from 'react-icons/lu';
 import { Session, useSessionStore } from '../store/useSessionStore';
+import { ask } from '@tauri-apps/plugin-dialog';
 
 interface TabBarProps {
   onNewSession: () => void;
@@ -27,14 +28,37 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
     .map((id) => sessions.find((s) => s.id === id))
     .filter(Boolean) as Session[];
 
-  const handleClose = (e: React.MouseEvent, id: string) => {
+  const handleClose = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    const session = sessions.find((s) => s.id === id);
+    // Show confirmation dialog only for SSH sessions to avoid accidental disconnect
+    if (session?.type === 'ssh' && session.status === 'connected') {
+      const confirmed = await ask(
+        `Disconnect "${session.name}" and close the tab?`,
+        {
+          title: 'Close Session',
+          kind: 'warning',
+        },
+      );
+      if (!confirmed) return;
+    }
     closeTab(id);
   };
 
-  const handleMiddleClick = (e: React.MouseEvent, id: string) => {
+  const handleMiddleClick = async (e: React.MouseEvent, id: string) => {
     if (e.button === 1) {
       e.preventDefault();
+      const session = sessions.find((s) => s.id === id);
+      if (session?.type === 'ssh' && session.status === 'connected') {
+        const confirmed = await ask(
+          `Disconnect "${session.name}" and close the tab?`,
+          {
+            title: 'Close Session',
+            kind: 'warning',
+          },
+        );
+        if (!confirmed) return;
+      }
       closeTab(id);
     }
   };

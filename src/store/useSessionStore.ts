@@ -220,7 +220,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
     }
 
-    set({ openTabs: newTabs, activeSessionId: newActive });
+    // Mark SSH sessions as disconnected so re-opening reconnects
+    const session = state.sessions.find((s) => s.id === id);
+    if (session?.type === 'ssh') {
+      set({
+        sessions: state.sessions.map((s) =>
+          s.id === id ? { ...s, status: 'disconnected' as SessionStatus } : s,
+        ),
+        openTabs: newTabs,
+        activeSessionId: newActive,
+      });
+    } else {
+      set({ openTabs: newTabs, activeSessionId: newActive });
+    }
   },
 
   reorderTabs: (ids) => set({ openTabs: ids }),

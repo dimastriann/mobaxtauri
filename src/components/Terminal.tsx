@@ -18,46 +18,46 @@ const XTERM_THEME_LIGHT: XTerm['options']['theme'] = {
   cursor: '#38bdf8',
   cursorAccent: '#ffffff',
   selectionBackground: 'rgba(56, 189, 248, 0.3)',
-  black: '#e2e8f0',
+  black: '#1e293b',
   red: '#ef4444',
   green: '#22c55e',
   yellow: '#eab308',
   blue: '#3b82f6',
-  magenta: '#d946ef',
+  magenta: '#a855f7',
   cyan: '#06b6d4',
-  white: '#0f172a',
-  brightBlack: '#94a3b8',
+  white: '#f8fafc',
+  brightBlack: '#64748b',
   brightRed: '#f87171',
   brightGreen: '#4ade80',
   brightYellow: '#facc15',
   brightBlue: '#60a5fa',
-  brightMagenta: '#e879f9',
+  brightMagenta: '#c084fc',
   brightCyan: '#22d3ee',
-  brightWhite: '#1e293b',
+  brightWhite: '#ffffff',
 };
 
 const XTERM_THEME_DARK: XTerm['options']['theme'] = {
-  background: '#0a0a14',
-  foreground: '#e2e8f0',
+  background: '#0f172a',
+  foreground: '#f1f5f9',
   cursor: '#38bdf8',
-  cursorAccent: '#0a0a14',
+  cursorAccent: '#0f172a',
   selectionBackground: 'rgba(56, 189, 248, 0.3)',
-  black: '#1e1e2e',
-  red: '#f38ba8',
-  green: '#a6e3a1',
-  yellow: '#f9e2af',
-  blue: '#89b4fa',
-  magenta: '#cba6f7',
-  cyan: '#94e2d5',
-  white: '#cdd6f4',
-  brightBlack: '#585b70',
-  brightRed: '#f38ba8',
-  brightGreen: '#a6e3a1',
-  brightYellow: '#f9e2af',
-  brightBlue: '#89b4fa',
-  brightMagenta: '#cba6f7',
-  brightCyan: '#94e2d5',
-  brightWhite: '#a6adc8',
+  black: '#1e293b',
+  red: '#ef4444',
+  green: '#22c55e',
+  yellow: '#eab308',
+  blue: '#3b82f6',
+  magenta: '#a855f7',
+  cyan: '#06b6d4',
+  white: '#f8fafc',
+  brightBlack: '#64748b',
+  brightRed: '#f87171',
+  brightGreen: '#4ade80',
+  brightYellow: '#facc15',
+  brightBlue: '#60a5fa',
+  brightMagenta: '#c084fc',
+  brightCyan: '#22d3ee',
+  brightWhite: '#ffffff',
 };
 
 interface TerminalInstanceProps {
@@ -74,6 +74,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
   const isDisconnectedRef = useRef(false);
   const isPasswordModeRef = useRef(false);
   const passwordBufRef = useRef('');
+  const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { colorMode } = useColorMode();
 
   const [showSearch, setShowSearch] = useState(false);
@@ -279,13 +280,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       // Disconnected mode: hotkey handling
       if (isDisconnectedRef.current) {
         if (data === 'r' || data === 'R') {
+          // Always prompt for password on reconnect — the saved one might be stale/wrong
           isDisconnectedRef.current = false;
-          const sess = getSession();
-          if (sess?.password) {
-            doConnect();
-          } else {
-            promptPassword();
-          }
+          promptPassword();
           return;
         }
         if (data === 'q' || data === 'Q') {
@@ -311,21 +308,13 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
 
     // ── Auto-connect SSH sessions ──────────────────────────
     if (session?.type === 'ssh') {
-      if (session.status !== 'connected') {
-        if (session.password) {
-          doConnect();
-        } else {
-          promptPassword();
-        }
-      } else if (!session.os) {
-        // Already connected but OS not detected yet
-        invoke<string>('ssh_detect_os', { sessionId })
-          .then((detectedOs) => {
-            useSessionStore.getState().updateSession(sessionId, { os: detectedOs });
-          })
-          .catch((osErr) => {
-            console.warn('OS detection failed on mount:', osErr);
-          });
+      // Always reconnect: closeTab marks sessions as disconnected,
+      // and even if the backend session was dropped, this ensures
+      // we establish a fresh connection.
+      if (session.password) {
+        doConnect();
+      } else {
+        promptPassword();
       }
     }
 
@@ -355,11 +344,38 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       }
     });
 
+    // ── Keepalive: detect stale connections ────────────────
+    const startKeepalive = () => {
+      keepaliveRef.current = setInterval(() => {
+        invoke('ssh_send_data', { sessionId, data: '' }).catch((err) => {
+          // Connection is dead — only mark as disconnected if we're still 'connected'
+          const sess = getSession();
+          if (sess?.status === 'connected') {
+            updateStatus('disconnected', String(err));
+            showReconnectBanner(term);
+          }
+          if (keepaliveRef.current) {
+            clearInterval(keepaliveRef.current);
+            keepaliveRef.current = null;
+          }
+        });
+      }, 15000); // Check every 15 seconds
+    };
+
+    if (session?.type === 'ssh') {
+      startKeepalive();
+    }
+
     // ── Cleanup on tab close ───────────────────────────────
     return () => {
       window.removeEventListener('resize', handleResize);
       unlistenSnippet.then((fn) => fn());
       unlistenDataRef.current?.();
+
+      if (keepaliveRef.current) {
+        clearInterval(keepaliveRef.current);
+        keepaliveRef.current = null;
+      }
 
       // Disconnect SSH when tab is closed
       const sess = getSession();
@@ -372,15 +388,26 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // ── Fit when becoming visible (tab switch) ────────────────
+  // ── Fit when becoming visible (tab switch or view switch) ──
   useEffect(() => {
     if (isVisible && fitRef.current && xtermRef.current) {
-      // Small delay to let the DOM layout settle
-      const timer = setTimeout(() => {
+      // Use longer delay and retry to handle layout transitions
+      // (e.g. parent container switching from display:none to display:flex)
+      let cancelled = false;
+      const doFit = (attempt: number) => {
+        if (cancelled) return;
         fitRef.current?.fit();
         xtermRef.current?.focus();
-      }, 50);
-      return () => clearTimeout(timer);
+        // Retry up to 3 times in case layout isn't settled
+        if (attempt < 3) {
+          setTimeout(() => doFit(attempt + 1), 100 * (attempt + 1));
+        }
+      };
+      const timer = setTimeout(() => doFit(1), 100);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+      };
     }
   }, [isVisible]);
 
@@ -397,8 +424,12 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       w="full"
       bg="bg.panel"
       overflow="hidden"
-      display={isVisible ? 'block' : 'none'}
-      position="relative"
+      visibility={isVisible ? 'visible' : 'hidden'}
+      position={isVisible ? 'relative' : 'absolute'}
+      top={0}
+      left={0}
+      right={0}
+      bottom={0}
     >
       {showSearch && (
         <Box
@@ -479,14 +510,20 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
 // the inactive ones so they stay alive in the background.
 // ─────────────────────────────────────────────────────────────
 
-const TerminalContainer: React.FC = () => {
+const TerminalContainer: React.FC<{ isViewVisible?: boolean }> = ({
+  isViewVisible = true,
+}) => {
   const openTabs = useSessionStore((state) => state.openTabs);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
 
   return (
     <Box flex={1} position="relative" h="full" w="full" bg="bg.panel" overflow="hidden">
       {openTabs.map((tabId) => (
-        <TerminalInstance key={tabId} sessionId={tabId} isVisible={tabId === activeSessionId} />
+        <TerminalInstance
+          key={tabId}
+          sessionId={tabId}
+          isVisible={tabId === activeSessionId && isViewVisible}
+        />
       ))}
       {openTabs.length === 0 && (
         <Box

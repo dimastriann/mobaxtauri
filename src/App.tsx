@@ -30,7 +30,7 @@ import { Session, useSessionStore } from './store/useSessionStore';
 import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { emit } from '@tauri-apps/api/event';
-import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
+import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 
 type SidebarMenuType = 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
 
@@ -340,7 +340,7 @@ function App() {
 
           <Flex flex={1} direction="column" overflow="hidden">
             <TabBar onNewSession={handleNewSession} />
-            <TerminalContainer />
+            <TerminalContainer isViewVisible={mainView === 'terminals'} />
             <HealthBar />
           </Flex>
         </Flex>
