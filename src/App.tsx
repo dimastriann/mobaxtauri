@@ -33,6 +33,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { emit } from '@tauri-apps/api/event';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
+import {
+  KeyboardShortcuts,
+  loadKeyboardShortcuts,
+  matchesShortcut,
+  SHORTCUTS_CHANGED_EVENT,
+} from './utils/keyboardShortcuts';
 
 type SidebarMenuType = 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
 
@@ -49,6 +55,9 @@ function App() {
   const snippets = useSessionStore((state) => state.snippets);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const openTab = useSessionStore((state) => state.openTab);
+  const openTabs = useSessionStore((state) => state.openTabs);
+  const setActiveSession = useSessionStore((state) => state.setActiveSession);
+  const closeTab = useSessionStore((state) => state.closeTab);
   const deleteSession = useSessionStore((state) => state.deleteSession);
   const updateSession = useSessionStore((state) => state.updateSession);
   const loadSessions = useSessionStore((state) => state.loadSessions);
@@ -64,6 +73,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(loadKeyboardShortcuts);
 
   const [sidebarMenu, setSidebarMenu] = useState<{
     x: number;
@@ -209,15 +219,54 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const handleCommandPaletteShortcut = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'k') {
-        event.preventDefault();
-        setCommandPaletteOpen((open) => !open);
+    const updateShortcuts = (event: Event) =>
+      setShortcuts((event as CustomEvent<KeyboardShortcuts>).detail);
+    window.addEventListener(SHORTCUTS_CHANGED_EVENT, updateShortcuts);
+    return () => window.removeEventListener(SHORTCUTS_CHANGED_EVENT, updateShortcuts);
+  }, []);
+
+  useEffect(() => {
+    const handleShortcut = async (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isEditing = target?.matches('input, textarea, select, [contenteditable="true"]');
+      if (isEditing && !matchesShortcut(event, shortcuts.commandPalette)) return;
+
+      const action = (Object.keys(shortcuts) as (keyof KeyboardShortcuts)[]).find((key) =>
+        matchesShortcut(event, shortcuts[key]),
+      );
+      if (!action) return;
+      event.preventDefault();
+
+      if (action === 'commandPalette') setCommandPaletteOpen((open) => !open);
+      else if (action === 'newSession') handleNewSession();
+      else if (action === 'settings') setSettingsOpen(true);
+      else if (action === 'sessionSearch') {
+        setMainView('terminals');
+        setSidebarCollapsed(false);
+        setSidebarTab('sessions');
+        setTimeout(() => window.dispatchEvent(new Event('focus-session-search')), 0);
+      } else if (action === 'closeTab' && activeSessionId) {
+        const session = sessions.find((item) => item.id === activeSessionId);
+        if (
+          session?.type === 'ssh' &&
+          session.status === 'connected' &&
+          !(await ask(`Disconnect "${session.name}" and close the tab?`, {
+            title: 'Close Session',
+            kind: 'warning',
+          }))
+        )
+          return;
+        closeTab(activeSessionId);
+      } else if ((action === 'nextTab' || action === 'previousTab') && openTabs.length > 1) {
+        const currentIndex = Math.max(openTabs.indexOf(activeSessionId ?? ''), 0);
+        const offset = action === 'nextTab' ? 1 : -1;
+        const nextIndex = (currentIndex + offset + openTabs.length) % openTabs.length;
+        setActiveSession(openTabs[nextIndex]);
       }
     };
-    window.addEventListener('keydown', handleCommandPaletteShortcut);
-    return () => window.removeEventListener('keydown', handleCommandPaletteShortcut);
-  }, []);
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [shortcuts, activeSessionId, sessions, openTabs, closeTab, setActiveSession]);
 
   useEffect(() => {
     loadSessions();

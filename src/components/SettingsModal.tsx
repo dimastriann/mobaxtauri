@@ -1,5 +1,16 @@
 import React, { useState } from 'react';
-import { Stack, Input, Button, HStack, Text, Box, Switch, Flex, Icon, VStack } from '@chakra-ui/react';
+import {
+  Stack,
+  Input,
+  Button,
+  HStack,
+  Text,
+  Box,
+  Switch,
+  Flex,
+  Icon,
+  VStack,
+} from '@chakra-ui/react';
 import {
   DialogRoot,
   DialogContent,
@@ -10,14 +21,30 @@ import {
   DialogCloseTrigger,
 } from './ui/dialog';
 import { useColorMode } from './ui/color-mode';
-import { LuTerminal, LuPalette, LuServer, LuMonitor } from 'react-icons/lu';
+import {
+  LuTerminal,
+  LuPalette,
+  LuServer,
+  LuMonitor,
+  LuKeyboard,
+  LuRotateCcw,
+} from 'react-icons/lu';
+import {
+  DEFAULT_SHORTCUTS,
+  KeyboardShortcuts,
+  loadKeyboardShortcuts,
+  saveKeyboardShortcuts,
+  shortcutFromEvent,
+  ShortcutAction,
+  SHORTCUT_LABELS,
+} from '../utils/keyboardShortcuts';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-type SettingsTab = 'appearance' | 'terminal' | 'ssh' | 'about';
+type SettingsTab = 'appearance' | 'terminal' | 'ssh' | 'shortcuts' | 'about';
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
@@ -26,6 +53,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     { id: 'appearance', label: 'Appearance', icon: LuPalette },
     { id: 'terminal', label: 'Terminal', icon: LuTerminal },
     { id: 'ssh', label: 'SSH', icon: LuServer },
+    { id: 'shortcuts', label: 'Shortcuts', icon: LuKeyboard },
     { id: 'about', label: 'About', icon: LuMonitor },
   ];
 
@@ -70,6 +98,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'terminal' && <TerminalSettings />}
             {activeTab === 'ssh' && <SshSettings />}
+            {activeTab === 'shortcuts' && <ShortcutSettings />}
             {activeTab === 'about' && <AboutSettings />}
           </Box>
         </DialogBody>
@@ -82,6 +111,80 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         <DialogCloseTrigger />
       </DialogContent>
     </DialogRoot>
+  );
+};
+
+// ── Keyboard Shortcut Settings ──────────────────────────────
+const ShortcutSettings: React.FC = () => {
+  const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(loadKeyboardShortcuts);
+  const [recording, setRecording] = useState<ShortcutAction | null>(null);
+
+  const updateShortcut = (action: ShortcutAction, shortcut: string) => {
+    const updated = { ...shortcuts, [action]: shortcut };
+    setShortcuts(updated);
+    saveKeyboardShortcuts(updated);
+    setRecording(null);
+  };
+
+  const resetShortcuts = () => {
+    setShortcuts(DEFAULT_SHORTCUTS);
+    saveKeyboardShortcuts(DEFAULT_SHORTCUTS);
+    setRecording(null);
+  };
+
+  return (
+    <Stack gap={3}>
+      <Flex justify="space-between" align="center">
+        <Text fontSize="14px" fontWeight="bold" color="fg">
+          Keyboard Shortcuts
+        </Text>
+        <Button size="xs" variant="ghost" onClick={resetShortcuts}>
+          <LuRotateCcw /> Reset
+        </Button>
+      </Flex>
+      <Text fontSize="11px" color="fg.muted">
+        Click a shortcut, then press the new key combination.
+      </Text>
+      {Object.keys(SHORTCUT_LABELS).map((key) => {
+        const action = key as ShortcutAction;
+        const duplicate = Object.entries(shortcuts).some(
+          ([otherAction, value]) => otherAction !== action && value === shortcuts[action],
+        );
+        return (
+          <Flex key={action} justify="space-between" align="center" gap={3}>
+            <Text fontSize="12px" color="fg">
+              {SHORTCUT_LABELS[action]}
+            </Text>
+            <Input
+              size="xs"
+              w="145px"
+              readOnly
+              value={recording === action ? 'Press keys…' : shortcuts[action]}
+              color={duplicate ? 'orange.fg' : undefined}
+              cursor="pointer"
+              textAlign="center"
+              onClick={() => setRecording(action)}
+              onBlur={() => setRecording(null)}
+              onKeyDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.key === 'Escape') {
+                  setRecording(null);
+                  return;
+                }
+                const shortcut = shortcutFromEvent(event);
+                if (shortcut) updateShortcut(action, shortcut);
+              }}
+            />
+          </Flex>
+        );
+      })}
+      {new Set(Object.values(shortcuts)).size !== Object.keys(shortcuts).length && (
+        <Text fontSize="11px" color="orange.fg">
+          Duplicate shortcuts are highlighted. Only the first matching action will run.
+        </Text>
+      )}
+    </Stack>
   );
 };
 
@@ -125,9 +228,13 @@ const AppearanceSettings: React.FC = () => {
 
 // ── Terminal Settings ────────────────────────────────────────
 const TerminalSettings: React.FC = () => {
-  const [fontSize, setFontSize] = useState(() => localStorage.getItem('terminal-font-size') || '14');
+  const [fontSize, setFontSize] = useState(
+    () => localStorage.getItem('terminal-font-size') || '14',
+  );
   const [fontFamily, setFontFamily] = useState(
-    () => localStorage.getItem('terminal-font-family') || '"Cascadia Code", Menlo, "Courier New", monospace',
+    () =>
+      localStorage.getItem('terminal-font-family') ||
+      '"Cascadia Code", Menlo, "Courier New", monospace',
   );
 
   const saveFontSize = (val: string) => {
@@ -186,7 +293,9 @@ const TerminalSettings: React.FC = () => {
 
 // ── SSH Settings ─────────────────────────────────────────────
 const SshSettings: React.FC = () => {
-  const [defaultPort, setDefaultPort] = useState(() => localStorage.getItem('ssh-default-port') || '22');
+  const [defaultPort, setDefaultPort] = useState(
+    () => localStorage.getItem('ssh-default-port') || '22',
+  );
   const [timeout, setTimeout_] = useState(() => localStorage.getItem('ssh-timeout') || '15');
 
   const saveDefaultPort = (val: string) => {

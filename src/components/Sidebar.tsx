@@ -116,6 +116,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
   openTab,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
   const filteredSessions = normalizedQuery
     ? sessions.filter((session) =>
@@ -126,6 +127,12 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
     : sessions;
   const localSession = filteredSessions.find((s) => s.id === 'local');
   const hasResults = filteredSessions.length > 0;
+
+  useEffect(() => {
+    const focusSearch = () => searchInputRef.current?.focus();
+    window.addEventListener('focus-session-search', focusSearch);
+    return () => window.removeEventListener('focus-session-search', focusSearch);
+  }, []);
 
   return (
     <>
@@ -184,6 +191,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
           pointerEvents="none"
         />
         <Input
+          ref={searchInputRef}
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
           placeholder="Search sessions"
