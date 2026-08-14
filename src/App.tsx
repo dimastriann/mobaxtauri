@@ -25,6 +25,7 @@ import HealthBar from './components/HealthBar';
 import NewSessionModal from './components/NewSessionModal';
 import PromptModal from './components/PromptModal';
 import SettingsModal from './components/SettingsModal';
+import CommandPalette from './components/CommandPalette';
 import { useExportImport } from './hooks/useExportImport';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './components/ContextMenu';
 import { Session, useSessionStore } from './store/useSessionStore';
@@ -45,6 +46,7 @@ function App() {
   const [isModalOpen, setModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<Session | undefined>(undefined);
   const sessions = useSessionStore((state) => state.sessions);
+  const snippets = useSessionStore((state) => state.snippets);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const openTab = useSessionStore((state) => state.openTab);
   const deleteSession = useSessionStore((state) => state.deleteSession);
@@ -61,6 +63,7 @@ function App() {
   const [mainView, setMainView] = useState<'dashboard' | 'terminals'>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   const [sidebarMenu, setSidebarMenu] = useState<{
     x: number;
@@ -203,6 +206,17 @@ function App() {
     const handleGlobalClick = () => setSidebarMenu(null);
     window.addEventListener('click', handleGlobalClick);
     return () => window.removeEventListener('click', handleGlobalClick);
+  }, []);
+
+  useEffect(() => {
+    const handleCommandPaletteShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', handleCommandPaletteShortcut);
+    return () => window.removeEventListener('keydown', handleCommandPaletteShortcut);
   }, []);
 
   useEffect(() => {
@@ -358,9 +372,29 @@ function App() {
         editingSession={editingSession}
       />
 
-      <SettingsModal
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        sessions={sessions}
+        snippets={snippets}
+        canExecuteSnippet={Boolean(activeSessionId)}
+        onClose={() => setCommandPaletteOpen(false)}
+        onOpenSession={(sessionId) => {
+          setMainView('terminals');
+          openTab(sessionId);
+        }}
+        onExecuteSnippet={(command) => {
+          if (activeSessionId)
+            emit(
+              `snippet-execute-${activeSessionId}`,
+              command.endsWith('\n') ? command : `${command}\n`,
+            );
+        }}
+        onNewSession={handleNewSession}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onShowDashboard={() => setMainView('dashboard')}
+        onShowTerminals={() => setMainView('terminals')}
       />
 
       <PromptModal

@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Local project planning
+planning-project/
+
 # Editor directories and files
 .vscode/*
 .zed/*

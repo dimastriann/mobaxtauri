@@ -1,5 +1,15 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { VStack, HStack, Text, Box, Icon, IconButton, Spinner, Flex } from '@chakra-ui/react';
+import {
+  VStack,
+  HStack,
+  Text,
+  Box,
+  Icon,
+  IconButton,
+  Spinner,
+  Flex,
+  Input,
+} from '@chakra-ui/react';
 import {
   LuPlus,
   LuFolderPlus,
@@ -11,6 +21,8 @@ import {
   LuUpload,
   LuPanelLeftClose,
   LuPanelLeftOpen,
+  LuSearch,
+  LuX,
 } from 'react-icons/lu';
 import { Session, Folder, Snippet, useSessionStore } from '../store/useSessionStore';
 import { useExportImport } from '../hooks/useExportImport';
@@ -103,7 +115,17 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
   toggleFolderCollapse,
   openTab,
 }) => {
-  const localSession = sessions.find((s) => s.id === 'local');
+  const [searchQuery, setSearchQuery] = useState('');
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+  const filteredSessions = normalizedQuery
+    ? sessions.filter((session) =>
+        [session.name, session.host, session.tag].some((value) =>
+          value?.toLocaleLowerCase().includes(normalizedQuery),
+        ),
+      )
+    : sessions;
+  const localSession = filteredSessions.find((s) => s.id === 'local');
+  const hasResults = filteredSessions.length > 0;
 
   return (
     <>
@@ -151,6 +173,41 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
         </HStack>
       </HStack>
 
+      <HStack px={3} pb={2} position="relative">
+        <Icon
+          as={LuSearch}
+          boxSize="14px"
+          color="fg.subtle"
+          position="absolute"
+          left="22px"
+          zIndex={1}
+          pointerEvents="none"
+        />
+        <Input
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Search sessions"
+          aria-label="Search sessions by name, host, or tag"
+          size="xs"
+          pl="28px"
+          pr={searchQuery ? '28px' : undefined}
+          borderRadius="6px"
+        />
+        {searchQuery && (
+          <IconButton
+            aria-label="Clear session search"
+            title="Clear search"
+            size="2xs"
+            variant="ghost"
+            position="absolute"
+            right="18px"
+            onClick={() => setSearchQuery('')}
+          >
+            <LuX size={12} />
+          </IconButton>
+        )}
+      </HStack>
+
       <VStack
         align="stretch"
         flex={1}
@@ -170,7 +227,8 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
         ) : (
           <>
             {folders.map((folder) => {
-              const folderSessions = sessions.filter((s) => s.folderId === folder.id);
+              const folderSessions = filteredSessions.filter((s) => s.folderId === folder.id);
+              if (normalizedQuery && folderSessions.length === 0) return null;
               return (
                 <Box
                   key={folder.id}
@@ -196,7 +254,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                       {folder.name}
                     </Text>
                   </HStack>
-                  {!folder.isCollapsed && (
+                  {(!folder.isCollapsed || normalizedQuery) && (
                     <VStack align="stretch" gap={0} pl={4} mt={1}>
                       {folderSessions.map((session) => (
                         <SessionItem
@@ -214,7 +272,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                 </Box>
               );
             })}
-            {sessions
+            {filteredSessions
               .filter(
                 (s) =>
                   s.id !== 'local' && (!s.folderId || !folders.some((f) => f.id === s.folderId)),
@@ -239,6 +297,14 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                 onContextMenu={(e, id, name) => onContextMenu(e, 'session', id, name)}
                 onClick={() => openTab(localSession.id)}
               />
+            )}
+            {!hasResults && (
+              <Flex p={6} direction="column" align="center" gap={2} color="fg.muted">
+                <Icon as={LuSearch} boxSize="20px" />
+                <Text fontSize="12px" textAlign="center">
+                  No sessions match “{searchQuery.trim()}”
+                </Text>
+              </Flex>
             )}
           </>
         )}
@@ -497,7 +563,11 @@ const Sidebar: React.FC<SidebarProps> = ({
             borderColor={sidebarTab === 'sftp' ? 'blue.fg' : 'transparent'}
             onClick={() => setSidebarTab('sftp')}
           >
-            <Text fontSize="11px" fontWeight="bold" color={sidebarTab === 'sftp' ? 'fg' : 'fg.muted'}>
+            <Text
+              fontSize="11px"
+              fontWeight="bold"
+              color={sidebarTab === 'sftp' ? 'fg' : 'fg.muted'}
+            >
               SFTP
             </Text>
           </Box>
