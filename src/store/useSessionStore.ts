@@ -32,6 +32,7 @@ export interface Session {
   savePassword?: boolean;
   isFavorite?: boolean;
   os?: string;
+  hasBell?: boolean;
 }
 
 export interface Folder {
@@ -66,6 +67,7 @@ interface SessionState {
   updateSessionStatus: (id: string, status: SessionStatus, error?: string) => void;
   updateLastActivity: (id: string) => void;
   updateSessionHealth: (id: string, health: NonNullable<Session['health']>) => void;
+  updateSessionBell: (id: string, hasBell: boolean) => void;
 
   // Tab management
   setActiveSession: (id: string) => void;
@@ -173,22 +175,52 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }));
   },
 
+  updateSessionBell: (id, hasBell) => {
+    set((state) => ({
+      sessions: state.sessions.map((session) =>
+        session.id === id ? { ...session, hasBell } : session,
+      ),
+    }));
+  },
+
   setActiveSession: (id) => {
     // Alias kept for interface compatibility — delegates to openTab logic
     const state = get();
     if (!state.openTabs.includes(id)) {
-      set({ openTabs: [...state.openTabs, id], activeSessionId: id });
+      set({
+        sessions: state.sessions.map((session) =>
+          session.id === id ? { ...session, hasBell: false } : session,
+        ),
+        openTabs: [...state.openTabs, id],
+        activeSessionId: id,
+      });
     } else {
-      set({ activeSessionId: id });
+      set({
+        sessions: state.sessions.map((session) =>
+          session.id === id ? { ...session, hasBell: false } : session,
+        ),
+        activeSessionId: id,
+      });
     }
   },
 
   openTab: (id: string) => {
     const state = get();
     if (!state.openTabs.includes(id)) {
-      set({ openTabs: [...state.openTabs, id], activeSessionId: id });
+      set({
+        sessions: state.sessions.map((session) =>
+          session.id === id ? { ...session, hasBell: false } : session,
+        ),
+        openTabs: [...state.openTabs, id],
+        activeSessionId: id,
+      });
     } else {
-      set({ activeSessionId: id });
+      set({
+        sessions: state.sessions.map((session) =>
+          session.id === id ? { ...session, hasBell: false } : session,
+        ),
+        activeSessionId: id,
+      });
     }
   },
 
@@ -396,7 +428,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       const state = get();
       const store = await load(STORAGE_PATH);
-      const toSave = state.sessions.map(({ status, error, lastActivity, password, ...s }) => s);
+      const toSave = state.sessions.map(
+        ({ status, error, lastActivity, password, hasBell, ...s }) => s,
+      );
       await store.set('sessions', toSave);
       await store.set('folders', state.folders);
       await store.set('snippets', state.snippets);

@@ -82,10 +82,17 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const isPasswordModeRef = useRef(false);
   const passwordBufRef = useRef('');
   const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFocusedRef = useRef(isFocused);
   const { colorMode } = useColorMode();
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [showBellFlash, setShowBellFlash] = useState(false);
+
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
 
   const getSession = useCallback((): Session | undefined => {
     return useSessionStore.getState().sessions.find((s) => s.id === sessionId);
@@ -200,6 +207,15 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     searchAddonRef.current = searchAddon;
 
     term.open(terminalRef.current);
+
+    term.onBell(() => {
+      if (bellTimerRef.current) clearTimeout(bellTimerRef.current);
+      setShowBellFlash(true);
+      bellTimerRef.current = setTimeout(() => setShowBellFlash(false), 700);
+      if (!isFocusedRef.current) {
+        useSessionStore.getState().updateSessionBell(sessionId, true);
+      }
+    });
 
     // Ctrl+F handler
     term.attachCustomKeyEventHandler((e) => {
@@ -387,6 +403,10 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         clearInterval(keepaliveRef.current);
         keepaliveRef.current = null;
       }
+      if (bellTimerRef.current) {
+        clearTimeout(bellTimerRef.current);
+        bellTimerRef.current = null;
+      }
 
       // Disconnect SSH when tab is closed
       const sess = getSession();
@@ -470,6 +490,17 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         requestAnimationFrame(() => xtermRef.current?.focus());
       }}
     >
+      <Box
+        position="absolute"
+        inset={0}
+        zIndex={5}
+        pointerEvents="none"
+        border="2px solid"
+        borderColor="orange.400"
+        boxShadow="inset 0 0 28px rgba(251, 146, 60, 0.22)"
+        opacity={showBellFlash ? 1 : 0}
+        transition="opacity 180ms ease"
+      />
       {showSearch && (
         <Box
           position="absolute"

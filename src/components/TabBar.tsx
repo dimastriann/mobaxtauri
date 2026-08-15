@@ -1,6 +1,6 @@
 import React from 'react';
 import { HStack, Box, Text, IconButton, Icon } from '@chakra-ui/react';
-import { LuColumns2, LuPlus, LuX } from 'react-icons/lu';
+import { LuBell, LuColumns2, LuPlus, LuX } from 'react-icons/lu';
 import { Session, useSessionStore } from '../store/useSessionStore';
 import { ask } from '@tauri-apps/plugin-dialog';
 
@@ -183,6 +183,16 @@ const TabBar: React.FC<TabBarProps> = ({
               >
                 {session.name}
               </Text>
+
+              {session.hasBell && (
+                <Icon
+                  as={LuBell}
+                  boxSize="12px"
+                  color="orange.fg"
+                  flexShrink={0}
+                  aria-label="Terminal bell notification"
+                />
+              )}
 
               {/* Close button */}
               <Box
