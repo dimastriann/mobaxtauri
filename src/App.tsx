@@ -66,6 +66,8 @@ function App() {
   const addSnippet = useSessionStore((state) => state.addSnippet);
   const updateSnippet = useSessionStore((state) => state.updateSnippet);
   const deleteSnippet = useSessionStore((state) => state.deleteSnippet);
+  const addWorkspace = useSessionStore((state) => state.addWorkspace);
+  const restoreWorkspace = useSessionStore((state) => state.restoreWorkspace);
 
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'sftp' | 'snippets'>('sessions');
   const [mainView, setMainView] = useState<'dashboard' | 'terminals'>('dashboard');
@@ -339,6 +341,14 @@ function App() {
       onConfirm: ({ name, command }) => addSnippet(name, command),
     });
   };
+  const handleSaveWorkspace = () => {
+    if (openTabs.length === 0) return;
+    setPromptConfig({
+      title: 'Save Workspace',
+      fields: [{ key: 'name', label: 'Workspace Name', placeholder: 'e.g. Production checks' }],
+      onConfirm: ({ name }) => addWorkspace(name),
+    });
+  };
 
   return (
     <Flex h="100vh" direction="column" bg="bg.panel" color="fg" overflow="hidden">
@@ -429,6 +439,11 @@ function App() {
             setSidebarTab={setSidebarTab}
             onNewSession={handleNewSession}
             onAddFolder={handleAddFolder}
+            onSaveWorkspace={handleSaveWorkspace}
+            onRestoreWorkspace={(workspaceId) => {
+              setSecondarySessionId(null);
+              restoreWorkspace(workspaceId);
+            }}
             onAddSnippet={handleAddSnippet}
             onExecuteSnippet={(c) => {
               if (activeSessionId)

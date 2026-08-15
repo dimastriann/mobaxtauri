@@ -46,6 +46,13 @@ export interface Snippet {
   command: string;
 }
 
+export interface Workspace {
+  id: string;
+  name: string;
+  sessionIds: string[];
+  activeSessionId: string | null;
+}
+
 interface SessionState {
   sessions: Session[];
   openTabs: string[]; // IDs of sessions currently open as tabs
@@ -84,6 +91,12 @@ interface SessionState {
   addSnippet: (name: string, command: string) => void;
   updateSnippet: (id: string, updates: Partial<Snippet>) => void;
   deleteSnippet: (id: string) => void;
+
+  // Workspace Management
+  workspaces: Workspace[];
+  addWorkspace: (name: string) => void;
+  deleteWorkspace: (id: string) => void;
+  restoreWorkspace: (id: string) => void;
 }
 
 const STORAGE_PATH = 'sessions.bin';
@@ -95,6 +108,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   isLoading: true,
   folders: [],
   snippets: [],
+  workspaces: [],
 
   addSession: (session) => {
     set((state) => ({
@@ -124,6 +138,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         sessions: newSessions,
         openTabs: newTabs,
         activeSessionId: newActive,
+        workspaces: state.workspaces.map((workspace) => {
+          const sessionIds = workspace.sessionIds.filter((sessionId) => sessionId !== id);
+          return {
+            ...workspace,
+            sessionIds,
+            activeSessionId:
+              workspace.activeSessionId === id
+                ? (sessionIds[0] ?? null)
+                : workspace.activeSessionId,
+          };
+        }),
       };
     });
     get().saveToDisk();
@@ -273,12 +298,41 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     get().saveToDisk();
   },
 
+  addWorkspace: (name) => {
+    const { openTabs, activeSessionId } = get();
+    const id = `workspace-${Date.now()}`;
+    set((state) => ({
+      workspaces: [...state.workspaces, { id, name, sessionIds: [...openTabs], activeSessionId }],
+    }));
+    get().saveToDisk();
+  },
+
+  deleteWorkspace: (id) => {
+    set((state) => ({ workspaces: state.workspaces.filter((workspace) => workspace.id !== id) }));
+    get().saveToDisk();
+  },
+
+  restoreWorkspace: (id) => {
+    const state = get();
+    const workspace = state.workspaces.find((item) => item.id === id);
+    if (!workspace) return;
+    const existingIds = new Set(state.sessions.map((session) => session.id));
+    const sessionIds = workspace.sessionIds.filter((sessionId) => existingIds.has(sessionId));
+    const restoredTabs = sessionIds.length ? sessionIds : ['local'];
+    const activeSessionId =
+      workspace.activeSessionId && restoredTabs.includes(workspace.activeSessionId)
+        ? workspace.activeSessionId
+        : restoredTabs[0];
+    set({ openTabs: restoredTabs, activeSessionId });
+  },
+
   loadSessions: async () => {
     try {
       const store = await load(STORAGE_PATH);
       const savedSessions = (await store.get<Session[]>('sessions')) || [];
       const savedFolders = (await store.get<Folder[]>('folders')) || [];
       const savedSnippets = (await store.get<Snippet[]>('snippets')) || [];
+      const savedWorkspaces = (await store.get<Workspace[]>('workspaces')) || [];
 
       // Unlock credential store
       await useCredentialStore.getState().unlock();
@@ -316,6 +370,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         sessions: [local, ...filteredSaved],
         folders: savedFolders,
         snippets: savedSnippets,
+        workspaces: savedWorkspaces,
         openTabs: ['local'],
         activeSessionId: 'local',
         isLoading: false,
@@ -331,6 +386,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         sessions: [{ id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' }],
         folders: [],
         snippets: [],
+        workspaces: [],
         isLoading: false,
       });
     }
@@ -344,6 +400,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       await store.set('sessions', toSave);
       await store.set('folders', state.folders);
       await store.set('snippets', state.snippets);
+      await store.set('workspaces', state.workspaces);
       await store.save();
     } catch (err) {
       console.error('[STORE] Failed to save sessions:', err);

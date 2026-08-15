@@ -23,6 +23,9 @@ import {
   LuPanelLeftOpen,
   LuSearch,
   LuX,
+  LuLayers,
+  LuSave,
+  LuTrash2,
 } from 'react-icons/lu';
 import { Session, Folder, Snippet, useSessionStore } from '../store/useSessionStore';
 import { useExportImport } from '../hooks/useExportImport';
@@ -92,6 +95,8 @@ interface SessionsTabProps {
   openTabs: string[];
   onNewSession: () => void;
   onAddFolder: () => void;
+  onSaveWorkspace: () => void;
+  onRestoreWorkspace: (workspaceId: string) => void;
   onContextMenu: (e: React.MouseEvent, type: SidebarMenuType, id?: string, name?: string) => void;
   handleExport: () => void;
   handleDropOnFolder: (e: React.DragEvent, folderId: string | null) => void;
@@ -108,6 +113,8 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
   openTabs,
   onNewSession,
   onAddFolder,
+  onSaveWorkspace,
+  onRestoreWorkspace,
   onContextMenu,
   handleExport,
   handleDropOnFolder,
@@ -127,6 +134,8 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
     : sessions;
   const localSession = filteredSessions.find((s) => s.id === 'local');
   const hasResults = filteredSessions.length > 0;
+  const workspaces = useSessionStore((state) => state.workspaces);
+  const deleteWorkspace = useSessionStore((state) => state.deleteWorkspace);
 
   useEffect(() => {
     const focusSearch = () => searchInputRef.current?.focus();
@@ -179,6 +188,65 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
           </IconButton>
         </HStack>
       </HStack>
+
+      {!normalizedQuery && (
+        <Box px={2} pb={2}>
+          <HStack px={1} pb={1} justify="space-between">
+            <HStack gap={1.5} color="fg.subtle">
+              <LuLayers size={12} />
+              <Text fontSize="10px" fontWeight="bold" letterSpacing="0.05em">
+                WORKSPACES
+              </Text>
+            </HStack>
+            <IconButton
+              aria-label="Save current tabs as workspace"
+              title="Save current tabs as workspace"
+              size="2xs"
+              variant="ghost"
+              onClick={onSaveWorkspace}
+            >
+              <LuSave size={12} />
+            </IconButton>
+          </HStack>
+          {workspaces.length === 0 ? (
+            <Text px={1} fontSize="10px" color="fg.subtle">
+              Save the current tab group for quick restore.
+            </Text>
+          ) : (
+            workspaces.map((workspace) => (
+              <HStack
+                key={workspace.id}
+                px={2}
+                py={1.5}
+                borderRadius="6px"
+                cursor="pointer"
+                _hover={{ bg: 'bg.emphasized' }}
+                onClick={() => onRestoreWorkspace(workspace.id)}
+              >
+                <LuLayers size={13} />
+                <Text flex={1} minW={0} fontSize="12px" lineClamp={1}>
+                  {workspace.name}
+                </Text>
+                <Text fontSize="10px" color="fg.subtle">
+                  {workspace.sessionIds.length}
+                </Text>
+                <IconButton
+                  aria-label={`Delete workspace ${workspace.name}`}
+                  size="2xs"
+                  variant="ghost"
+                  color="fg.muted"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    deleteWorkspace(workspace.id);
+                  }}
+                >
+                  <LuTrash2 size={11} />
+                </IconButton>
+              </HStack>
+            ))
+          )}
+        </Box>
+      )}
 
       <HStack px={3} pb={2} position="relative">
         <Icon
@@ -421,6 +489,8 @@ interface SidebarProps {
   setSidebarTab: (tab: 'sessions' | 'sftp' | 'snippets') => void;
   onNewSession: () => void;
   onAddFolder: () => void;
+  onSaveWorkspace: () => void;
+  onRestoreWorkspace: (workspaceId: string) => void;
   onAddSnippet: () => void;
   onExecuteSnippet: (command: string) => void;
   onContextMenu: (
@@ -442,6 +512,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   setSidebarTab,
   onNewSession,
   onAddFolder,
+  onSaveWorkspace,
+  onRestoreWorkspace,
   onAddSnippet,
   onExecuteSnippet,
   onContextMenu,
@@ -621,6 +693,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             openTabs={openTabs}
             onNewSession={onNewSession}
             onAddFolder={onAddFolder}
+            onSaveWorkspace={onSaveWorkspace}
+            onRestoreWorkspace={onRestoreWorkspace}
             onContextMenu={onContextMenu}
             handleExport={handleExport}
             handleDropOnFolder={handleDropOnFolder}
