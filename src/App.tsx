@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { Flex, Box } from '@chakra-ui/react';
 import {
   LuPlus,
@@ -54,7 +54,6 @@ function App() {
   const sessions = useSessionStore((state) => state.sessions);
   const snippets = useSessionStore((state) => state.snippets);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const openTab = useSessionStore((state) => state.openTab);
   const openTabs = useSessionStore((state) => state.openTabs);
   const setActiveSession = useSessionStore((state) => state.setActiveSession);
   const closeTab = useSessionStore((state) => state.closeTab);
@@ -74,6 +73,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(loadKeyboardShortcuts);
+  const [secondarySessionId, setSecondarySessionId] = useState<string | null>(null);
 
   const [sidebarMenu, setSidebarMenu] = useState<{
     x: number;
@@ -119,7 +119,7 @@ function App() {
       if (mainView === 'dashboard') {
         setMainView('terminals');
       }
-      openTab(sessionId);
+      activateTerminalSession(sessionId);
 
       try {
         await invoke('ssh_connect', { sessionId, host, port, user, password: null });
@@ -141,7 +141,7 @@ function App() {
 
   const handleConnectSession = (session: Session) => {
     setMainView('terminals');
-    openTab(session.id);
+    activateTerminalSession(session.id);
   };
 
   // ── Context Menu Handlers ──────────────────────────────────
@@ -261,16 +261,46 @@ function App() {
         const currentIndex = Math.max(openTabs.indexOf(activeSessionId ?? ''), 0);
         const offset = action === 'nextTab' ? 1 : -1;
         const nextIndex = (currentIndex + offset + openTabs.length) % openTabs.length;
-        setActiveSession(openTabs[nextIndex]);
+        const nextSessionId = openTabs[nextIndex];
+        if (nextSessionId === secondarySessionId && activeSessionId) {
+          setSecondarySessionId(activeSessionId);
+        }
+        setActiveSession(nextSessionId);
       }
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [shortcuts, activeSessionId, sessions, openTabs, closeTab, setActiveSession]);
+  }, [
+    shortcuts,
+    activeSessionId,
+    secondarySessionId,
+    sessions,
+    openTabs,
+    closeTab,
+    setActiveSession,
+  ]);
 
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
+
+  useEffect(() => {
+    if (secondarySessionId && !openTabs.includes(secondarySessionId)) {
+      setSecondarySessionId(null);
+    }
+  }, [openTabs, secondarySessionId]);
+
+  const activateTerminalSession = useCallback(
+    (sessionId: string) => {
+      // Swap pane roles in one event. Never let active and secondary briefly
+      // point at the same terminal, which would collapse and remount the layout.
+      if (sessionId === secondarySessionId && activeSessionId) {
+        setSecondarySessionId(activeSessionId);
+      }
+      setActiveSession(sessionId);
+    },
+    [activeSessionId, secondarySessionId, setActiveSession],
+  );
 
   useEffect(() => {
     const pollHealth = () => {
@@ -408,8 +438,21 @@ function App() {
           />
 
           <Flex flex={1} direction="column" overflow="hidden">
-            <TabBar onNewSession={handleNewSession} />
-            <TerminalContainer isViewVisible={mainView === 'terminals'} />
+            <TabBar
+              onNewSession={handleNewSession}
+              isSplit={Boolean(secondarySessionId)}
+              onToggleSplit={() =>
+                setSecondarySessionId((current) =>
+                  current ? null : (openTabs.find((id) => id !== activeSessionId) ?? null),
+                )
+              }
+              onActivateSession={activateTerminalSession}
+            />
+            <TerminalContainer
+              isViewVisible={mainView === 'terminals'}
+              secondarySessionId={secondarySessionId}
+              onActivateSession={activateTerminalSession}
+            />
             <HealthBar />
           </Flex>
         </Flex>
@@ -431,7 +474,7 @@ function App() {
         onClose={() => setCommandPaletteOpen(false)}
         onOpenSession={(sessionId) => {
           setMainView('terminals');
-          openTab(sessionId);
+          activateTerminalSession(sessionId);
         }}
         onExecuteSnippet={(command) => {
           if (activeSessionId)

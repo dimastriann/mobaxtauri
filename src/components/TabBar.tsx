@@ -1,11 +1,14 @@
 import React from 'react';
 import { HStack, Box, Text, IconButton, Icon } from '@chakra-ui/react';
-import { LuPlus, LuX } from 'react-icons/lu';
+import { LuColumns2, LuPlus, LuX } from 'react-icons/lu';
 import { Session, useSessionStore } from '../store/useSessionStore';
 import { ask } from '@tauri-apps/plugin-dialog';
 
 interface TabBarProps {
   onNewSession: () => void;
+  isSplit: boolean;
+  onToggleSplit: () => void;
+  onActivateSession: (sessionId: string) => void;
 }
 
 const statusColor = (status: Session['status']) => {
@@ -21,8 +24,13 @@ const statusColor = (status: Session['status']) => {
   }
 };
 
-const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
-  const { sessions, openTabs, activeSessionId, setActiveSession, closeTab } = useSessionStore();
+const TabBar: React.FC<TabBarProps> = ({
+  onNewSession,
+  isSplit,
+  onToggleSplit,
+  onActivateSession,
+}) => {
+  const { sessions, openTabs, activeSessionId, closeTab } = useSessionStore();
 
   const openSessions = openTabs
     .map((id) => sessions.find((s) => s.id === id))
@@ -33,13 +41,10 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
     const session = sessions.find((s) => s.id === id);
     // Show confirmation dialog only for SSH sessions to avoid accidental disconnect
     if (session?.type === 'ssh' && session.status === 'connected') {
-      const confirmed = await ask(
-        `Disconnect "${session.name}" and close the tab?`,
-        {
-          title: 'Close Session',
-          kind: 'warning',
-        },
-      );
+      const confirmed = await ask(`Disconnect "${session.name}" and close the tab?`, {
+        title: 'Close Session',
+        kind: 'warning',
+      });
       if (!confirmed) return;
     }
     closeTab(id);
@@ -50,13 +55,10 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
       e.preventDefault();
       const session = sessions.find((s) => s.id === id);
       if (session?.type === 'ssh' && session.status === 'connected') {
-        const confirmed = await ask(
-          `Disconnect "${session.name}" and close the tab?`,
-          {
-            title: 'Close Session',
-            kind: 'warning',
-          },
-        );
+        const confirmed = await ask(`Disconnect "${session.name}" and close the tab?`, {
+          title: 'Close Session',
+          kind: 'warning',
+        });
         if (!confirmed) return;
       }
       closeTab(id);
@@ -104,7 +106,7 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
             <Box
               key={session.id}
               data-tab
-              onClick={() => setActiveSession(session.id)}
+              onClick={() => onActivateSession(session.id)}
               onMouseDown={(e) => handleMiddleClick(e, session.id)}
               display="flex"
               alignItems="center"
@@ -218,6 +220,21 @@ const TabBar: React.FC<TabBarProps> = ({ onNewSession }) => {
         borderLeft="1px solid"
         borderColor="border.subtle"
       >
+        <IconButton
+          aria-label={isSplit ? 'Close split pane' : 'Split terminal pane'}
+          title={isSplit ? 'Close split pane' : 'Split terminal pane'}
+          size="xs"
+          variant="ghost"
+          color={isSplit ? 'blue.fg' : 'fg.muted'}
+          onClick={onToggleSplit}
+          disabled={openTabs.length < 2}
+          minW="26px"
+          h="26px"
+          borderRadius="4px"
+          _hover={{ bg: 'blue.subtle' }}
+        >
+          <LuColumns2 />
+        </IconButton>
         <IconButton
           aria-label="New Session"
           size="xs"

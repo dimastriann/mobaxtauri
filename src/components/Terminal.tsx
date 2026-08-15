@@ -63,9 +63,16 @@ const XTERM_THEME_DARK: XTerm['options']['theme'] = {
 interface TerminalInstanceProps {
   sessionId: string;
   isVisible: boolean;
+  isFocused: boolean;
+  onActivate: () => void;
 }
 
-const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisible }) => {
+const TerminalInstance: React.FC<TerminalInstanceProps> = ({
+  sessionId,
+  isVisible,
+  isFocused,
+  onActivate,
+}) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -173,7 +180,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
 
     const isLight = colorMode === 'light';
     const savedFontSize = parseInt(localStorage.getItem('terminal-font-size') || '14', 10);
-    const savedFontFamily = localStorage.getItem('terminal-font-family') || '"Cascadia Code", Menlo, "Courier New", monospace';
+    const savedFontFamily =
+      localStorage.getItem('terminal-font-family') ||
+      '"Cascadia Code", Menlo, "Courier New", monospace';
     const term = new XTerm({
       cursorBlink: true,
       fontSize: savedFontSize,
@@ -399,7 +408,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       const doFit = (attempt: number) => {
         if (cancelled) return;
         fitRef.current?.fit();
-        xtermRef.current?.focus();
+        if (isFocused) xtermRef.current?.focus();
         // Retry up to 3 times in case layout isn't settled
         if (attempt < 3) {
           setTimeout(() => doFit(attempt + 1), 100 * (attempt + 1));
@@ -411,6 +420,30 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
         clearTimeout(timer);
       };
     }
+  }, [isVisible, isFocused]);
+
+  // Splitting a flex container changes pane width without firing a window
+  // resize event. Observe the real host size so xterm and the PTY stay aligned.
+  useEffect(() => {
+    const host = terminalRef.current;
+    if (!host || !isVisible) return;
+
+    let frame: number | null = null;
+    const fitToHost = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        if (host.clientWidth > 0 && host.clientHeight > 0) fitRef.current?.fit();
+      });
+    };
+    const observer = new ResizeObserver(fitToHost);
+    observer.observe(host);
+    fitToHost();
+
+    return () => {
+      observer.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
   }, [isVisible]);
 
   // Update xterm theme when colorMode changes
@@ -432,6 +465,10 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
       left={0}
       right={0}
       bottom={0}
+      onPointerDownCapture={() => {
+        if (!isFocused) onActivate();
+        requestAnimationFrame(() => xtermRef.current?.focus());
+      }}
     >
       {showSearch && (
         <Box
@@ -512,20 +549,54 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({ sessionId, isVisibl
 // the inactive ones so they stay alive in the background.
 // ─────────────────────────────────────────────────────────────
 
-const TerminalContainer: React.FC<{ isViewVisible?: boolean }> = ({
+interface TerminalContainerProps {
+  isViewVisible?: boolean;
+  secondarySessionId?: string | null;
+  onActivateSession: (sessionId: string) => void;
+}
+
+const TerminalContainer: React.FC<TerminalContainerProps> = ({
   isViewVisible = true,
+  secondarySessionId = null,
+  onActivateSession,
 }) => {
   const openTabs = useSessionStore((state) => state.openTabs);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const visibleIds = [activeSessionId, secondarySessionId].filter(
+    (id, index, ids): id is string =>
+      Boolean(id) && openTabs.includes(id as string) && ids.indexOf(id) === index,
+  );
+  const isSplit = visibleIds.length === 2;
 
   return (
-    <Box flex={1} position="relative" h="full" w="full" bg="bg.panel" overflow="hidden">
+    <Box
+      flex={1}
+      display="flex"
+      position="relative"
+      h="full"
+      w="full"
+      bg="bg.panel"
+      overflow="hidden"
+    >
       {openTabs.map((tabId) => (
-        <TerminalInstance
+        <Box
           key={tabId}
-          sessionId={tabId}
-          isVisible={tabId === activeSessionId && isViewVisible}
-        />
+          flex="1 1 0"
+          minW={0}
+          h="full"
+          position={visibleIds.includes(tabId) ? 'relative' : 'absolute'}
+          inset={visibleIds.includes(tabId) ? undefined : 0}
+          visibility={visibleIds.includes(tabId) && isViewVisible ? 'visible' : 'hidden'}
+          borderLeft={isSplit && tabId === secondarySessionId ? '1px solid' : undefined}
+          borderColor="border.subtle"
+        >
+          <TerminalInstance
+            sessionId={tabId}
+            isVisible={visibleIds.includes(tabId) && isViewVisible}
+            isFocused={tabId === activeSessionId && isViewVisible}
+            onActivate={() => onActivateSession(tabId)}
+          />
+        </Box>
       ))}
       {openTabs.length === 0 && (
         <Box
