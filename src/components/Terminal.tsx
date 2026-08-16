@@ -189,6 +189,13 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
             (await useCredentialStore.getState().getCredential(sessionId)) || undefined;
         }
 
+        if (session.savePassword && !activePassword && !session.password) {
+          updateStatus('disconnected', 'Saved credential is unavailable');
+          term.writeln('\x1b[33m● Saved credential unavailable. Please enter the password.\x1b[0m');
+          promptPassword();
+          return;
+        }
+
         await invoke('ssh_connect', {
           sessionId,
           host: session.host,
@@ -439,7 +446,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       // Always reconnect: closeTab marks sessions as disconnected,
       // and even if the backend session was dropped, this ensures
       // we establish a fresh connection.
-      if (session.password) {
+      if (session.password || session.savePassword) {
         doConnect();
       } else {
         promptPassword();

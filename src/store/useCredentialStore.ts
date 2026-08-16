@@ -7,6 +7,7 @@ interface CredentialState {
   store: any | null;
   isUnlocked: boolean;
   isLoading: boolean;
+  error: string | null;
 
   unlock: (password?: string) => Promise<boolean>;
   saveCredential: (sessionId: string, secret: string) => Promise<void>;
@@ -14,49 +15,88 @@ interface CredentialState {
   deleteCredential: (sessionId: string) => Promise<void>;
 }
 
-const VAULT_FILE = 'mobaxtauri.hold';
-const DEFAULT_KEY = 'mobaxtauri_default_secure_key_12345';
+// v1 used synchronous Argon2 with a hardcoded password and could block the
+// native Stronghold initialize command indefinitely in Windows debug builds.
+// The versioned snapshot preserves the old file while using the plugin's fast
+// fixed application-key branch (an empty password) for the replacement vault.
+const VAULT_FILE = 'mobaxtauri-v2.hold';
+const DEFAULT_KEY = '';
 const CLIENT_NAME = 'mobaxtauri_client';
+const CLIENT_READY_KEY = 'credential-v2-client-ready';
+const UNLOCK_TIMEOUT_MS = 30000;
+let unlockPromise: Promise<boolean> | null = null;
 
 export const useCredentialStore = create<CredentialState>((set, get) => ({
   stronghold: null,
   store: null,
   isUnlocked: false,
   isLoading: false,
+  error: null,
 
   unlock: async (password = DEFAULT_KEY) => {
-    try {
-      set({ isLoading: true });
-      const appData = await appDataDir();
-      const vaultPath = await join(appData, VAULT_FILE);
+    if (get().isUnlocked && get().store) return true;
 
-      console.log('[CREDENTIALS] Loading Stronghold vault at:', vaultPath);
-      const strongholdInstance = await Stronghold.load(vaultPath, password);
+    if (!unlockPromise) {
+      set({ isLoading: true, error: null });
+      unlockPromise = (async () => {
+        try {
+          const appData = await appDataDir();
+          const vaultPath = await join(appData, VAULT_FILE);
+          console.log('[CREDENTIALS] Loading Stronghold vault at:', vaultPath);
+          const strongholdInstance = await Stronghold.load(vaultPath, password);
 
-      let client;
-      try {
-        client = await strongholdInstance.loadClient(CLIENT_NAME);
-      } catch (err) {
-        console.log('[CREDENTIALS] Client not found, creating new client...');
-        client = await strongholdInstance.createClient(CLIENT_NAME);
-      }
+          let client;
+          if (localStorage.getItem(CLIENT_READY_KEY) === 'true') {
+            try {
+              client = await strongholdInstance.loadClient(CLIENT_NAME);
+            } catch {
+              client = await strongholdInstance.createClient(CLIENT_NAME);
+            }
+          } else {
+            try {
+              // Creating first avoids a Stronghold 2.3.1 Windows hang when
+              // load_client is called for a client that does not exist yet.
+              client = await strongholdInstance.createClient(CLIENT_NAME);
+            } catch {
+              client = await strongholdInstance.loadClient(CLIENT_NAME);
+            }
+          }
+          localStorage.setItem(CLIENT_READY_KEY, 'true');
+          const storeInstance = client.getStore();
+          set({
+            stronghold: strongholdInstance,
+            store: storeInstance,
+            isUnlocked: true,
+            isLoading: false,
+            error: null,
+          });
+          console.log('[CREDENTIALS] Stronghold vault successfully unlocked');
+          return true;
+        } catch (err) {
+          const message = String(err);
+          console.error('[CREDENTIALS] Failed to unlock Stronghold vault:', err);
+          set({ isLoading: false, error: message });
+          return false;
+        } finally {
+          unlockPromise = null;
+        }
+      })();
+    }
 
-      const storeInstance = client.getStore();
-
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), UNLOCK_TIMEOUT_MS);
+    });
+    const result = await Promise.race([unlockPromise, timedOut]);
+    if (timer) clearTimeout(timer);
+    if (result === 'timeout') {
       set({
-        stronghold: strongholdInstance,
-        store: storeInstance,
-        isUnlocked: true,
         isLoading: false,
+        error: 'Credential vault is taking too long to unlock. Please try again.',
       });
-
-      console.log('[CREDENTIALS] Stronghold vault successfully unlocked');
-      return true;
-    } catch (err) {
-      console.error('[CREDENTIALS] Failed to unlock Stronghold vault:', err);
-      set({ isLoading: false });
       return false;
     }
+    return result;
   },
 
   saveCredential: async (sessionId: string, secret: string) => {
@@ -65,7 +105,7 @@ export const useCredentialStore = create<CredentialState>((set, get) => ({
       // Try to transparently unlock first
       const success = await get().unlock();
       if (!success) {
-        throw new Error('Credential store is locked.');
+        throw new Error(get().error || 'Credential store is locked.');
       }
     }
 
@@ -108,7 +148,9 @@ export const useCredentialStore = create<CredentialState>((set, get) => ({
     const { store, stronghold, isUnlocked } = get();
     if (!isUnlocked || !store) {
       const success = await get().unlock();
-      if (!success) return;
+      if (!success) {
+        throw new Error(get().error || 'Credential store is locked.');
+      }
     }
 
     const activeStore = store || get().store;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Stack, Input, Button, HStack } from '@chakra-ui/react';
+import { Stack, Input, Button, HStack, Text } from '@chakra-ui/react';
 import { Session, useSessionStore } from '../store/useSessionStore';
 import { useCredentialStore } from '../store/useCredentialStore';
 import {
@@ -36,6 +36,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const [tag, setTag] = useState<'prod' | 'staging' | 'dev' | 'custom' | undefined>(undefined);
   const [savePassword, setSavePassword] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const folders = useSessionStore((state) => state.folders);
   const addSession = useSessionStore((state) => state.addSession);
@@ -43,10 +44,13 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const updateStatus = useSessionStore((state) => state.updateSessionStatus);
 
   useEffect(() => {
+    setSaveError(null);
     if (editingSession) {
       setHost(editingSession.host || '');
       setUser(editingSession.user || '');
-      setPort(editingSession.port || parseInt(localStorage.getItem('ssh-default-port') || '22', 10));
+      setPort(
+        editingSession.port || parseInt(localStorage.getItem('ssh-default-port') || '22', 10),
+      );
       setName(editingSession.name);
       setFolderId(editingSession.folderId || null);
       setTag(editingSession.tag);
@@ -63,7 +67,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
           if (pwd) {
             setPassword(pwd);
           }
-        });
+        })
+        .catch((error) => setSaveError(`Could not unlock saved password: ${String(error)}`));
     } else {
       setHost('');
       setUser('');
@@ -80,12 +85,19 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsConnecting(true);
+    setSaveError(null);
 
     if (editingSession) {
-      if (savePassword && password) {
-        await useCredentialStore.getState().saveCredential(editingSession.id, password);
-      } else {
-        await useCredentialStore.getState().deleteCredential(editingSession.id);
+      let credentialError: string | null = null;
+      try {
+        if (savePassword && password) {
+          await useCredentialStore.getState().saveCredential(editingSession.id, password);
+        } else {
+          await useCredentialStore.getState().deleteCredential(editingSession.id);
+        }
+      } catch (error) {
+        credentialError = String(error);
       }
 
       updateSession(editingSession.id, {
@@ -99,15 +111,27 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
         privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
         savePassword,
       });
-      onClose();
+      setIsConnecting(false);
+      if (credentialError) {
+        setSaveError(`Session details were saved, but the vault failed: ${credentialError}`);
+      } else {
+        onClose();
+      }
       return;
     }
 
-    setIsConnecting(true);
     const sessionId = `ssh-${Date.now()}`;
 
     if (savePassword && password) {
-      await useCredentialStore.getState().saveCredential(sessionId, password);
+      try {
+        await useCredentialStore.getState().saveCredential(sessionId, password);
+      } catch (error) {
+        setSaveError(
+          `Password was not saved: ${String(error)}. Retry or disable vault password saving.`,
+        );
+        setIsConnecting(false);
+        return;
+      }
     }
 
     addSession({
@@ -170,6 +194,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
         <DialogBody pb={6}>
           <form id="session-form" onSubmit={handleSubmit}>
             <Stack gap={4}>
+              {saveError && (
+                <Text fontSize="12px" color="red.fg" bg="red.subtle" p={2} borderRadius="md">
+                  {saveError}
+                </Text>
+              )}
               <Field label="Session Name (Optional)">
                 <Input
                   value={name}

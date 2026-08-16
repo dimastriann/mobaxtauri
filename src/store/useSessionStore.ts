@@ -408,26 +408,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const savedWorkspaces = (await store.get<Workspace[]>('workspaces')) || [];
       const savedHistory = (await store.get<ConnectionHistoryEntry[]>('connectionHistory')) || [];
 
-      // Unlock credential store
-      await useCredentialStore.getState().unlock();
-
-      let needsMigration = false;
-      const migratedSessions = await Promise.all(
-        savedSessions.map(async (s) => {
-          if (s.password) {
-            try {
-              await useCredentialStore.getState().saveCredential(s.id, s.password);
-              needsMigration = true;
-              return { ...s, savePassword: true };
-            } catch (err) {
-              console.error(`[STORE] Migration failed for session ${s.id}:`, err);
-              return s;
-            }
-          }
-          return s;
-        }),
-      );
-
       const local: Session = {
         id: 'local',
         name: 'Local Terminal',
@@ -436,9 +416,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       };
 
       // Filter out any existing 'local' session from disk to prevent duplicates
-      const filteredSaved = migratedSessions
+      const legacyCredentials = savedSessions
+        .filter((session) => session.password)
+        .map((session) => ({ id: session.id, password: session.password! }));
+      const filteredSaved = savedSessions
         .filter((s) => s.id !== 'local')
-        .map((s) => ({ ...s, status: 'disconnected' as SessionStatus }));
+        .map(({ password, ...session }) => ({
+          ...session,
+          savePassword: password ? true : session.savePassword,
+          status: 'disconnected' as SessionStatus,
+        }));
 
       set({
         sessions: [local, ...filteredSaved],
@@ -451,8 +438,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         isLoading: false,
       });
 
-      if (needsMigration) {
-        await get().saveToDisk();
+      // Legacy plaintext credential migration is best-effort and must never
+      // block the session list from becoming usable.
+      if (legacyCredentials.length) {
+        void (async () => {
+          const unlocked = await useCredentialStore.getState().unlock();
+          if (!unlocked) return;
+          for (const credential of legacyCredentials) {
+            try {
+              await useCredentialStore
+                .getState()
+                .saveCredential(credential.id, credential.password);
+            } catch (err) {
+              console.error(`[STORE] Migration failed for session ${credential.id}:`, err);
+              return;
+            }
+          }
+          await get().saveToDisk();
+        })();
       }
     } catch (err) {
       console.error('Failed to load sessions:', err);
