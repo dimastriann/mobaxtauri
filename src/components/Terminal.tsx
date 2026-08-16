@@ -3,12 +3,13 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
 import { useCredentialStore } from '../store/useCredentialStore';
-import { Box, HStack, Input, IconButton, Icon } from '@chakra-ui/react';
+import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
-import { LuSearch, LuChevronUp, LuChevronDown, LuX } from 'react-icons/lu';
+import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
 import '@xterm/xterm/css/xterm.css';
 
 // ── XTerm colour themes ────────────────────────────────────────
@@ -60,6 +61,26 @@ const XTERM_THEME_DARK: XTerm['options']['theme'] = {
   brightWhite: '#ffffff',
 };
 
+const escapeXml = (value: string) =>
+  value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const createRecordingSvg = (title: string, recordedLines: string[]) => {
+  const lines = recordedLines.slice(-1000);
+  const height = Math.max(120, 56 + lines.length * 18);
+  const text = lines
+    .map(
+      (line, index) =>
+        `<text x="20" y="${44 + index * 18}">${escapeXml(line.slice(0, 160)) || ' '}</text>`,
+    )
+    .join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="${height}" viewBox="0 0 1200 ${height}"><rect width="100%" height="100%" fill="#0f172a"/><style>text{font:14px 'Cascadia Code',monospace;fill:#f1f5f9;white-space:pre}</style><text x="20" y="24" fill="#38bdf8">${escapeXml(title)}</text>${text}</svg>`;
+};
+
 interface TerminalInstanceProps {
   sessionId: string;
   isVisible: boolean;
@@ -86,11 +107,15 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const isFocusedRef = useRef(isFocused);
   const wasOfflineRef = useRef(!navigator.onLine);
   const networkReconnectRef = useRef(false);
+  const recordingRef = useRef(false);
+  const recordingStartLineRef = useRef(0);
   const { colorMode } = useColorMode();
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [showBellFlash, setShowBellFlash] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingMessage, setRecordingMessage] = useState<string | null>(null);
 
   useEffect(() => {
     isFocusedRef.current = isFocused;
@@ -99,6 +124,42 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const getSession = useCallback((): Session | undefined => {
     return useSessionStore.getState().sessions.find((s) => s.id === sessionId);
   }, [sessionId]);
+
+  const toggleRecording = async () => {
+    if (!recordingRef.current) {
+      const buffer = xtermRef.current?.buffer.active;
+      recordingStartLineRef.current = buffer ? buffer.baseY + buffer.cursorY : 0;
+      recordingRef.current = true;
+      setIsRecording(true);
+      setRecordingMessage(null);
+      return;
+    }
+    recordingRef.current = false;
+    setIsRecording(false);
+    const session = getSession();
+    try {
+      const path = await save({
+        defaultPath: `${(session?.name ?? 'terminal').replace(/[^a-z0-9_-]+/gi, '-')}-recording.svg`,
+        filters: [{ name: 'SVG terminal recording', extensions: ['svg'] }],
+      });
+      if (!path) return;
+      const buffer = xtermRef.current?.buffer.active;
+      const recordedLines: string[] = [];
+      if (buffer) {
+        for (let index = recordingStartLineRef.current; index < buffer.length; index += 1) {
+          recordedLines.push(buffer.getLine(index)?.translateToString(true) ?? '');
+        }
+      }
+      const svg = createRecordingSvg(
+        `${session?.name ?? 'Terminal'} · ${new Date().toLocaleString()}`,
+        recordedLines,
+      );
+      await invoke('write_text_file', { path, content: svg });
+      setRecordingMessage(`Saved: ${path.split(/[\\/]/).pop()}`);
+    } catch (error) {
+      setRecordingMessage(`Export failed: ${String(error)}`);
+    }
+  };
 
   const updateStatus = useCallback(
     (status: SessionStatus, error?: string) => {
@@ -137,6 +198,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           privateKeyPath: session.privateKeyPath ?? null,
         });
         updateStatus('connected');
+        useSessionStore.getState().recordConnection(sessionId, 'connected');
         isDisconnectedRef.current = false;
         term.writeln(`\x1b[32m✔ Connected.\x1b[0m\r\n`);
 
@@ -152,6 +214,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       } catch (err) {
         const errMsg = String(err);
         updateStatus('error', errMsg);
+        useSessionStore.getState().recordConnection(sessionId, 'failed', errMsg);
         term.writeln(`\x1b[31m✘ Connection failed: ${errMsg}\x1b[0m`);
         showReconnectBanner(term);
       }
@@ -296,6 +359,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         }),
         listen<void>(`ssh-disconnected-${sessionId}`, () => {
           updateStatus('disconnected');
+          useSessionStore.getState().recordConnection(sessionId, 'disconnected');
           showReconnectBanner(term);
           // Clean up backend resources immediately
           invoke('ssh_disconnect', { sessionId }).catch(() => {});
@@ -538,6 +602,31 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         opacity={showBellFlash ? 1 : 0}
         transition="opacity 180ms ease"
       />
+      <HStack position="absolute" top={2} left={4} zIndex={10}>
+        <IconButton
+          aria-label={isRecording ? 'Stop and export recording' : 'Start terminal recording'}
+          title={isRecording ? 'Stop and export recording' : 'Start terminal recording'}
+          size="xs"
+          variant="subtle"
+          colorPalette={isRecording ? 'red' : 'gray'}
+          onClick={toggleRecording}
+        >
+          {isRecording ? <LuSquare /> : <LuCircle />}
+        </IconButton>
+        {isRecording && (
+          <Text fontSize="10px" color="red.fg" fontWeight="bold">
+            RECORDING
+          </Text>
+        )}
+        {recordingMessage && (
+          <Text
+            fontSize="10px"
+            color={recordingMessage.startsWith('Saved') ? 'green.fg' : 'red.fg'}
+          >
+            {recordingMessage}
+          </Text>
+        )}
+      </HStack>
       {showSearch && (
         <Box
           position="absolute"

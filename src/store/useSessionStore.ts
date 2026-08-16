@@ -54,6 +54,16 @@ export interface Workspace {
   activeSessionId: string | null;
 }
 
+export interface ConnectionHistoryEntry {
+  id: string;
+  sessionId: string;
+  sessionName: string;
+  host?: string;
+  status: 'connected' | 'failed' | 'disconnected';
+  timestamp: number;
+  message?: string;
+}
+
 interface SessionState {
   sessions: Session[];
   openTabs: string[]; // IDs of sessions currently open as tabs
@@ -99,6 +109,15 @@ interface SessionState {
   addWorkspace: (name: string) => void;
   deleteWorkspace: (id: string) => void;
   restoreWorkspace: (id: string) => void;
+
+  // Connection History
+  connectionHistory: ConnectionHistoryEntry[];
+  recordConnection: (
+    sessionId: string,
+    status: ConnectionHistoryEntry['status'],
+    message?: string,
+  ) => void;
+  clearConnectionHistory: () => void;
 }
 
 const STORAGE_PATH = 'sessions.bin';
@@ -111,6 +130,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   folders: [],
   snippets: [],
   workspaces: [],
+  connectionHistory: [],
 
   addSession: (session) => {
     set((state) => ({
@@ -358,6 +378,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ openTabs: restoredTabs, activeSessionId });
   },
 
+  recordConnection: (sessionId, status, message) => {
+    const session = get().sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    const entry: ConnectionHistoryEntry = {
+      id: `history-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      sessionId,
+      sessionName: session.name,
+      host: session.host,
+      status,
+      timestamp: Date.now(),
+      message,
+    };
+    set((state) => ({ connectionHistory: [entry, ...state.connectionHistory].slice(0, 200) }));
+    get().saveToDisk();
+  },
+
+  clearConnectionHistory: () => {
+    set({ connectionHistory: [] });
+    get().saveToDisk();
+  },
+
   loadSessions: async () => {
     try {
       const store = await load(STORAGE_PATH);
@@ -365,6 +406,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const savedFolders = (await store.get<Folder[]>('folders')) || [];
       const savedSnippets = (await store.get<Snippet[]>('snippets')) || [];
       const savedWorkspaces = (await store.get<Workspace[]>('workspaces')) || [];
+      const savedHistory = (await store.get<ConnectionHistoryEntry[]>('connectionHistory')) || [];
 
       // Unlock credential store
       await useCredentialStore.getState().unlock();
@@ -403,6 +445,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         folders: savedFolders,
         snippets: savedSnippets,
         workspaces: savedWorkspaces,
+        connectionHistory: savedHistory,
         openTabs: ['local'],
         activeSessionId: 'local',
         isLoading: false,
@@ -419,6 +462,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         folders: [],
         snippets: [],
         workspaces: [],
+        connectionHistory: [],
         isLoading: false,
       });
     }
@@ -435,6 +479,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       await store.set('folders', state.folders);
       await store.set('snippets', state.snippets);
       await store.set('workspaces', state.workspaces);
+      await store.set('connectionHistory', state.connectionHistory);
       await store.save();
     } catch (err) {
       console.error('[STORE] Failed to save sessions:', err);

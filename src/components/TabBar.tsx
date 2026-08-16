@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { HStack, Box, Text, IconButton, Icon } from '@chakra-ui/react';
-import { LuBell, LuColumns2, LuPlus, LuX } from 'react-icons/lu';
+import { LuBell, LuChevronLeft, LuChevronRight, LuColumns2, LuPlus, LuX } from 'react-icons/lu';
 import { Session, useSessionStore } from '../store/useSessionStore';
 import { ask } from '@tauri-apps/plugin-dialog';
 
@@ -30,7 +30,12 @@ const TabBar: React.FC<TabBarProps> = ({
   onToggleSplit,
   onActivateSession,
 }) => {
-  const { sessions, openTabs, activeSessionId, closeTab } = useSessionStore();
+  const { sessions, openTabs, activeSessionId, closeTab, reorderTabs } = useSessionStore();
+  const [selectedTabs, setSelectedTabs] = useState<string[]>([]);
+
+  useEffect(() => {
+    setSelectedTabs((selected) => selected.filter((id) => openTabs.includes(id)));
+  }, [openTabs]);
 
   const openSessions = openTabs
     .map((id) => sessions.find((s) => s.id === id))
@@ -71,6 +76,51 @@ const TabBar: React.FC<TabBarProps> = ({
     onNewSession();
   };
 
+  const handleTabClick = (event: React.MouseEvent, sessionId: string) => {
+    if (event.ctrlKey || event.metaKey) {
+      setSelectedTabs((selected) =>
+        selected.includes(sessionId)
+          ? selected.filter((id) => id !== sessionId)
+          : [...selected, sessionId],
+      );
+      return;
+    }
+    setSelectedTabs([]);
+    onActivateSession(sessionId);
+  };
+
+  const closeSelectedTabs = async () => {
+    const connectedCount = selectedTabs.filter((id) => {
+      const session = sessions.find((item) => item.id === id);
+      return session?.type === 'ssh' && session.status === 'connected';
+    }).length;
+    if (
+      connectedCount > 0 &&
+      !(await ask(`Disconnect and close ${selectedTabs.length} selected tabs?`, {
+        title: 'Close Selected Sessions',
+        kind: 'warning',
+      }))
+    )
+      return;
+    selectedTabs.forEach(closeTab);
+    setSelectedTabs([]);
+  };
+
+  const moveSelectedTabs = (direction: -1 | 1) => {
+    const reordered = [...openTabs];
+    const selected = new Set(selectedTabs);
+    const indices = reordered
+      .map((id, index) => (selected.has(id) ? index : -1))
+      .filter((index) => index >= 0);
+    const orderedIndices = direction < 0 ? indices : indices.reverse();
+    orderedIndices.forEach((index) => {
+      const target = index + direction;
+      if (target < 0 || target >= reordered.length || selected.has(reordered[target])) return;
+      [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    });
+    reorderTabs(reordered);
+  };
+
   return (
     <Box
       className="tabbar"
@@ -106,7 +156,7 @@ const TabBar: React.FC<TabBarProps> = ({
             <Box
               key={session.id}
               data-tab
-              onClick={() => onActivateSession(session.id)}
+              onClick={(event) => handleTabClick(event, session.id)}
               onMouseDown={(e) => handleMiddleClick(e, session.id)}
               display="flex"
               alignItems="center"
@@ -117,7 +167,13 @@ const TabBar: React.FC<TabBarProps> = ({
               position="relative"
               minW="120px"
               maxW="200px"
-              bg={isActive ? 'blue.subtle' : 'transparent'}
+              bg={
+                selectedTabs.includes(session.id)
+                  ? 'purple.subtle'
+                  : isActive
+                    ? 'blue.subtle'
+                    : 'transparent'
+              }
               borderRight="1px solid"
               borderColor="border.subtle"
               transition="all 0.15s ease"
@@ -230,6 +286,41 @@ const TabBar: React.FC<TabBarProps> = ({
         borderLeft="1px solid"
         borderColor="border.subtle"
       >
+        {selectedTabs.length > 0 && (
+          <HStack gap={0} mr={1}>
+            <Text fontSize="10px" color="fg.muted" px={1}>
+              {selectedTabs.length}
+            </Text>
+            <IconButton
+              aria-label="Move selected tabs left"
+              title="Move selected tabs left"
+              size="xs"
+              variant="ghost"
+              onClick={() => moveSelectedTabs(-1)}
+            >
+              <LuChevronLeft />
+            </IconButton>
+            <IconButton
+              aria-label="Move selected tabs right"
+              title="Move selected tabs right"
+              size="xs"
+              variant="ghost"
+              onClick={() => moveSelectedTabs(1)}
+            >
+              <LuChevronRight />
+            </IconButton>
+            <IconButton
+              aria-label="Close selected tabs"
+              title="Close selected tabs"
+              size="xs"
+              variant="ghost"
+              color="red.fg"
+              onClick={closeSelectedTabs}
+            >
+              <LuX />
+            </IconButton>
+          </HStack>
+        )}
         <IconButton
           aria-label={isSplit ? 'Close split pane' : 'Split terminal pane'}
           title={isSplit ? 'Close split pane' : 'Split terminal pane'}

@@ -28,7 +28,12 @@ import {
   LuMonitor,
   LuKeyboard,
   LuRotateCcw,
+  LuCode,
+  LuHistory,
+  LuPlus,
+  LuTrash2,
 } from 'react-icons/lu';
+import { useSessionStore } from '../store/useSessionStore';
 import {
   DEFAULT_SHORTCUTS,
   KeyboardShortcuts,
@@ -44,7 +49,14 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-type SettingsTab = 'appearance' | 'terminal' | 'ssh' | 'shortcuts' | 'about';
+type SettingsTab =
+  | 'appearance'
+  | 'terminal'
+  | 'ssh'
+  | 'shortcuts'
+  | 'snippets'
+  | 'history'
+  | 'about';
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
@@ -54,6 +66,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     { id: 'terminal', label: 'Terminal', icon: LuTerminal },
     { id: 'ssh', label: 'SSH', icon: LuServer },
     { id: 'shortcuts', label: 'Shortcuts', icon: LuKeyboard },
+    { id: 'snippets', label: 'Commands', icon: LuCode },
+    { id: 'history', label: 'History', icon: LuHistory },
     { id: 'about', label: 'About', icon: LuMonitor },
   ];
 
@@ -99,6 +113,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {activeTab === 'terminal' && <TerminalSettings />}
             {activeTab === 'ssh' && <SshSettings />}
             {activeTab === 'shortcuts' && <ShortcutSettings />}
+            {activeTab === 'snippets' && <SnippetSettings />}
+            {activeTab === 'history' && <ConnectionHistorySettings />}
             {activeTab === 'about' && <AboutSettings />}
           </Box>
         </DialogBody>
@@ -111,6 +127,134 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         <DialogCloseTrigger />
       </DialogContent>
     </DialogRoot>
+  );
+};
+
+const SnippetSettings: React.FC = () => {
+  const snippets = useSessionStore((state) => state.snippets);
+  const addSnippet = useSessionStore((state) => state.addSnippet);
+  const deleteSnippet = useSessionStore((state) => state.deleteSnippet);
+  const [name, setName] = useState('');
+  const [command, setCommand] = useState('');
+
+  const handleAdd = () => {
+    if (!name.trim() || !command.trim()) return;
+    addSnippet(name.trim(), command);
+    setName('');
+    setCommand('');
+  };
+
+  return (
+    <Stack gap={3}>
+      <Text fontSize="14px" fontWeight="bold" color="fg">
+        Quick Command Presets
+      </Text>
+      <Input
+        size="sm"
+        placeholder="Preset name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <HStack align="stretch">
+        <Input
+          size="sm"
+          fontFamily="monospace"
+          placeholder="Command"
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+        />
+        <Button
+          size="sm"
+          colorPalette="blue"
+          onClick={handleAdd}
+          disabled={!name.trim() || !command.trim()}
+        >
+          <LuPlus /> Add
+        </Button>
+      </HStack>
+      <VStack align="stretch" gap={1}>
+        {snippets.map((snippet) => (
+          <HStack key={snippet.id} p={2} borderRadius="md" bg="bg.muted">
+            <Box flex={1} minW={0}>
+              <Text fontSize="12px" fontWeight="500" lineClamp={1}>
+                {snippet.name}
+              </Text>
+              <Text fontSize="10px" color="fg.muted" fontFamily="monospace" lineClamp={1}>
+                {snippet.command}
+              </Text>
+            </Box>
+            <Button
+              size="xs"
+              variant="ghost"
+              colorPalette="red"
+              onClick={() => deleteSnippet(snippet.id)}
+            >
+              <LuTrash2 />
+            </Button>
+          </HStack>
+        ))}
+        {!snippets.length && (
+          <Text fontSize="11px" color="fg.muted">
+            No command presets saved.
+          </Text>
+        )}
+      </VStack>
+    </Stack>
+  );
+};
+
+const ConnectionHistorySettings: React.FC = () => {
+  const history = useSessionStore((state) => state.connectionHistory);
+  const clearHistory = useSessionStore((state) => state.clearConnectionHistory);
+  return (
+    <Stack gap={3}>
+      <Flex justify="space-between" align="center">
+        <Text fontSize="14px" fontWeight="bold" color="fg">
+          Connection History
+        </Text>
+        <Button size="xs" variant="ghost" onClick={clearHistory} disabled={!history.length}>
+          Clear
+        </Button>
+      </Flex>
+      <VStack align="stretch" gap={1}>
+        {history.map((entry) => (
+          <Box key={entry.id} p={2} borderRadius="md" bg="bg.muted">
+            <HStack justify="space-between">
+              <Text fontSize="12px" fontWeight="500" lineClamp={1}>
+                {entry.sessionName}
+              </Text>
+              <Text
+                fontSize="10px"
+                color={
+                  entry.status === 'connected'
+                    ? 'green.fg'
+                    : entry.status === 'failed'
+                      ? 'red.fg'
+                      : 'orange.fg'
+                }
+              >
+                {entry.status}
+              </Text>
+            </HStack>
+            <Text fontSize="10px" color="fg.muted">
+              {new Date(entry.timestamp).toLocaleString()}
+              {entry.host ? ` · ${entry.host}` : ''}
+            </Text>
+            {entry.message && (
+              <Text fontSize="10px" color="red.fg" lineClamp={2}>
+                {entry.message}
+              </Text>
+            )}
+          </Box>
+        ))}
+        {!history.length && (
+          <Text fontSize="11px" color="fg.muted">
+            No connection activity recorded yet.
+          </Text>
+        )}
+      </VStack>
+    </Stack>
   );
 };
 
