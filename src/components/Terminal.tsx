@@ -84,6 +84,8 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocusedRef = useRef(isFocused);
+  const wasOfflineRef = useRef(!navigator.onLine);
+  const networkReconnectRef = useRef(false);
   const { colorMode } = useColorMode();
 
   const [showSearch, setShowSearch] = useState(false);
@@ -180,6 +182,41 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     );
     term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
   }, []);
+
+  // Reconnect open SSH terminals when the operating system reports that the
+  // network is available again. This reuses the normal credential and key path.
+  useEffect(() => {
+    const handleOffline = () => {
+      const session = getSession();
+      if (session?.type !== 'ssh') return;
+      wasOfflineRef.current = true;
+      networkReconnectRef.current = false;
+      isDisconnectedRef.current = true;
+      updateStatus('disconnected', 'Network unavailable');
+      xtermRef.current?.writeln('\r\n\x1b[33m● Network unavailable. Waiting to reconnect…\x1b[0m');
+      invoke('ssh_disconnect', { sessionId }).catch(() => {});
+    };
+
+    const handleOnline = async () => {
+      const session = getSession();
+      if (session?.type !== 'ssh' || !wasOfflineRef.current || networkReconnectRef.current) return;
+      wasOfflineRef.current = false;
+      networkReconnectRef.current = true;
+      xtermRef.current?.writeln('\r\n\x1b[38;5;81m● Network restored. Reconnecting…\x1b[0m');
+      try {
+        await doConnect();
+      } finally {
+        networkReconnectRef.current = false;
+      }
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [doConnect, getSession, sessionId, updateStatus]);
 
   // ── Mount: create XTerm, wire up SSH events ──────────────────
   useEffect(() => {
