@@ -7,7 +7,12 @@ const HealthBar: React.FC = () => {
   const sessions = useSessionStore((state) => state.sessions);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
-  if (!activeSession?.health) return null;
+  if (
+    activeSession?.type !== 'ssh' ||
+    activeSession.status !== 'connected' ||
+    !activeSession.health
+  )
+    return null;
   const h = activeSession.health;
   const barColor = (pct: number) => (pct > 90 ? 'red.400' : pct > 70 ? 'orange.400' : 'green.400');
 

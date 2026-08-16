@@ -179,7 +179,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   updateSessionStatus: (id, status, error) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.id === id ? { ...s, status, error, lastActivity: Date.now() } : s,
+        s.id === id
+          ? {
+              ...s,
+              status,
+              error,
+              lastActivity: Date.now(),
+              health: status === 'connected' ? s.health : undefined,
+            }
+          : s,
       ),
     })),
 
@@ -191,7 +199,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   updateSessionHealth: (id, health) => {
     set((state) => ({
-      sessions: state.sessions.map((s) => (s.id === id ? { ...s, health } : s)),
+      sessions: state.sessions.map((s) =>
+        s.id === id && s.status === 'connected' && state.openTabs.includes(id)
+          ? { ...s, health }
+          : s,
+      ),
     }));
   },
 
@@ -302,7 +314,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (session?.type === 'ssh') {
       set({
         sessions: state.sessions.map((s) =>
-          s.id === id ? { ...s, status: 'disconnected' as SessionStatus } : s,
+          s.id === id ? { ...s, status: 'disconnected' as SessionStatus, health: undefined } : s,
         ),
         openTabs: newTabs,
         activeSessionId: newActive,

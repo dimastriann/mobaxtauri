@@ -107,6 +107,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const isFocusedRef = useRef(isFocused);
   const wasOfflineRef = useRef(!navigator.onLine);
   const networkReconnectRef = useRef(false);
+  const connectionAttemptRef = useRef(false);
   const recordingRef = useRef(false);
   const recordingStartLineRef = useRef(0);
   const { colorMode } = useColorMode();
@@ -171,16 +172,14 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   // ── Reconnect logic ────────────────────────────────────────
   const doConnect = useCallback(
     async (password?: string) => {
+      if (connectionAttemptRef.current) return;
       const session = getSession();
       if (!session || session.type !== 'ssh') return;
 
       const term = xtermRef.current;
       if (!term) return;
 
-      updateStatus('connecting');
-      term.writeln(
-        `\r\n\x1b[38;5;81m● Connecting to ${session.user}@${session.host}:${session.port || 22}...\x1b[0m`,
-      );
+      connectionAttemptRef.current = true;
 
       try {
         let activePassword = password;
@@ -195,6 +194,11 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           promptPassword();
           return;
         }
+
+        updateStatus('connecting');
+        term.writeln(
+          `\r\n\x1b[38;5;81m● Connecting to ${session.user}@${session.host}:${session.port || 22}...\x1b[0m`,
+        );
 
         await invoke('ssh_connect', {
           sessionId,
@@ -224,6 +228,8 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         useSessionStore.getState().recordConnection(sessionId, 'failed', errMsg);
         term.writeln(`\x1b[31m✘ Connection failed: ${errMsg}\x1b[0m`);
         showReconnectBanner(term);
+      } finally {
+        connectionAttemptRef.current = false;
       }
     },
     [sessionId, getSession, updateStatus],

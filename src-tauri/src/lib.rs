@@ -4,7 +4,7 @@ mod ssh;
 use crate::ssh::{ClientHandler, SshSession};
 use bytes::Bytes;
 use russh::ChannelId;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use tauri::{AppHandle, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
@@ -14,9 +14,9 @@ pub struct AppState {
         HashMap<
             String,
             (
-                russh::client::Handle<ClientHandler>,
+                Arc<russh::client::Handle<ClientHandler>>,
                 ChannelId,
-                russh::Channel<russh::client::Msg>,
+                Arc<russh::Channel<russh::client::Msg>>,
             ),
         >,
     >,
@@ -68,7 +68,10 @@ async fn ssh_connect(
     ssh_sessions.remove(&session_id);
     sftp_sessions.remove(&session_id);
 
-    ssh_sessions.insert(session_id.clone(), (handle, channel_id, channel));
+    ssh_sessions.insert(
+        session_id.clone(),
+        (Arc::new(handle), channel_id, Arc::new(channel)),
+    );
     sftp_sessions.insert(session_id.clone(), std::sync::Arc::new(sftp));
 
     Ok(format!("Connected to session {}", session_id))
@@ -80,16 +83,18 @@ async fn ssh_send_data(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    let sessions = state.ssh_sessions.lock().await;
-    if let Some((handle, channel_id, _channel)) = sessions.get(&session_id) {
-        handle
-            .data(*channel_id, Bytes::from(data.as_bytes().to_vec()))
-            .await
-            .map_err(|_| "Send failed".to_string())?;
-        Ok(())
-    } else {
-        Err("Session not found".into())
-    }
+    let (handle, channel_id) = {
+        let sessions = state.ssh_sessions.lock().await;
+        let (handle, channel_id, _) = sessions.get(&session_id).ok_or("Session not found")?;
+        (Arc::clone(handle), *channel_id)
+    };
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        handle.data(channel_id, Bytes::from(data.as_bytes().to_vec())),
+    )
+    .await
+    .map_err(|_| "Send timed out".to_string())?
+    .map_err(|_| "Send failed".to_string())
 }
 
 #[tauri::command]
@@ -110,14 +115,18 @@ async fn ssh_resize(
     cols: u32,
     rows: u32,
 ) -> Result<(), String> {
-    let sessions = state.ssh_sessions.lock().await;
-    if let Some((_handle, _channel_id, channel)) = sessions.get(&session_id) {
-        let res: Result<(), russh::Error> = channel.window_change(cols, rows, 0, 0).await;
-        res.map_err(|e| format!("Resize failed: {e:?}"))?;
-        Ok(())
-    } else {
-        Err("Session not found".into())
-    }
+    let channel = {
+        let sessions = state.ssh_sessions.lock().await;
+        let (_, _, channel) = sessions.get(&session_id).ok_or("Session not found")?;
+        Arc::clone(channel)
+    };
+    tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        channel.window_change(cols, rows, 0, 0),
+    )
+    .await
+    .map_err(|_| "Resize timed out".to_string())?
+    .map_err(|e| format!("Resize failed: {e:?}"))
 }
 
 #[tauri::command]
@@ -445,14 +454,19 @@ async fn ssh_health_check(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<serde_json::Value, String> {
-    let mut sessions = state.ssh_sessions.lock().await;
-    let (handle, _channel_id, _channel) =
-        sessions.get_mut(&session_id).ok_or("Session not found")?;
+    let handle = {
+        let sessions = state.ssh_sessions.lock().await;
+        let (handle, _, _) = sessions.get(&session_id).ok_or("Session not found")?;
+        Arc::clone(handle)
+    };
 
-    let exec_channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|e| format!("Failed to open health channel: {e}"))?;
+    let exec_channel = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        handle.channel_open_session(),
+    )
+    .await
+    .map_err(|_| "Timed out opening health channel".to_string())?
+    .map_err(|e| format!("Failed to open health channel: {e}"))?;
 
     // Line 1: load avg (1min)
     // Line 2: Mem used_mb total_mb
@@ -460,10 +474,13 @@ async fn ssh_health_check(
     // Line 4: disk used %
     let cmd = "cat /proc/loadavg | awk '{print $1}'; free -m | grep Mem | awk '{print $3,$2}'; free -m | grep Swap | awk '{print $3,$2}'; df -h / | tail -1 | awk '{print $5}' | sed 's/%//'";
 
-    exec_channel
-        .exec(true, cmd)
-        .await
-        .map_err(|e| format!("Failed to exec health cmd: {e}"))?;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        exec_channel.exec(true, cmd),
+    )
+    .await
+    .map_err(|_| "Timed out starting health command".to_string())?
+    .map_err(|e| format!("Failed to exec health cmd: {e}"))?;
 
     let mut output = String::new();
     let mut stream = exec_channel.into_stream();
@@ -521,21 +538,29 @@ async fn ssh_health_check(
 
 #[tauri::command]
 async fn ssh_detect_os(state: State<'_, AppState>, session_id: String) -> Result<String, String> {
-    let mut sessions = state.ssh_sessions.lock().await;
-    let (handle, _channel_id, _channel) =
-        sessions.get_mut(&session_id).ok_or("Session not found")?;
+    let handle = {
+        let sessions = state.ssh_sessions.lock().await;
+        let (handle, _, _) = sessions.get(&session_id).ok_or("Session not found")?;
+        Arc::clone(handle)
+    };
 
-    let exec_channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|e| format!("Failed to open exec channel: {e}"))?;
+    let exec_channel = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        handle.channel_open_session(),
+    )
+    .await
+    .map_err(|_| "Timed out opening OS detection channel".to_string())?
+    .map_err(|e| format!("Failed to open exec channel: {e}"))?;
 
     let cmd = "OS_ID=$(cat /etc/os-release 2>/dev/null | grep '^ID=' | cut -d= -f2 | tr -d '\"'); if [ -n \"$OS_ID\" ]; then echo \"$OS_ID\"; else uname -s 2>/dev/null || echo \"unknown\"; fi";
 
-    exec_channel
-        .exec(true, cmd)
-        .await
-        .map_err(|e| format!("Failed to exec detect cmd: {e}"))?;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        exec_channel.exec(true, cmd),
+    )
+    .await
+    .map_err(|_| "Timed out starting OS detection".to_string())?
+    .map_err(|e| format!("Failed to exec detect cmd: {e}"))?;
 
     let mut output = String::new();
     let mut stream = exec_channel.into_stream();

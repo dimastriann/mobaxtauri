@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Stack, Input, Button, HStack, Text } from '@chakra-ui/react';
@@ -37,6 +37,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const [savePassword, setSavePassword] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const passwordEditedRef = useRef(false);
 
   const folders = useSessionStore((state) => state.folders);
   const addSession = useSessionStore((state) => state.addSession);
@@ -45,6 +46,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
 
   useEffect(() => {
     setSaveError(null);
+    passwordEditedRef.current = false;
     if (editingSession) {
       setHost(editingSession.host || '');
       setUser(editingSession.user || '');
@@ -64,7 +66,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
         .getState()
         .getCredential(editingSession.id)
         .then((pwd) => {
-          if (pwd) {
+          if (pwd && !passwordEditedRef.current) {
             setPassword(pwd);
           }
         })
@@ -90,8 +92,9 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
 
     if (editingSession) {
       let credentialError: string | null = null;
+      const shouldSavePassword = savePassword && Boolean(password);
       try {
-        if (savePassword && password) {
+        if (shouldSavePassword) {
           await useCredentialStore.getState().saveCredential(editingSession.id, password);
         } else {
           await useCredentialStore.getState().deleteCredential(editingSession.id);
@@ -109,7 +112,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
         folderId,
         tag,
         privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
-        savePassword,
+        savePassword: shouldSavePassword,
       });
       setIsConnecting(false);
       if (credentialError) {
@@ -121,8 +124,9 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
     }
 
     const sessionId = `ssh-${Date.now()}`;
+    const shouldSavePassword = savePassword && Boolean(password);
 
-    if (savePassword && password) {
+    if (shouldSavePassword) {
       try {
         await useCredentialStore.getState().saveCredential(sessionId, password);
       } catch (error) {
@@ -145,7 +149,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       folderId,
       tag,
       privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
-      savePassword,
+      savePassword: shouldSavePassword,
     });
 
     try {
@@ -367,7 +371,10 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
                     <Input
                       type="password"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        passwordEditedRef.current = true;
+                        setPassword(e.target.value);
+                      }}
                       size="sm"
                     />
                   </Field>
