@@ -63,6 +63,8 @@ const XTERM_THEME_DARK: XTerm['options']['theme'] = {
 
 const escapeXml = (value: string) =>
   value
+    // Terminal output can contain C0 control characters that are invalid in XML.
+    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -353,7 +355,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     const session = getSession();
 
     // ── Welcome banner ─────────────────────────────────────
-    term.writeln(`\x1b[38;5;81m● MobaxTauri\x1b[0m v0.1.0`);
+    term.writeln(`\x1b[38;5;81m● MobaxTauri\x1b[0m v0.2.0`);
     if (session?.type === 'ssh') {
       term.writeln(
         `  Session: \x1b[32m${session.name}\x1b[0m  → \x1b[36m${session.user}@${session.host}:${session.port || 22}\x1b[0m`,

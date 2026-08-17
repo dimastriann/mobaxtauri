@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose an improvement or new capability
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: checkboxes
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and the roadmap for this proposal.
+          required: true
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What user problem or workflow should be improved?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior, not only the implementation.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    attributes:
+      label: Area
+      options: [SSH, SFTP, Frontend and UX, Security, Testing, Documentation, Packaging and release, Other]
+    validations:
+      required: true
+  - type: checkboxes
+    attributes:
+      label: Contribution
+      options:
+        - label: I may be able to implement this with maintainer guidance.

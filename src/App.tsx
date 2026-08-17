@@ -42,6 +42,8 @@ import {
 
 type SidebarMenuType = 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
 
+const createQuickSessionId = () => `quick-${Date.now()}`;
+
 interface PromptConfig {
   title: string;
   fields: { key: string; label: string; placeholder?: string }[];
@@ -106,7 +108,7 @@ function App() {
       const user = match[1];
       const host = match[2];
       const port = match[3] ? parseInt(match[3], 10) : 22;
-      const sessionId = `quick-${Date.now()}`;
+      const sessionId = createQuickSessionId();
 
       useSessionStore.getState().addSession({
         id: sessionId,
