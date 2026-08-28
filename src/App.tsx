@@ -31,7 +31,8 @@ import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './components
 import { Session, useSessionStore } from './store/useSessionStore';
 import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
-import { emit } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
+import { SSH_HEALTH_EVENT, type SshHealthEvent } from './types/ssh';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 import {
   KeyboardShortcuts,
@@ -307,18 +308,17 @@ function App() {
   );
 
   useEffect(() => {
-    const pollHealth = () => {
-      useSessionStore.getState().sessions.forEach((s) => {
-        if (s.type === 'ssh' && s.status === 'connected') {
-          invoke<NonNullable<Session['health']>>('ssh_health_check', { sessionId: s.id })
-            .then((health) => useSessionStore.getState().updateSessionHealth(s.id, health))
-            .catch(() => {});
-        }
-      });
+    const unlisten = listen<SshHealthEvent>(SSH_HEALTH_EVENT, ({ payload }) => {
+      if (payload.health) {
+        useSessionStore.getState().updateSessionHealth(payload.sessionId, payload.health);
+      } else {
+        useSessionStore.getState().clearSessionHealth(payload.sessionId);
+      }
+    });
+
+    return () => {
+      unlisten.then((dispose) => dispose());
     };
-    pollHealth();
-    const interval = setInterval(pollHealth, 60000);
-    return () => clearInterval(interval);
   }, []);
 
   // ── UI Handlers ─────────────────────────────────────────────────

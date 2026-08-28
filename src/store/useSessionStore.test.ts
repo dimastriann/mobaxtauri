@@ -34,6 +34,11 @@ describe('session health lifecycle', () => {
     expect(useSessionStore.getState().sessions[0].health).toBeUndefined();
   });
 
+  it('clears health when the backend monitor is stopped', () => {
+    useSessionStore.getState().clearSessionHealth('ssh-test');
+    expect(useSessionStore.getState().sessions[0].health).toBeUndefined();
+  });
+
   it('ignores a late health result after disconnect', () => {
     useSessionStore.getState().updateSessionStatus('ssh-test', 'disconnected');
     useSessionStore.getState().updateSessionHealth('ssh-test', health);

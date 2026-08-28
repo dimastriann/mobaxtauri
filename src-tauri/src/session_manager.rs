@@ -1,3 +1,5 @@
+use crate::health::collect_health;
+use crate::session_types::emit_ssh_health;
 use crate::session_types::{emit_ssh_session_state, SshDisconnectReason, SshSessionStatus};
 use crate::ssh::ClientHandler;
 use bytes::Bytes;
@@ -12,6 +14,7 @@ struct ManagedSshSession {
     channel_id: ChannelId,
     channel: Arc<russh::Channel<russh::client::Msg>>,
     keepalive_task: JoinHandle<()>,
+    health_task: JoinHandle<()>,
 }
 
 #[derive(Default)]
@@ -31,11 +34,12 @@ impl SessionManager {
         let handle = Arc::new(handle);
         let channel = Arc::new(channel);
         let keepalive_task = spawn_keepalive(
-            app_handle,
+            app_handle.clone(),
             session_id.clone(),
             Arc::clone(&handle),
             channel_id,
         );
+        let health_task = spawn_health_monitor(app_handle, session_id.clone(), Arc::clone(&handle));
 
         let replaced = self.sessions.lock().await.insert(
             session_id,
@@ -44,11 +48,13 @@ impl SessionManager {
                 channel_id,
                 channel,
                 keepalive_task,
+                health_task,
             },
         );
 
         if let Some(previous) = replaced {
             previous.keepalive_task.abort();
+            previous.health_task.abort();
         }
     }
 
@@ -56,6 +62,7 @@ impl SessionManager {
         let removed = self.sessions.lock().await.remove(session_id);
         if let Some(session) = removed {
             session.keepalive_task.abort();
+            session.health_task.abort();
             true
         } else {
             false
@@ -102,6 +109,24 @@ impl SessionManager {
     pub async fn is_empty(&self) -> bool {
         self.sessions.lock().await.is_empty()
     }
+}
+
+fn spawn_health_monitor(
+    app_handle: AppHandle,
+    session_id: String,
+    handle: Arc<russh::client::Handle<ClientHandler>>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+
+        loop {
+            interval.tick().await;
+            match collect_health(Arc::clone(&handle)).await {
+                Ok(health) => emit_ssh_health(&app_handle, session_id.clone(), Some(health)),
+                Err(error) => log::debug!("Health check failed for {session_id}: {error}"),
+            }
+        }
+    })
 }
 
 fn spawn_keepalive(

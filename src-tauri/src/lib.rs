@@ -1,10 +1,14 @@
+mod health;
 mod session_manager;
 mod session_types;
 mod sftp_utils;
 mod ssh;
 
+use crate::health::{collect_health, HealthSnapshot};
 use crate::session_manager::SessionManager;
-use crate::session_types::{emit_ssh_session_state, SshDisconnectReason, SshSessionStatus};
+use crate::session_types::{
+    emit_ssh_health, emit_ssh_session_state, SshDisconnectReason, SshSessionStatus,
+};
 use crate::ssh::SshSession;
 use bytes::Bytes;
 use std::collections::HashMap;
@@ -82,6 +86,7 @@ async fn ssh_connect(
     // Clean up any existing session with the same ID
     state.ssh_sessions.remove(&session_id).await;
     state.sftp_sessions.lock().await.remove(&session_id);
+    emit_ssh_health(&app_handle, session_id.clone(), None);
 
     state
         .ssh_sessions
@@ -487,83 +492,9 @@ async fn sftp_create_dir(
 async fn ssh_health_check(
     state: State<'_, AppState>,
     session_id: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<HealthSnapshot, String> {
     let handle = state.ssh_sessions.connection_handle(&session_id).await?;
-
-    let exec_channel = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        handle.channel_open_session(),
-    )
-    .await
-    .map_err(|_| "Timed out opening health channel".to_string())?
-    .map_err(|e| format!("Failed to open health channel: {e}"))?;
-
-    // Line 1: load avg (1min)
-    // Line 2: Mem used_mb total_mb
-    // Line 3: Swap used_mb total_mb
-    // Line 4: disk used %
-    let cmd = "cat /proc/loadavg | awk '{print $1}'; free -m | grep Mem | awk '{print $3,$2}'; free -m | grep Swap | awk '{print $3,$2}'; df -h / | tail -1 | awk '{print $5}' | sed 's/%//'";
-
-    tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        exec_channel.exec(true, cmd),
-    )
-    .await
-    .map_err(|_| "Timed out starting health command".to_string())?
-    .map_err(|e| format!("Failed to exec health cmd: {e}"))?;
-
-    let mut output = String::new();
-    let mut stream = exec_channel.into_stream();
-    use tokio::io::AsyncReadExt;
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        stream.read_to_string(&mut output),
-    )
-    .await
-    .map_err(|_| "Health check timed out".to_string())?;
-
-    let lines: Vec<&str> = output.lines().collect();
-    if lines.len() >= 4 {
-        let load = lines[0].parse::<f32>().unwrap_or(0.0);
-
-        let mem_parts: Vec<&str> = lines[1].split_whitespace().collect();
-        let mut ram_used: f32 = 0.0;
-        let mut ram_total: f32 = 1.0;
-        let mut ram_pct: f32 = 0.0;
-        if mem_parts.len() == 2 {
-            ram_used = mem_parts[0].parse::<f32>().unwrap_or(0.0);
-            ram_total = mem_parts[1].parse::<f32>().unwrap_or(1.0);
-            ram_pct = (ram_used / ram_total) * 100.0;
-        }
-
-        let swap_parts: Vec<&str> = lines[2].split_whitespace().collect();
-        let mut swap_used: f32 = 0.0;
-        let mut swap_total: f32 = 0.0;
-        let mut swap_pct: f32 = 0.0;
-        if swap_parts.len() == 2 {
-            swap_used = swap_parts[0].parse::<f32>().unwrap_or(0.0);
-            swap_total = swap_parts[1].parse::<f32>().unwrap_or(0.0);
-            if swap_total > 0.0 {
-                swap_pct = (swap_used / swap_total) * 100.0;
-            }
-        }
-
-        let disk = lines[3].parse::<f32>().unwrap_or(0.0);
-        let cpu_pct = (load * 100.0).min(100.0);
-
-        Ok(serde_json::json!({
-            "cpu": cpu_pct,
-            "ram": ram_pct,
-            "ram_used": ram_used,
-            "ram_total": ram_total,
-            "swap": swap_pct,
-            "swap_used": swap_used,
-            "swap_total": swap_total,
-            "disk": disk
-        }))
-    } else {
-        Err(format!("Unexpected health output: {}", output))
-    }
+    collect_health(handle).await
 }
 
 #[tauri::command]

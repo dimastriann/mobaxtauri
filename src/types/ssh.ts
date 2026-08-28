@@ -10,3 +10,21 @@ export interface SshSessionStateEvent {
   message?: string;
   reason?: SshDisconnectReason;
 }
+
+export interface SshHealthSnapshot {
+  cpu: number;
+  ram: number;
+  ram_used: number;
+  ram_total: number;
+  swap: number;
+  swap_used: number;
+  swap_total: number;
+  disk: number;
+}
+
+export interface SshHealthEvent {
+  sessionId: string;
+  health: SshHealthSnapshot | null;
+}
+
+export const SSH_HEALTH_EVENT = 'ssh-health';

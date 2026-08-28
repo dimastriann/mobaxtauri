@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { load } from '@tauri-apps/plugin-store';
 import { useCredentialStore } from './useCredentialStore';
+import type { SshHealthSnapshot } from '../types/ssh';
 
 export type SessionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -17,16 +18,7 @@ export interface Session {
   error?: string;
   lastActivity?: number;
   folderId?: string | null;
-  health?: {
-    cpu: number;
-    ram: number;
-    ram_used: number;
-    ram_total: number;
-    swap: number;
-    swap_used: number;
-    swap_total: number;
-    disk: number;
-  };
+  health?: SshHealthSnapshot;
   tag?: 'prod' | 'staging' | 'dev' | 'custom';
   tagColor?: string;
   savePassword?: boolean;
@@ -77,6 +69,7 @@ interface SessionState {
   updateSessionStatus: (id: string, status: SessionStatus, error?: string) => void;
   updateLastActivity: (id: string) => void;
   updateSessionHealth: (id: string, health: NonNullable<Session['health']>) => void;
+  clearSessionHealth: (id: string) => void;
   updateSessionBell: (id: string, hasBell: boolean) => void;
 
   // Tab management
@@ -203,6 +196,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         s.id === id && s.status === 'connected' && state.openTabs.includes(id)
           ? { ...s, health }
           : s,
+      ),
+    }));
+  },
+
+  clearSessionHealth: (id) => {
+    set((state) => ({
+      sessions: state.sessions.map((session) =>
+        session.id === id ? { ...session, health: undefined } : session,
       ),
     }));
   },

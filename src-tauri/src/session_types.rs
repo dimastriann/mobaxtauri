@@ -1,7 +1,9 @@
+use crate::health::HealthSnapshot;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 pub const SSH_SESSION_STATE_EVENT: &str = "ssh-session-state";
+pub const SSH_HEALTH_EVENT: &str = "ssh-health";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -13,12 +15,34 @@ pub enum SshSessionStatus {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshHealthEvent {
+    pub session_id: String,
+    pub health: Option<HealthSnapshot>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SshDisconnectReason {
     Requested,
     RemoteEof,
     RemoteClosed,
     KeepaliveFailed,
+}
+
+pub fn emit_ssh_health(
+    app_handle: &AppHandle,
+    session_id: impl Into<String>,
+    health: Option<HealthSnapshot>,
+) {
+    let payload = SshHealthEvent {
+        session_id: session_id.into(),
+        health,
+    };
+
+    if let Err(error) = app_handle.emit(SSH_HEALTH_EVENT, payload) {
+        log::warn!("Failed to emit SSH health: {error}");
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
