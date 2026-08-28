@@ -3292,6 +3292,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "bytes",
+ "iota_stronghold",
  "log",
  "russh",
  "russh-cryptovec 0.58.0",

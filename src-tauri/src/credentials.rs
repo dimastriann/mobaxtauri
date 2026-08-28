@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
+use iota_stronghold::Client;
 use tauri_plugin_stronghold::stronghold::Stronghold;
 use tokio::sync::Mutex;
 
@@ -9,7 +10,12 @@ const APPLICATION_KEY: &[u8; 32] = b"mobaxtauri_stronghold_secure_key";
 
 #[derive(Default)]
 pub struct CredentialService {
-    vault: Mutex<Option<Stronghold>>,
+    vault: Mutex<Option<CredentialVault>>,
+}
+
+struct CredentialVault {
+    stronghold: Stronghold,
+    client: Client,
 }
 
 impl CredentialService {
@@ -29,7 +35,10 @@ impl CredentialService {
             let stronghold = Stronghold::new(path, APPLICATION_KEY.to_vec())
                 .map_err(|error| format!("Failed to open credential vault: {error}"))?;
             ensure_client(&stronghold)?;
-            Ok::<Stronghold, String>(stronghold)
+            let client = stronghold
+                .load_client(CLIENT_NAME)
+                .map_err(|error| format!("Failed to load credential client: {error}"))?;
+            Ok::<CredentialVault, String>(CredentialVault { stronghold, client })
         })
         .await
         .map_err(|error| format!("Credential vault task failed: {error}"))??;
@@ -46,15 +55,14 @@ impl CredentialService {
     ) -> Result<(), String> {
         self.unlock(app_handle).await?;
         let vault = self.vault.lock().await;
-        let stronghold = vault.as_ref().ok_or("Credential vault is locked")?;
-        let client = stronghold
-            .load_client(CLIENT_NAME)
-            .map_err(|error| format!("Failed to load credential client: {error}"))?;
-        client
+        let loaded = vault.as_ref().ok_or("Credential vault is locked")?;
+        loaded
+            .client
             .store()
             .insert(session_id.as_bytes().to_vec(), secret.into_bytes(), None)
             .map_err(|error| format!("Failed to save credential: {error}"))?;
-        stronghold
+        loaded
+            .stronghold
             .save()
             .map_err(|error| format!("Failed to persist credential vault: {error}"))
     }
@@ -66,11 +74,9 @@ impl CredentialService {
     ) -> Result<Option<String>, String> {
         self.unlock(app_handle).await?;
         let vault = self.vault.lock().await;
-        let stronghold = vault.as_ref().ok_or("Credential vault is locked")?;
-        let client = stronghold
-            .load_client(CLIENT_NAME)
-            .map_err(|error| format!("Failed to load credential client: {error}"))?;
-        let secret = client
+        let loaded = vault.as_ref().ok_or("Credential vault is locked")?;
+        let secret = loaded
+            .client
             .store()
             .get(session_id.as_bytes())
             .map_err(|error| format!("Failed to read credential: {error}"))?;
@@ -86,15 +92,14 @@ impl CredentialService {
     pub async fn delete(&self, app_handle: &AppHandle, session_id: &str) -> Result<(), String> {
         self.unlock(app_handle).await?;
         let vault = self.vault.lock().await;
-        let stronghold = vault.as_ref().ok_or("Credential vault is locked")?;
-        let client = stronghold
-            .load_client(CLIENT_NAME)
-            .map_err(|error| format!("Failed to load credential client: {error}"))?;
-        client
+        let loaded = vault.as_ref().ok_or("Credential vault is locked")?;
+        loaded
+            .client
             .store()
             .delete(session_id.as_bytes())
             .map_err(|error| format!("Failed to delete credential: {error}"))?;
-        stronghold
+        loaded
+            .stronghold
             .save()
             .map_err(|error| format!("Failed to persist credential vault: {error}"))
     }
