@@ -1,6 +1,7 @@
 mod credentials;
 mod health;
 mod persistence;
+mod recording;
 mod session_manager;
 mod session_types;
 mod sftp_utils;
@@ -619,6 +620,15 @@ async fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {e}"))
 }
 
+#[tauri::command]
+async fn export_terminal_recording(
+    path: String,
+    title: String,
+    lines: Vec<String>,
+) -> Result<(), String> {
+    recording::export_svg(path, title, lines).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -689,7 +699,8 @@ pub fn run() {
             save_app_data,
             credential_unlock,
             credential_save,
-            credential_delete
+            credential_delete,
+            export_terminal_recording
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

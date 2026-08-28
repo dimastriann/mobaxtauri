@@ -61,28 +61,6 @@ const XTERM_THEME_DARK: XTerm['options']['theme'] = {
   brightWhite: '#ffffff',
 };
 
-const escapeXml = (value: string) =>
-  value
-    // Terminal output can contain C0 control characters that are invalid in XML.
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-
-const createRecordingSvg = (title: string, recordedLines: string[]) => {
-  const lines = recordedLines.slice(-1000);
-  const height = Math.max(120, 56 + lines.length * 18);
-  const text = lines
-    .map(
-      (line, index) =>
-        `<text x="20" y="${44 + index * 18}">${escapeXml(line.slice(0, 160)) || ' '}</text>`,
-    )
-    .join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="${height}" viewBox="0 0 1200 ${height}"><rect width="100%" height="100%" fill="#0f172a"/><style>text{font:14px 'Cascadia Code',monospace;fill:#f1f5f9;white-space:pre}</style><text x="20" y="24" fill="#38bdf8">${escapeXml(title)}</text>${text}</svg>`;
-};
-
 interface TerminalInstanceProps {
   sessionId: string;
   isVisible: boolean;
@@ -152,11 +130,11 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           recordedLines.push(buffer.getLine(index)?.translateToString(true) ?? '');
         }
       }
-      const svg = createRecordingSvg(
-        `${session?.name ?? 'Terminal'} · ${new Date().toLocaleString()}`,
-        recordedLines,
-      );
-      await invoke('write_text_file', { path, content: svg });
+      await invoke('export_terminal_recording', {
+        path,
+        title: `${session?.name ?? 'Terminal'} · ${new Date().toLocaleString()}`,
+        lines: recordedLines,
+      });
       setRecordingMessage(`Saved: ${path.split(/[\\/]/).pop()}`);
     } catch (error) {
       setRecordingMessage(`Export failed: ${String(error)}`);
