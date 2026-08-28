@@ -22,7 +22,7 @@ const HealthBar: React.FC = () => {
       minH="22px"
       px={2}
       py={0.5}
-      gap={2}
+      gap={3}
       bg="bg.muted"
       borderTop="1px solid"
       borderColor="border.subtle"
@@ -35,7 +35,7 @@ const HealthBar: React.FC = () => {
         <Text color="fg.subtle" fontWeight="600">
           CPU
         </Text>
-        <Box w="42px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
+        <Box w="52px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
           <Box
             h="full"
             bg={barColor(h.cpu)}
@@ -62,7 +62,7 @@ const HealthBar: React.FC = () => {
         <Text color="fg.subtle" fontWeight="600">
           RAM
         </Text>
-        <Box w="42px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
+        <Box w="52px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
           <Box
             h="full"
             bg={barColor(h.ram)}
@@ -79,7 +79,7 @@ const HealthBar: React.FC = () => {
         <Text color="fg.subtle" fontWeight="600">
           SWAP
         </Text>
-        <Box w="42px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
+        <Box w="52px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
           <Box
             h="full"
             bg={barColor(h.swap)}
@@ -96,7 +96,7 @@ const HealthBar: React.FC = () => {
         <Text color="fg.subtle" fontWeight="600">
           DISK
         </Text>
-        <Box w="42px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
+        <Box w="52px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
           <Box
             h="full"
             bg={barColor(h.disk)}

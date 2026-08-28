@@ -117,7 +117,7 @@ fn spawn_health_monitor(
     handle: Arc<russh::client::Handle<ClientHandler>>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
 
         loop {
             interval.tick().await;
