@@ -21,6 +21,7 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useSftpStore } from '../store/useSftpStore';
 import { useSessionStore } from '../store/useSessionStore';
+import { SSH_SESSION_STATE_EVENT, type SshSessionStateEvent } from '../types/ssh';
 import SftpEditorModal from './SftpEditorModal';
 
 const SftpSidebar: React.FC = () => {
@@ -72,7 +73,8 @@ const SftpSidebar: React.FC = () => {
     let unlisten: UnlistenFn | null = null;
 
     const setupListener = async () => {
-      unlisten = await listen(`ssh-disconnected-${activeSessionId}`, () => {
+      unlisten = await listen<SshSessionStateEvent>(SSH_SESSION_STATE_EVENT, ({ payload }) => {
+        if (payload.sessionId !== activeSessionId || payload.status !== 'disconnected') return;
         console.log('[SFTP] Disconnected event received - resetting store');
         reset();
       });
