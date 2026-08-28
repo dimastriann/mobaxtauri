@@ -1,4 +1,4 @@
-use crate::session_types::{emit_ssh_session_state, SshSessionStatus};
+use crate::session_types::{emit_ssh_session_state, SshDisconnectReason, SshSessionStatus};
 use russh::client::{AuthResult, Handler, Session};
 use russh::keys::ssh_key::PrivateKey;
 use russh::keys::PrivateKeyWithHashAlg;
@@ -59,13 +59,12 @@ impl Handler for ClientHandler {
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
         if Some(channel) == *self.shell_channel_id.lock().await {
-            let event_name = format!("ssh-disconnected-{}", self.session_id);
-            let _ = self.app_handle.emit(&event_name, ());
             emit_ssh_session_state(
                 &self.app_handle,
                 self.session_id.clone(),
                 SshSessionStatus::Disconnected,
                 Some("Remote shell reached end of stream".into()),
+                Some(SshDisconnectReason::RemoteEof),
             );
         }
         Ok(())
@@ -77,13 +76,12 @@ impl Handler for ClientHandler {
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
         if Some(channel) == *self.shell_channel_id.lock().await {
-            let event_name = format!("ssh-disconnected-{}", self.session_id);
-            let _ = self.app_handle.emit(&event_name, ());
             emit_ssh_session_state(
                 &self.app_handle,
                 self.session_id.clone(),
                 SshSessionStatus::Disconnected,
                 Some("Remote shell closed".into()),
+                Some(SshDisconnectReason::RemoteClosed),
             );
         }
         Ok(())

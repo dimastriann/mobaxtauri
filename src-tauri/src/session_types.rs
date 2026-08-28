@@ -13,12 +13,23 @@ pub enum SshSessionStatus {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SshDisconnectReason {
+    Requested,
+    RemoteEof,
+    RemoteClosed,
+    KeepaliveFailed,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshSessionStateEvent {
     pub session_id: String,
     pub status: SshSessionStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<SshDisconnectReason>,
 }
 
 pub fn emit_ssh_session_state(
@@ -26,11 +37,13 @@ pub fn emit_ssh_session_state(
     session_id: impl Into<String>,
     status: SshSessionStatus,
     message: Option<String>,
+    reason: Option<SshDisconnectReason>,
 ) {
     let payload = SshSessionStateEvent {
         session_id: session_id.into(),
         status,
         message,
+        reason,
     };
 
     if let Err(error) = app_handle.emit(SSH_SESSION_STATE_EVENT, payload) {
@@ -40,7 +53,7 @@ pub fn emit_ssh_session_state(
 
 #[cfg(test)]
 mod tests {
-    use super::{SshSessionStateEvent, SshSessionStatus};
+    use super::{SshDisconnectReason, SshSessionStateEvent, SshSessionStatus};
 
     #[test]
     fn serializes_session_state_for_the_frontend_contract() {
@@ -48,6 +61,7 @@ mod tests {
             session_id: "ssh-production".into(),
             status: SshSessionStatus::Connecting,
             message: Some("Opening connection".into()),
+            reason: None,
         };
 
         let value = serde_json::to_value(event).expect("session event should serialize");
@@ -63,11 +77,26 @@ mod tests {
             session_id: "ssh-development".into(),
             status: SshSessionStatus::Connected,
             message: None,
+            reason: None,
         };
 
         let value = serde_json::to_value(event).expect("session event should serialize");
 
         assert!(value.get("message").is_none());
+    }
+
+    #[test]
+    fn serializes_a_disconnect_reason() {
+        let event = SshSessionStateEvent {
+            session_id: "ssh-production".into(),
+            status: SshSessionStatus::Disconnected,
+            message: Some("SSH keepalive failed".into()),
+            reason: Some(SshDisconnectReason::KeepaliveFailed),
+        };
+
+        let value = serde_json::to_value(event).expect("session event should serialize");
+
+        assert_eq!(value["reason"], "keepalive_failed");
     }
 
     #[test]

@@ -1,9 +1,9 @@
-use crate::session_types::{emit_ssh_session_state, SshSessionStatus};
+use crate::session_types::{emit_ssh_session_state, SshDisconnectReason, SshSessionStatus};
 use crate::ssh::ClientHandler;
 use bytes::Bytes;
 use russh::ChannelId;
 use std::{collections::HashMap, sync::Arc};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
@@ -128,8 +128,8 @@ fn spawn_keepalive(
                     session_id.clone(),
                     SshSessionStatus::Disconnected,
                     Some("SSH keepalive failed".into()),
+                    Some(SshDisconnectReason::KeepaliveFailed),
                 );
-                let _ = app_handle.emit(&format!("ssh-disconnected-{session_id}"), ());
                 break;
             }
         }

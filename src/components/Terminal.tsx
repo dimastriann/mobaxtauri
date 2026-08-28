@@ -7,6 +7,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
 import { useCredentialStore } from '../store/useCredentialStore';
+import { SSH_SESSION_STATE_EVENT, type SshSessionStateEvent } from '../types/ssh';
 import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
@@ -366,22 +367,26 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
     // ── SSH data listener (from backend) ───────────────────
     const setupListeners = async () => {
-      const [unData, unDisconnect] = await Promise.all([
+      const [unData, unState] = await Promise.all([
         listen<string>(`ssh-data-${sessionId}`, (event) => {
           term.write(event.payload);
           useSessionStore.getState().updateLastActivity(sessionId);
         }),
-        listen<void>(`ssh-disconnected-${sessionId}`, () => {
+        listen<SshSessionStateEvent>(SSH_SESSION_STATE_EVENT, (event) => {
+          if (event.payload.sessionId !== sessionId || event.payload.status !== 'disconnected') {
+            return;
+          }
           updateStatus('disconnected');
           useSessionStore.getState().recordConnection(sessionId, 'disconnected');
           showReconnectBanner(term);
-          // Clean up backend resources immediately
-          invoke('ssh_disconnect', { sessionId }).catch(() => {});
+          if (event.payload.reason !== 'requested') {
+            invoke('ssh_disconnect', { sessionId }).catch(() => {});
+          }
         }),
       ]);
       unlistenDataRef.current = () => {
         unData();
-        unDisconnect();
+        unState();
       };
     };
 

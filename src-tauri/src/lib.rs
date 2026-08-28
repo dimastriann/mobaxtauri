@@ -4,7 +4,7 @@ mod sftp_utils;
 mod ssh;
 
 use crate::session_manager::SessionManager;
-use crate::session_types::{emit_ssh_session_state, SshSessionStatus};
+use crate::session_types::{emit_ssh_session_state, SshDisconnectReason, SshSessionStatus};
 use crate::ssh::SshSession;
 use bytes::Bytes;
 use std::collections::HashMap;
@@ -34,6 +34,7 @@ async fn ssh_connect(
         session_id.clone(),
         SshSessionStatus::Connecting,
         None,
+        None,
     );
 
     let connect_future = SshSession::connect(
@@ -58,6 +59,7 @@ async fn ssh_connect(
                     session_id,
                     SshSessionStatus::Failed,
                     Some(message.clone()),
+                    None,
                 );
                 return Err(message);
             }
@@ -69,6 +71,7 @@ async fn ssh_connect(
                     session_id,
                     SshSessionStatus::Failed,
                     Some(message.clone()),
+                    None,
                 );
                 return Err(message);
             }
@@ -100,6 +103,7 @@ async fn ssh_connect(
         &app_handle,
         session_id.clone(),
         SshSessionStatus::Connected,
+        None,
         None,
     );
 
@@ -136,6 +140,7 @@ async fn ssh_disconnect(
         session_id,
         SshSessionStatus::Disconnected,
         Some("Disconnected by request".into()),
+        Some(SshDisconnectReason::Requested),
     );
 
     Ok(())
