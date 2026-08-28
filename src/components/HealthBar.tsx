@@ -18,14 +18,14 @@ const HealthBar: React.FC = () => {
 
   return (
     <HStack
-      minH="24px"
-      px={4}
-      py={1}
-      gap={4}
+      minH="22px"
+      px={2}
+      py={0.5}
+      gap={2}
       bg="bg.muted"
       borderTop="1px solid"
       borderColor="border.subtle"
-      fontSize="11px"
+      fontSize="10px"
       color="fg.muted"
       fontFamily="monospace"
       flexWrap="wrap"
@@ -34,7 +34,7 @@ const HealthBar: React.FC = () => {
         <Text color="fg.subtle" fontWeight="600">
           CPU
         </Text>
-        <Box w="60px" h="6px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
+        <Box w="42px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
           <Box
             h="full"
             bg={barColor(h.cpu)}
@@ -51,7 +51,7 @@ const HealthBar: React.FC = () => {
         <Text color="fg.subtle" fontWeight="600">
           RAM
         </Text>
-        <Box w="60px" h="6px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
+        <Box w="42px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
           <Box
             h="full"
             bg={barColor(h.ram)}
@@ -60,15 +60,15 @@ const HealthBar: React.FC = () => {
             borderRadius="full"
           />
         </Box>
-        <Text textAlign="right">
-          {h.ram_used.toFixed(0)}/{h.ram_total.toFixed(0)}M ({h.ram.toFixed(0)}%)
+        <Text textAlign="right" title={`${h.ram_used.toFixed(0)}/${h.ram_total.toFixed(0)} MB`}>
+          {h.ram.toFixed(0)}%
         </Text>
       </HStack>
       <HStack gap={1} flexShrink={0}>
         <Text color="fg.subtle" fontWeight="600">
           SWAP
         </Text>
-        <Box w="60px" h="6px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
+        <Box w="42px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
           <Box
             h="full"
             bg={barColor(h.swap)}
@@ -77,15 +77,15 @@ const HealthBar: React.FC = () => {
             borderRadius="full"
           />
         </Box>
-        <Text textAlign="right">
-          {h.swap_used.toFixed(0)}/{h.swap_total.toFixed(0)}M ({h.swap.toFixed(0)}%)
+        <Text textAlign="right" title={`${h.swap_used.toFixed(0)}/${h.swap_total.toFixed(0)} MB`}>
+          {h.swap.toFixed(0)}%
         </Text>
       </HStack>
       <HStack gap={1} flexShrink={0}>
         <Text color="fg.subtle" fontWeight="600">
           DISK
         </Text>
-        <Box w="60px" h="6px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
+        <Box w="42px" h="5px" bg="whiteAlpha.100" borderRadius="full" overflow="hidden">
           <Box
             h="full"
             bg={barColor(h.disk)}
