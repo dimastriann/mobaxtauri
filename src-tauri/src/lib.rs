@@ -1,6 +1,8 @@
+mod session_types;
 mod sftp_utils;
 mod ssh;
 
+use crate::session_types::{emit_ssh_session_state, SshSessionStatus};
 use crate::ssh::{ClientHandler, SshSession};
 use bytes::Bytes;
 use russh::ChannelId;
@@ -35,9 +37,15 @@ async fn ssh_connect(
     private_key_path: Option<String>,
 ) -> Result<String, String> {
     log::info!("Attempting to connect to {}:{} as {}", host, port, user);
+    emit_ssh_session_state(
+        &app_handle,
+        session_id.clone(),
+        SshSessionStatus::Connecting,
+        None,
+    );
 
     let connect_future = SshSession::connect(
-        app_handle,
+        app_handle.clone(),
         session_id.clone(),
         host,
         port,
@@ -52,11 +60,25 @@ async fn ssh_connect(
             Ok(Ok(res)) => res,
             Ok(Err(e)) => {
                 log::error!("Connection error: {}", e);
-                return Err(format!("Connection failed: {}", e));
+                let message = format!("Connection failed: {e}");
+                emit_ssh_session_state(
+                    &app_handle,
+                    session_id,
+                    SshSessionStatus::Failed,
+                    Some(message.clone()),
+                );
+                return Err(message);
             }
             Err(_) => {
                 log::error!("Connection timed out after 15s");
-                return Err("Connection timed out".into());
+                let message = "Connection timed out".to_string();
+                emit_ssh_session_state(
+                    &app_handle,
+                    session_id,
+                    SshSessionStatus::Failed,
+                    Some(message.clone()),
+                );
+                return Err(message);
             }
         };
 
@@ -73,6 +95,13 @@ async fn ssh_connect(
         (Arc::new(handle), channel_id, Arc::new(channel)),
     );
     sftp_sessions.insert(session_id.clone(), std::sync::Arc::new(sftp));
+
+    emit_ssh_session_state(
+        &app_handle,
+        session_id.clone(),
+        SshSessionStatus::Connected,
+        None,
+    );
 
     Ok(format!("Connected to session {}", session_id))
 }
@@ -98,12 +127,23 @@ async fn ssh_send_data(
 }
 
 #[tauri::command]
-async fn ssh_disconnect(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+async fn ssh_disconnect(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
     let mut ssh_sessions = state.ssh_sessions.lock().await;
     let mut sftp_sessions = state.sftp_sessions.lock().await;
 
     ssh_sessions.remove(&session_id);
     sftp_sessions.remove(&session_id);
+
+    emit_ssh_session_state(
+        &app_handle,
+        session_id,
+        SshSessionStatus::Disconnected,
+        Some("Disconnected by request".into()),
+    );
 
     Ok(())
 }
