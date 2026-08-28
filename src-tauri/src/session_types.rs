@@ -1,9 +1,22 @@
 use crate::health::HealthSnapshot;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 pub const SSH_SESSION_STATE_EVENT: &str = "ssh-session-state";
 pub const SSH_HEALTH_EVENT: &str = "ssh-health";
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConnectRequest {
+    pub session_id: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub password: Option<String>,
+    pub private_key_path: Option<String>,
+    #[serde(default)]
+    pub use_saved_credential: bool,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

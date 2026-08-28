@@ -127,7 +127,17 @@ function App() {
       activateTerminalSession(sessionId);
 
       try {
-        await invoke('ssh_connect', { sessionId, host, port, user, password: null });
+        await invoke('ssh_connect', {
+          request: {
+            sessionId,
+            host,
+            port,
+            user,
+            password: null,
+            privateKeyPath: null,
+            useSavedCredential: false,
+          },
+        });
         useSessionStore.getState().updateSessionStatus(sessionId, 'connected');
         setQuickConnectStr('');
 

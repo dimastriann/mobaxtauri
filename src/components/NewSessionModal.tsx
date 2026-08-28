@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Stack, Input, Button, HStack, Text } from '@chakra-ui/react';
@@ -37,7 +37,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const [savePassword, setSavePassword] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const passwordEditedRef = useRef(false);
 
   const folders = useSessionStore((state) => state.folders);
   const addSession = useSessionStore((state) => state.addSession);
@@ -46,7 +45,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
 
   useEffect(() => {
     setSaveError(null);
-    passwordEditedRef.current = false;
     if (editingSession) {
       setHost(editingSession.host || '');
       setUser(editingSession.user || '');
@@ -60,17 +58,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       setPrivateKeyPath(editingSession.privateKeyPath || '');
       setSavePassword(editingSession.savePassword ?? true);
       setPassword('');
-
-      // Fetch password from stronghold securely if available
-      useCredentialStore
-        .getState()
-        .getCredential(editingSession.id)
-        .then((pwd) => {
-          if (pwd && !passwordEditedRef.current) {
-            setPassword(pwd);
-          }
-        })
-        .catch((error) => setSaveError(`Could not unlock saved password: ${String(error)}`));
     } else {
       setHost('');
       setUser('');
@@ -92,11 +79,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
 
     if (editingSession) {
       let credentialError: string | null = null;
-      const shouldSavePassword = savePassword && Boolean(password);
+      const shouldSavePassword = savePassword && Boolean(password || editingSession.savePassword);
       try {
-        if (shouldSavePassword) {
+        if (savePassword && password) {
           await useCredentialStore.getState().saveCredential(editingSession.id, password);
-        } else {
+        } else if (!savePassword) {
           await useCredentialStore.getState().deleteCredential(editingSession.id);
         }
       } catch (error) {
@@ -154,12 +141,15 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
 
     try {
       await invoke('ssh_connect', {
-        sessionId,
-        host,
-        port,
-        user,
-        password: password || null,
-        privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : null,
+        request: {
+          sessionId,
+          host,
+          port,
+          user,
+          password: password || null,
+          privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : null,
+          useSavedCredential: false,
+        },
       });
       updateStatus(sessionId, 'connected');
 
@@ -367,14 +357,18 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
                 </Field>
               ) : (
                 <Stack gap={2}>
-                  <Field label="Password (Optional)" helperText="Leave empty for keys">
+                  <Field
+                    label="Password (Optional)"
+                    helperText={
+                      editingSession?.savePassword
+                        ? 'Leave empty to keep the saved password'
+                        : 'Leave empty for keys'
+                    }
+                  >
                     <Input
                       type="password"
                       value={password}
-                      onChange={(e) => {
-                        passwordEditedRef.current = true;
-                        setPassword(e.target.value);
-                      }}
+                      onChange={(e) => setPassword(e.target.value)}
                       size="sm"
                     />
                   </Field>

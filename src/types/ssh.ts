@@ -1,5 +1,15 @@
 export const SSH_SESSION_STATE_EVENT = 'ssh-session-state';
 
+export interface SshConnectRequest {
+  sessionId: string;
+  host: string;
+  port: number;
+  user: string;
+  password: string | null;
+  privateKeyPath: string | null;
+  useSavedCredential: boolean;
+}
+
 export type SshSessionStatus = 'connecting' | 'connected' | 'disconnected' | 'failed';
 
 export type SshDisconnectReason = 'requested' | 'remote_eof' | 'remote_closed' | 'keepalive_failed';

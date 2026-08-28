@@ -1,3 +1,4 @@
+mod credentials;
 mod health;
 mod persistence;
 mod session_manager;
@@ -5,11 +6,13 @@ mod session_types;
 mod sftp_utils;
 mod ssh;
 
+use crate::credentials::CredentialService;
 use crate::health::{collect_health, HealthSnapshot};
 use crate::persistence::{AppDataDocument, PersistenceService};
 use crate::session_manager::SessionManager;
 use crate::session_types::{
-    emit_ssh_health, emit_ssh_session_state, SshDisconnectReason, SshSessionStatus,
+    emit_ssh_health, emit_ssh_session_state, SshConnectRequest, SshDisconnectReason,
+    SshSessionStatus,
 };
 use crate::ssh::SshSession;
 use bytes::Bytes;
@@ -21,6 +24,33 @@ use tokio::sync::Mutex;
 pub struct AppState {
     pub ssh_sessions: SessionManager,
     pub sftp_sessions: Mutex<HashMap<String, std::sync::Arc<russh_sftp::client::SftpSession>>>,
+}
+
+#[tauri::command]
+async fn credential_unlock(
+    app_handle: AppHandle,
+    credentials: State<'_, CredentialService>,
+) -> Result<(), String> {
+    credentials.unlock(&app_handle).await
+}
+
+#[tauri::command]
+async fn credential_save(
+    app_handle: AppHandle,
+    credentials: State<'_, CredentialService>,
+    session_id: String,
+    secret: String,
+) -> Result<(), String> {
+    credentials.save(&app_handle, &session_id, secret).await
+}
+
+#[tauri::command]
+async fn credential_delete(
+    app_handle: AppHandle,
+    credentials: State<'_, CredentialService>,
+    session_id: String,
+) -> Result<(), String> {
+    credentials.delete(&app_handle, &session_id).await
 }
 
 #[tauri::command]
@@ -44,13 +74,18 @@ async fn save_app_data(
 async fn ssh_connect(
     app_handle: AppHandle,
     state: State<'_, AppState>,
-    session_id: String,
-    host: String,
-    port: u16,
-    user: String,
-    password: Option<String>,
-    private_key_path: Option<String>,
+    credentials: State<'_, CredentialService>,
+    request: SshConnectRequest,
 ) -> Result<String, String> {
+    let SshConnectRequest {
+        session_id,
+        host,
+        port,
+        user,
+        password,
+        private_key_path,
+        use_saved_credential,
+    } = request;
     log::info!("Attempting to connect to {}:{} as {}", host, port, user);
     emit_ssh_session_state(
         &app_handle,
@@ -59,6 +94,25 @@ async fn ssh_connect(
         None,
         None,
     );
+
+    let password = if password.is_none() && use_saved_credential {
+        match credentials.get(&app_handle, &session_id).await? {
+            Some(secret) => Some(secret),
+            None => {
+                let message = "Saved credential is unavailable".to_string();
+                emit_ssh_session_state(
+                    &app_handle,
+                    session_id,
+                    SshSessionStatus::Failed,
+                    Some(message.clone()),
+                    None,
+                );
+                return Err(message);
+            }
+        }
+    } else {
+        password
+    };
 
     let connect_future = SshSession::connect(
         app_handle.clone(),
@@ -573,6 +627,7 @@ pub fn run() {
             sftp_sessions: Mutex::new(HashMap::new()),
         })
         .manage(PersistenceService::default())
+        .manage(CredentialService::default())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(
@@ -631,7 +686,10 @@ pub fn run() {
             write_text_file,
             read_text_file,
             load_app_data,
-            save_app_data
+            save_app_data,
+            credential_unlock,
+            credential_save,
+            credential_delete
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

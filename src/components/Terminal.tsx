@@ -6,7 +6,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
-import { useCredentialStore } from '../store/useCredentialStore';
 import { SSH_SESSION_STATE_EVENT, type SshSessionStateEvent } from '../types/ssh';
 import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
@@ -184,31 +183,21 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       connectionAttemptRef.current = true;
 
       try {
-        let activePassword = password;
-        if (!activePassword) {
-          activePassword =
-            (await useCredentialStore.getState().getCredential(sessionId)) || undefined;
-        }
-
-        if (session.savePassword && !activePassword && !session.password) {
-          updateStatus('disconnected', 'Saved credential is unavailable');
-          term.writeln('\x1b[33m● Saved credential unavailable. Please enter the password.\x1b[0m');
-          promptPassword();
-          return;
-        }
-
         updateStatus('connecting');
         term.writeln(
           `\r\n\x1b[38;5;81m● Connecting to ${session.user}@${session.host}:${session.port || 22}...\x1b[0m`,
         );
 
         await invoke('ssh_connect', {
-          sessionId,
-          host: session.host,
-          port: session.port || 22,
-          user: session.user,
-          password: activePassword ?? session.password ?? null,
-          privateKeyPath: session.privateKeyPath ?? null,
+          request: {
+            sessionId,
+            host: session.host,
+            port: session.port || 22,
+            user: session.user,
+            password: password ?? session.password ?? null,
+            privateKeyPath: session.privateKeyPath ?? null,
+            useSavedCredential: Boolean(session.savePassword && !password && !session.password),
+          },
         });
         updateStatus('connected');
         useSessionStore.getState().recordConnection(sessionId, 'connected');
@@ -229,6 +218,10 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         updateStatus('error', errMsg);
         useSessionStore.getState().recordConnection(sessionId, 'failed', errMsg);
         term.writeln(`\x1b[31m✘ Connection failed: ${errMsg}\x1b[0m`);
+        if (errMsg.includes('Saved credential is unavailable')) {
+          promptPassword();
+          return;
+        }
         showReconnectBanner(term);
       } finally {
         connectionAttemptRef.current = false;

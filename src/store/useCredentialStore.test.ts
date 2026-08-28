@@ -1,30 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  load: vi.fn(),
+  invoke: vi.fn(),
 }));
 
-vi.mock('@tauri-apps/plugin-stronghold', () => ({
-  Stronghold: { load: mocks.load },
-}));
-vi.mock('@tauri-apps/api/path', () => ({
-  appDataDir: vi.fn().mockResolvedValue('C:/app-data'),
-  join: vi.fn().mockResolvedValue('C:/app-data/mobaxtauri-v2.hold'),
-}));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 
 import { useCredentialStore } from './useCredentialStore';
 
-const fakeStronghold = () => ({
-  loadClient: vi.fn().mockResolvedValue({ getStore: () => ({}) }),
-  createClient: vi.fn().mockResolvedValue({ getStore: () => ({}) }),
-});
-
-describe('useCredentialStore unlock', () => {
+describe('useCredentialStore', () => {
   beforeEach(() => {
-    mocks.load.mockReset();
+    mocks.invoke.mockReset();
     useCredentialStore.setState({
-      stronghold: null,
-      store: null,
       isUnlocked: false,
       isLoading: false,
       error: null,
@@ -33,8 +20,8 @@ describe('useCredentialStore unlock', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it('shares one Stronghold load across concurrent callers', async () => {
-    mocks.load.mockResolvedValue(fakeStronghold());
+  it('shares one backend unlock across concurrent callers', async () => {
+    mocks.invoke.mockResolvedValue(undefined);
 
     const [first, second] = await Promise.all([
       useCredentialStore.getState().unlock(),
@@ -43,16 +30,29 @@ describe('useCredentialStore unlock', () => {
 
     expect(first).toBe(true);
     expect(second).toBe(true);
-    expect(mocks.load).toHaveBeenCalledOnce();
+    expect(mocks.invoke).toHaveBeenCalledOnce();
+    expect(mocks.invoke).toHaveBeenCalledWith('credential_unlock');
     expect(useCredentialStore.getState().isUnlocked).toBe(true);
   });
 
-  it('returns control when Stronghold does not resolve', async () => {
+  it('delegates credential writes to Rust after unlocking', async () => {
+    mocks.invoke.mockResolvedValue(undefined);
+
+    await useCredentialStore.getState().saveCredential('ssh-test', 'secret');
+
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, 'credential_unlock');
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, 'credential_save', {
+      sessionId: 'ssh-test',
+      secret: 'secret',
+    });
+  });
+
+  it('returns control when the backend does not resolve', async () => {
     vi.useFakeTimers();
-    mocks.load.mockReturnValue(new Promise(() => {}));
+    mocks.invoke.mockReturnValue(new Promise(() => {}));
 
     const result = useCredentialStore.getState().unlock();
-    await vi.advanceTimersByTimeAsync(30000);
+    await vi.advanceTimersByTimeAsync(120000);
 
     await expect(result).resolves.toBe(false);
     expect(useCredentialStore.getState().isLoading).toBe(false);
