@@ -1,6 +1,6 @@
+use iota_stronghold::Client;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
-use iota_stronghold::Client;
 use tauri_plugin_stronghold::stronghold::Stronghold;
 use tokio::sync::Mutex;
 
@@ -34,10 +34,12 @@ impl CredentialService {
         let loaded = tokio::task::spawn_blocking(move || {
             let stronghold = Stronghold::new(path, APPLICATION_KEY.to_vec())
                 .map_err(|error| format!("Failed to open credential vault: {error}"))?;
-            ensure_client(&stronghold)?;
-            let client = stronghold
-                .load_client(CLIENT_NAME)
-                .map_err(|error| format!("Failed to load credential client: {error}"))?;
+            let client = match stronghold.load_client(CLIENT_NAME) {
+                Ok(client) => client,
+                Err(_) => stronghold
+                    .create_client(CLIENT_NAME)
+                    .map_err(|error| format!("Failed to create credential client: {error}"))?,
+            };
             Ok::<CredentialVault, String>(CredentialVault { stronghold, client })
         })
         .await
@@ -111,16 +113,6 @@ fn vault_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
         .app_data_dir()
         .map(|directory| directory.join(VAULT_FILE))
         .map_err(|error| format!("Failed to resolve vault path: {error}"))
-}
-
-fn ensure_client(stronghold: &Stronghold) -> Result<(), String> {
-    if stronghold.load_client(CLIENT_NAME).is_ok() {
-        return Ok(());
-    }
-    stronghold
-        .create_client(CLIENT_NAME)
-        .map(|_| ())
-        .map_err(|error| format!("Failed to create credential client: {error}"))
 }
 
 #[cfg(test)]
