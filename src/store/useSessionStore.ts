@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { load } from '@tauri-apps/plugin-store';
+import { invoke } from '@tauri-apps/api/core';
 import { useCredentialStore } from './useCredentialStore';
 import type { SshHealthSnapshot } from '../types/ssh';
 
@@ -114,6 +115,17 @@ interface SessionState {
 }
 
 const STORAGE_PATH = 'sessions.bin';
+
+interface PersistedAppData {
+  schemaVersion: number;
+  sessions: PersistedSession[];
+  folders: Folder[];
+  snippets: Snippet[];
+  workspaces: Workspace[];
+  connectionHistory: ConnectionHistoryEntry[];
+}
+
+type PersistedSession = Omit<Session, 'status'> & { status?: SessionStatus };
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [{ id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' }],
@@ -414,12 +426,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   loadSessions: async () => {
     try {
-      const store = await load(STORAGE_PATH);
-      const savedSessions = (await store.get<Session[]>('sessions')) || [];
-      const savedFolders = (await store.get<Folder[]>('folders')) || [];
-      const savedSnippets = (await store.get<Snippet[]>('snippets')) || [];
-      const savedWorkspaces = (await store.get<Workspace[]>('workspaces')) || [];
-      const savedHistory = (await store.get<ConnectionHistoryEntry[]>('connectionHistory')) || [];
+      const persisted = await invoke<PersistedAppData | null>('load_app_data');
+      let savedSessions: PersistedSession[];
+      let savedFolders: Folder[];
+      let savedSnippets: Snippet[];
+      let savedWorkspaces: Workspace[];
+      let savedHistory: ConnectionHistoryEntry[];
+
+      if (persisted) {
+        savedSessions = persisted.sessions;
+        savedFolders = persisted.folders;
+        savedSnippets = persisted.snippets;
+        savedWorkspaces = persisted.workspaces;
+        savedHistory = persisted.connectionHistory;
+      } else {
+        const legacyStore = await load(STORAGE_PATH);
+        savedSessions = (await legacyStore.get<Session[]>('sessions')) || [];
+        savedFolders = (await legacyStore.get<Folder[]>('folders')) || [];
+        savedSnippets = (await legacyStore.get<Snippet[]>('snippets')) || [];
+        savedWorkspaces = (await legacyStore.get<Workspace[]>('workspaces')) || [];
+        savedHistory = (await legacyStore.get<ConnectionHistoryEntry[]>('connectionHistory')) || [];
+      }
 
       const local: Session = {
         id: 'local',
@@ -450,6 +477,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         activeSessionId: 'local',
         isLoading: false,
       });
+
+      if (!persisted) {
+        await get().saveToDisk();
+      }
 
       // Legacy plaintext credential migration is best-effort and must never
       // block the session list from becoming usable.
@@ -487,16 +518,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   saveToDisk: async () => {
     try {
       const state = get();
-      const store = await load(STORAGE_PATH);
       const toSave = state.sessions.map(
         ({ status, error, lastActivity, password, hasBell, ...s }) => s,
       );
-      await store.set('sessions', toSave);
-      await store.set('folders', state.folders);
-      await store.set('snippets', state.snippets);
-      await store.set('workspaces', state.workspaces);
-      await store.set('connectionHistory', state.connectionHistory);
-      await store.save();
+      await invoke('save_app_data', {
+        document: {
+          schemaVersion: 1,
+          sessions: toSave,
+          folders: state.folders,
+          snippets: state.snippets,
+          workspaces: state.workspaces,
+          connectionHistory: state.connectionHistory,
+        } satisfies PersistedAppData,
+      });
     } catch (err) {
       console.error('[STORE] Failed to save sessions:', err);
     }

@@ -1,10 +1,12 @@
 mod health;
+mod persistence;
 mod session_manager;
 mod session_types;
 mod sftp_utils;
 mod ssh;
 
 use crate::health::{collect_health, HealthSnapshot};
+use crate::persistence::{AppDataDocument, PersistenceService};
 use crate::session_manager::SessionManager;
 use crate::session_types::{
     emit_ssh_health, emit_ssh_session_state, SshDisconnectReason, SshSessionStatus,
@@ -19,6 +21,23 @@ use tokio::sync::Mutex;
 pub struct AppState {
     pub ssh_sessions: SessionManager,
     pub sftp_sessions: Mutex<HashMap<String, std::sync::Arc<russh_sftp::client::SftpSession>>>,
+}
+
+#[tauri::command]
+async fn load_app_data(
+    app_handle: AppHandle,
+    persistence: State<'_, PersistenceService>,
+) -> Result<Option<AppDataDocument>, String> {
+    persistence.load(&app_handle).await
+}
+
+#[tauri::command]
+async fn save_app_data(
+    app_handle: AppHandle,
+    persistence: State<'_, PersistenceService>,
+    document: AppDataDocument,
+) -> Result<(), String> {
+    persistence.save(&app_handle, document).await
 }
 
 #[tauri::command]
@@ -553,6 +572,7 @@ pub fn run() {
             ssh_sessions: SessionManager::default(),
             sftp_sessions: Mutex::new(HashMap::new()),
         })
+        .manage(PersistenceService::default())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(
@@ -609,7 +629,9 @@ pub fn run() {
             sftp_write_file_content,
             sftp_create_dir,
             write_text_file,
-            read_text_file
+            read_text_file,
+            load_app_data,
+            save_app_data
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
