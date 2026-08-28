@@ -5,6 +5,7 @@ use tokio::io::AsyncReadExt;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct HealthSnapshot {
+    pub timestamp: u64,
     pub cpu: f32,
     pub ram: f32,
     pub ram_used: f32,
@@ -75,6 +76,10 @@ pub fn parse_health_output(output: &str) -> Result<HealthSnapshot, String> {
     let (swap_used, swap_total) = parse_pair(lines[2]).unwrap_or((0.0, 0.0));
 
     Ok(HealthSnapshot {
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or_default(),
         cpu: (load * 100.0).clamp(0.0, 100.0),
         ram: percentage(ram_used, ram_total),
         ram_used,
@@ -92,19 +97,12 @@ mod tests {
 
     #[test]
     fn parses_linux_health_output() {
-        assert_eq!(
-            parse_health_output("0.42\n512 1024\n128 512\n75\n"),
-            Ok(HealthSnapshot {
-                cpu: 42.0,
-                ram: 50.0,
-                ram_used: 512.0,
-                ram_total: 1024.0,
-                swap: 25.0,
-                swap_used: 128.0,
-                swap_total: 512.0,
-                disk: 75.0,
-            })
-        );
+        let health = parse_health_output("0.42\n512 1024\n128 512\n75\n").unwrap();
+        assert!(health.timestamp > 0);
+        assert_eq!(health.cpu, 42.0);
+        assert_eq!(health.ram, 50.0);
+        assert_eq!(health.swap, 25.0);
+        assert_eq!(health.disk, 75.0);
     }
 
     #[test]

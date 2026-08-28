@@ -15,6 +15,7 @@ const HealthBar: React.FC = () => {
     return null;
   const h = activeSession.health;
   const history = activeSession.healthHistory ?? [];
+  const isStale = Date.now() - h.timestamp > 15_000;
   const barColor = (pct: number) => (pct > 90 ? 'red.400' : pct > 70 ? 'orange.400' : 'green.400');
 
   return (
@@ -31,7 +32,12 @@ const HealthBar: React.FC = () => {
       fontFamily="monospace"
       flexWrap="wrap"
     >
-      <HStack gap={1} flexShrink={0}>
+      <HStack
+        gap={1}
+        flexShrink={0}
+        opacity={isStale ? 0.55 : 1}
+        title={isStale ? 'Health data is stale' : 'Live health data'}
+      >
         <Text color="fg.subtle" fontWeight="600">
           CPU
         </Text>
@@ -58,6 +64,7 @@ const HealthBar: React.FC = () => {
           ))}
         </Box>
       </HStack>
+      {isStale && <Text color="orange.400">stale</Text>}
       <HStack gap={1} flexShrink={0}>
         <Text color="fg.subtle" fontWeight="600">
           RAM

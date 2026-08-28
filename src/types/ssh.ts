@@ -22,6 +22,7 @@ export interface SshSessionStateEvent {
 }
 
 export interface SshHealthSnapshot {
+  timestamp: number;
   cpu: number;
   ram: number;
   ram_used: number;

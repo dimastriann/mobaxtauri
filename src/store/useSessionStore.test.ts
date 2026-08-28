@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { Session, useSessionStore } from './useSessionStore';
 
 const health: NonNullable<Session['health']> = {
+  timestamp: Date.now(),
   cpu: 10,
   ram: 20,
   ram_used: 200,
