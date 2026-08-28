@@ -1,12 +1,17 @@
+use crate::session_types::{emit_ssh_session_state, SshSessionStatus};
 use crate::ssh::ClientHandler;
+use bytes::Bytes;
 use russh::ChannelId;
 use std::{collections::HashMap, sync::Arc};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 
 struct ManagedSshSession {
     handle: Arc<russh::client::Handle<ClientHandler>>,
     channel_id: ChannelId,
     channel: Arc<russh::Channel<russh::client::Msg>>,
+    keepalive_task: JoinHandle<()>,
 }
 
 #[derive(Default)]
@@ -17,23 +22,44 @@ pub struct SessionManager {
 impl SessionManager {
     pub async fn insert(
         &self,
+        app_handle: AppHandle,
         session_id: String,
         handle: russh::client::Handle<ClientHandler>,
         channel_id: ChannelId,
         channel: russh::Channel<russh::client::Msg>,
     ) {
-        self.sessions.lock().await.insert(
+        let handle = Arc::new(handle);
+        let channel = Arc::new(channel);
+        let keepalive_task = spawn_keepalive(
+            app_handle,
+            session_id.clone(),
+            Arc::clone(&handle),
+            channel_id,
+        );
+
+        let replaced = self.sessions.lock().await.insert(
             session_id,
             ManagedSshSession {
-                handle: Arc::new(handle),
+                handle,
                 channel_id,
-                channel: Arc::new(channel),
+                channel,
+                keepalive_task,
             },
         );
+
+        if let Some(previous) = replaced {
+            previous.keepalive_task.abort();
+        }
     }
 
     pub async fn remove(&self, session_id: &str) -> bool {
-        self.sessions.lock().await.remove(session_id).is_some()
+        let removed = self.sessions.lock().await.remove(session_id);
+        if let Some(session) = removed {
+            session.keepalive_task.abort();
+            true
+        } else {
+            false
+        }
     }
 
     pub async fn connection_handle(
@@ -76,6 +102,38 @@ impl SessionManager {
     pub async fn is_empty(&self) -> bool {
         self.sessions.lock().await.is_empty()
     }
+}
+
+fn spawn_keepalive(
+    app_handle: AppHandle,
+    session_id: String,
+    handle: Arc<russh::client::Handle<ClientHandler>>,
+    channel_id: ChannelId,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                handle.data(channel_id, Bytes::new()),
+            )
+            .await;
+
+            if !matches!(result, Ok(Ok(()))) {
+                emit_ssh_session_state(
+                    &app_handle,
+                    session_id.clone(),
+                    SshSessionStatus::Disconnected,
+                    Some("SSH keepalive failed".into()),
+                );
+                let _ = app_handle.emit(&format!("ssh-disconnected-{session_id}"), ());
+                break;
+            }
+        }
+    })
 }
 
 #[cfg(test)]

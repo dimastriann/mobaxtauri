@@ -82,7 +82,13 @@ async fn ssh_connect(
 
     state
         .ssh_sessions
-        .insert(session_id.clone(), handle, channel_id, channel)
+        .insert(
+            app_handle.clone(),
+            session_id.clone(),
+            handle,
+            channel_id,
+            channel,
+        )
         .await;
     state
         .sftp_sessions

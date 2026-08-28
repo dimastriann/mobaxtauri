@@ -104,7 +104,6 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const isDisconnectedRef = useRef(false);
   const isPasswordModeRef = useRef(false);
   const passwordBufRef = useRef('');
-  const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocusedRef = useRef(isFocused);
   const wasOfflineRef = useRef(!navigator.onLine);
@@ -487,38 +486,12 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       }
     });
 
-    // ── Keepalive: detect stale connections ────────────────
-    const startKeepalive = () => {
-      keepaliveRef.current = setInterval(() => {
-        invoke('ssh_send_data', { sessionId, data: '' }).catch((err) => {
-          // Connection is dead — only mark as disconnected if we're still 'connected'
-          const sess = getSession();
-          if (sess?.status === 'connected') {
-            updateStatus('disconnected', String(err));
-            showReconnectBanner(term);
-          }
-          if (keepaliveRef.current) {
-            clearInterval(keepaliveRef.current);
-            keepaliveRef.current = null;
-          }
-        });
-      }, 15000); // Check every 15 seconds
-    };
-
-    if (session?.type === 'ssh') {
-      startKeepalive();
-    }
-
     // ── Cleanup on tab close ───────────────────────────────
     return () => {
       window.removeEventListener('resize', handleResize);
       unlistenSnippet.then((fn) => fn());
       unlistenDataRef.current?.();
 
-      if (keepaliveRef.current) {
-        clearInterval(keepaliveRef.current);
-        keepaliveRef.current = null;
-      }
       if (bellTimerRef.current) {
         clearTimeout(bellTimerRef.current);
         bellTimerRef.current = null;
