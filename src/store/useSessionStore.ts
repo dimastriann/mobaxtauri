@@ -20,6 +20,7 @@ export interface Session {
   lastActivity?: number;
   folderId?: string | null;
   health?: SshHealthSnapshot;
+  healthHistory?: SshHealthSnapshot[];
   tag?: 'prod' | 'staging' | 'dev' | 'custom';
   tagColor?: string;
   savePassword?: boolean;
@@ -191,6 +192,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
               error,
               lastActivity: Date.now(),
               health: status === 'connected' ? s.health : undefined,
+              healthHistory: status === 'connected' ? s.healthHistory : undefined,
             }
           : s,
       ),
@@ -206,7 +208,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === id && s.status === 'connected' && state.openTabs.includes(id)
-          ? { ...s, health }
+          ? {
+              ...s,
+              health,
+              healthHistory: [...(s.healthHistory ?? []), health].slice(-30),
+            }
           : s,
       ),
     }));
@@ -215,7 +221,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   clearSessionHealth: (id) => {
     set((state) => ({
       sessions: state.sessions.map((session) =>
-        session.id === id ? { ...session, health: undefined } : session,
+        session.id === id ? { ...session, health: undefined, healthHistory: undefined } : session,
       ),
     }));
   },
@@ -327,7 +333,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (session?.type === 'ssh') {
       set({
         sessions: state.sessions.map((s) =>
-          s.id === id ? { ...s, status: 'disconnected' as SessionStatus, health: undefined } : s,
+          s.id === id
+            ? {
+                ...s,
+                status: 'disconnected' as SessionStatus,
+                health: undefined,
+                healthHistory: undefined,
+              }
+            : s,
         ),
         openTabs: newTabs,
         activeSessionId: newActive,
@@ -519,7 +532,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       const state = get();
       const toSave = state.sessions.map(
-        ({ status, error, lastActivity, password, hasBell, ...s }) => s,
+        ({ status, error, lastActivity, password, hasBell, health, healthHistory, ...s }) => s,
       );
       await invoke('save_app_data', {
         document: {

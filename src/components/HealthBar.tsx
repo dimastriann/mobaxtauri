@@ -14,6 +14,7 @@ const HealthBar: React.FC = () => {
   )
     return null;
   const h = activeSession.health;
+  const history = activeSession.healthHistory ?? [];
   const barColor = (pct: number) => (pct > 90 ? 'red.400' : pct > 70 ? 'orange.400' : 'green.400');
 
   return (
@@ -46,6 +47,16 @@ const HealthBar: React.FC = () => {
         <Text w="42px" textAlign="right">
           {h.cpu.toFixed(1)}%
         </Text>
+        <Box display="flex" alignItems="end" gap="1px" h="14px" w="28px" title="Recent CPU trend">
+          {history.slice(-10).map((sample, index) => (
+            <Box
+              key={index}
+              w="2px"
+              h={`${Math.max(2, sample.cpu * 0.14)}px`}
+              bg={barColor(sample.cpu)}
+            />
+          ))}
+        </Box>
       </HStack>
       <HStack gap={1} flexShrink={0}>
         <Text color="fg.subtle" fontWeight="600">
