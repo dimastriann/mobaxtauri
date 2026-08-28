@@ -26,7 +26,7 @@ pub async fn collect_health(
     .map_err(|_| "Timed out opening health channel".to_string())?
     .map_err(|error| format!("Failed to open health channel: {error}"))?;
 
-    let command = "cat /proc/loadavg | awk '{print $1}'; free -m | grep Mem | awk '{print $3,$2}'; free -m | grep Swap | awk '{print $3,$2}'; df -h / | tail -1 | awk '{print $5}' | sed 's/%//'";
+    let command = "set -- $(awk '/^cpu /{print $2+$4,$2+$4+$5+$6+$7+$8+$9}' /proc/stat); busy1=$1; total1=$2; sleep 1; set -- $(awk '/^cpu /{print $2+$4,$2+$4+$5+$6+$7+$8+$9}' /proc/stat); busy2=$1; total2=$2; awk -v b1=$busy1 -v t1=$total1 -v b2=$busy2 -v t2=$total2 'BEGIN{d=b2-b1; t=t2-t1; if(t>0) print (d/t)*100; else print 0}'; free -m | awk '/Mem:/{print $3,$2}'; free -m | awk '/Swap:/{print $3,$2}'; df -h / | tail -1 | awk '{print $5}' | sed 's/%//'";
 
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -75,7 +75,7 @@ pub fn parse_health_output(output: &str) -> Result<HealthSnapshot, String> {
     let (swap_used, swap_total) = parse_pair(lines[2]).unwrap_or((0.0, 0.0));
 
     Ok(HealthSnapshot {
-        cpu: (load * 100.0).min(100.0),
+        cpu: (load * 100.0).clamp(0.0, 100.0),
         ram: percentage(ram_used, ram_total),
         ram_used,
         ram_total,
