@@ -27,7 +27,7 @@ pub async fn collect_health(
     .map_err(|_| "Timed out opening health channel".to_string())?
     .map_err(|error| format!("Failed to open health channel: {error}"))?;
 
-    let command = "set -- $(awk '/^cpu /{print $2+$4,$2+$4+$5+$6+$7+$8+$9}' /proc/stat); busy1=$1; total1=$2; sleep 1; set -- $(awk '/^cpu /{print $2+$4,$2+$4+$5+$6+$7+$8+$9}' /proc/stat); busy2=$1; total2=$2; awk -v b1=$busy1 -v t1=$total1 -v b2=$busy2 -v t2=$total2 'BEGIN{d=b2-b1; t=t2-t1; if(t>0) print (d/t)*100; else print 0}'; free -m | awk '/Mem:/{print $3,$2}'; free -m | awk '/Swap:/{print $3,$2}'; df -h / | tail -1 | awk '{print $5}' | sed 's/%//'";
+    let command = "set -- $(awk '/^cpu /{idle=$5+$6; nonidle=$2+$3+$4+$7+$8+$9; print idle, idle+nonidle}' /proc/stat); idle1=$1; total1=$2; sleep 1; set -- $(awk '/^cpu /{idle=$5+$6; nonidle=$2+$3+$4+$7+$8+$9; print idle, idle+nonidle}' /proc/stat); idle2=$1; total2=$2; awk -v i1=$idle1 -v t1=$total1 -v i2=$idle2 -v t2=$total2 'BEGIN{dt=t2-t1; di=i2-i1; if(dt>0) print ((dt-di)/dt)*100; else print 0}'; free -m | awk '/Mem:/{print $3,$2}'; free -m | awk '/Swap:/{print $3,$2}'; df -h / | tail -1 | awk '{print $5}' | sed 's/%//'";
 
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
