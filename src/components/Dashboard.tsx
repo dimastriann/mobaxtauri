@@ -47,14 +47,14 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
       minH={0}
       bg="bg.panel"
       color="fg"
-      p={5}
+      p={{ base: 3, md: 4 }}
       overflowY="auto"
       className="custom-scrollbar"
     >
       {/* Header */}
-      <Flex direction="column" mb={6}>
+      <Flex direction="column" mb={4}>
         <Text
-          fontSize="4xl"
+          fontSize={{ base: '2xl', md: '3xl' }}
           fontWeight="bold"
           letterSpacing="tight"
           style={{
@@ -65,44 +65,44 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
         >
           Welcome back
         </Text>
-        <Text color="fg.muted" fontSize="lg" mt={2}>
+        <Text color="fg.muted" fontSize="sm" mt={1}>
           Manage your infrastructure, connections, and snippets from one place.
         </Text>
       </Flex>
 
       {/* Quick Connect Widget */}
       <Box
-        mb={5}
-        p={4}
+        mb={3}
+        p={3}
         bg="bg.surface"
         borderRadius="xl"
         border="1px solid"
         borderColor="border.subtle"
         boxShadow="sm"
       >
-        <Flex align="center" mb={4}>
-          <Icon as={LuZap} color="yellow.400" boxSize={5} mr={2} />
-          <Text fontSize="lg" fontWeight="semibold">
+        <Flex align="center" mb={2}>
+          <Icon as={LuZap} color="yellow.400" boxSize={4} mr={2} />
+          <Text fontSize="sm" fontWeight="semibold">
             Quick Connect
           </Text>
         </Flex>
-        <Flex gap={4}>
+        <Flex gap={2}>
           <Input
             placeholder="user@host:port (Press Enter to connect)"
-            size="lg"
+            size="md"
             variant="subtle"
             value={quickConnectStr}
             onChange={(e) => setQuickConnectStr(e.target.value)}
             onKeyDown={handleQuickConnect}
             flex={1}
-            borderRadius="lg"
+            borderRadius="md"
             bg="bg.muted"
             _focus={{ bg: 'bg.panel', borderColor: 'brand.500' }}
           />
           <Button
             colorPalette="brand"
-            size="lg"
-            px={8}
+            size="md"
+            px={5}
             onClick={() => {
               if (quickConnectStr.trim()) {
                 onQuickConnect(quickConnectStr);
