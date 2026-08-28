@@ -1,27 +1,19 @@
+mod session_manager;
 mod session_types;
 mod sftp_utils;
 mod ssh;
 
+use crate::session_manager::SessionManager;
 use crate::session_types::{emit_ssh_session_state, SshSessionStatus};
-use crate::ssh::{ClientHandler, SshSession};
+use crate::ssh::SshSession;
 use bytes::Bytes;
-use russh::ChannelId;
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 use tauri::{AppHandle, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 
 pub struct AppState {
-    pub ssh_sessions: Mutex<
-        HashMap<
-            String,
-            (
-                Arc<russh::client::Handle<ClientHandler>>,
-                ChannelId,
-                Arc<russh::Channel<russh::client::Msg>>,
-            ),
-        >,
-    >,
+    pub ssh_sessions: SessionManager,
     pub sftp_sessions: Mutex<HashMap<String, std::sync::Arc<russh_sftp::client::SftpSession>>>,
 }
 
@@ -83,18 +75,20 @@ async fn ssh_connect(
         };
 
     log::info!("Successfully connected to session {}", session_id);
-    let mut ssh_sessions = state.ssh_sessions.lock().await;
-    let mut sftp_sessions = state.sftp_sessions.lock().await;
 
     // Clean up any existing session with the same ID
-    ssh_sessions.remove(&session_id);
-    sftp_sessions.remove(&session_id);
+    state.ssh_sessions.remove(&session_id).await;
+    state.sftp_sessions.lock().await.remove(&session_id);
 
-    ssh_sessions.insert(
-        session_id.clone(),
-        (Arc::new(handle), channel_id, Arc::new(channel)),
-    );
-    sftp_sessions.insert(session_id.clone(), std::sync::Arc::new(sftp));
+    state
+        .ssh_sessions
+        .insert(session_id.clone(), handle, channel_id, channel)
+        .await;
+    state
+        .sftp_sessions
+        .lock()
+        .await
+        .insert(session_id.clone(), std::sync::Arc::new(sftp));
 
     emit_ssh_session_state(
         &app_handle,
@@ -112,11 +106,7 @@ async fn ssh_send_data(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    let (handle, channel_id) = {
-        let sessions = state.ssh_sessions.lock().await;
-        let (handle, channel_id, _) = sessions.get(&session_id).ok_or("Session not found")?;
-        (Arc::clone(handle), *channel_id)
-    };
+    let (handle, channel_id) = state.ssh_sessions.shell_target(&session_id).await?;
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
         handle.data(channel_id, Bytes::from(data.as_bytes().to_vec())),
@@ -132,11 +122,8 @@ async fn ssh_disconnect(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<(), String> {
-    let mut ssh_sessions = state.ssh_sessions.lock().await;
-    let mut sftp_sessions = state.sftp_sessions.lock().await;
-
-    ssh_sessions.remove(&session_id);
-    sftp_sessions.remove(&session_id);
+    state.ssh_sessions.remove(&session_id).await;
+    state.sftp_sessions.lock().await.remove(&session_id);
 
     emit_ssh_session_state(
         &app_handle,
@@ -155,11 +142,7 @@ async fn ssh_resize(
     cols: u32,
     rows: u32,
 ) -> Result<(), String> {
-    let channel = {
-        let sessions = state.ssh_sessions.lock().await;
-        let (_, _, channel) = sessions.get(&session_id).ok_or("Session not found")?;
-        Arc::clone(channel)
-    };
+    let channel = state.ssh_sessions.shell_channel(&session_id).await?;
     tokio::time::timeout(
         std::time::Duration::from_secs(3),
         channel.window_change(cols, rows, 0, 0),
@@ -494,11 +477,7 @@ async fn ssh_health_check(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<serde_json::Value, String> {
-    let handle = {
-        let sessions = state.ssh_sessions.lock().await;
-        let (handle, _, _) = sessions.get(&session_id).ok_or("Session not found")?;
-        Arc::clone(handle)
-    };
+    let handle = state.ssh_sessions.connection_handle(&session_id).await?;
 
     let exec_channel = tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -578,11 +557,7 @@ async fn ssh_health_check(
 
 #[tauri::command]
 async fn ssh_detect_os(state: State<'_, AppState>, session_id: String) -> Result<String, String> {
-    let handle = {
-        let sessions = state.ssh_sessions.lock().await;
-        let (handle, _, _) = sessions.get(&session_id).ok_or("Session not found")?;
-        Arc::clone(handle)
-    };
+    let handle = state.ssh_sessions.connection_handle(&session_id).await?;
 
     let exec_channel = tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -633,7 +608,7 @@ async fn read_text_file(path: String) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
-            ssh_sessions: Mutex::new(HashMap::new()),
+            ssh_sessions: SessionManager::default(),
             sftp_sessions: Mutex::new(HashMap::new()),
         })
         .plugin(tauri_plugin_store::Builder::new().build())
