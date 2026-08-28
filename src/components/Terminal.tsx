@@ -395,8 +395,17 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         return;
       }
 
-      // Disconnected mode: hotkey handling
-      if (isDisconnectedRef.current) {
+      const currentSession = getSession();
+
+      // Handle stale/disconnected sessions even if the backend event arrived
+      // before this terminal finished attaching its listener.
+      if (isDisconnectedRef.current || currentSession?.status !== 'connected') {
+        if (data === '\x03' && currentSession?.status === 'connecting') {
+          invoke('ssh_disconnect', { sessionId }).catch(() => {});
+          updateStatus('disconnected', 'Connection cancelled');
+          isDisconnectedRef.current = true;
+          return;
+        }
         if (data === 'r' || data === 'R') {
           // Always prompt for password on reconnect — the saved one might be stale/wrong
           isDisconnectedRef.current = false;
@@ -411,7 +420,6 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       }
 
       // Normal mode: send data to SSH backend
-      const currentSession = getSession();
       if (currentSession?.type === 'ssh') {
         invoke('ssh_send_data', { sessionId, data }).catch((err: unknown) => {
           console.error('Failed to send terminal data:', err);
