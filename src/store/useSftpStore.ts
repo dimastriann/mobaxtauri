@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { save, open } from '@tauri-apps/plugin-dialog';
+import type { SftpTransferEvent } from '../types/sftp';
 
 export interface SftpFile {
   name: string;
@@ -16,6 +17,7 @@ interface SftpState {
   isLoading: boolean;
   error: string | null;
   history: string[]; // For going back
+  transfer: SftpTransferEvent | null;
 
   fetchDirectory: (sessionId: string, path?: string) => Promise<void>;
   cd: (sessionId: string, subPath: string) => Promise<void>;
@@ -29,6 +31,8 @@ interface SftpState {
   renameFile: (sessionId: string, oldName: string, newName: string) => Promise<void>;
   deleteFile: (sessionId: string, name: string, isDir: boolean) => Promise<void>;
   createDir: (sessionId: string, dirName: string) => Promise<void>;
+  updateTransfer: (transfer: SftpTransferEvent) => void;
+  cancelTransfer: () => Promise<void>;
 }
 
 export const useSftpStore = create<SftpState>((set, get) => ({
@@ -37,6 +41,25 @@ export const useSftpStore = create<SftpState>((set, get) => ({
   isLoading: false,
   error: null,
   history: [],
+  transfer: null,
+
+  updateTransfer: (transfer) => {
+    if (transfer.status === 'running') {
+      set({ transfer, isLoading: true });
+      return;
+    }
+    set({
+      transfer: null,
+      isLoading: false,
+      error: transfer.status === 'failed' ? transfer.message || 'Transfer failed' : null,
+    });
+  },
+
+  cancelTransfer: async () => {
+    const transfer = get().transfer;
+    if (!transfer) return;
+    await invoke('sftp_cancel_transfer', { transferId: transfer.transferId });
+  },
 
   fetchDirectory: async (sessionId, path) => {
     const targetPath = path !== undefined ? path : get().currentPath;
@@ -99,7 +122,14 @@ export const useSftpStore = create<SftpState>((set, get) => ({
   },
 
   reset: () => {
-    set({ currentPath: '/', files: [], error: null, isLoading: false, history: [] });
+    set({
+      currentPath: '/',
+      files: [],
+      error: null,
+      isLoading: false,
+      history: [],
+      transfer: null,
+    });
   },
 
   downloadFile: async (sessionId, fileName) => {
@@ -112,15 +142,22 @@ export const useSftpStore = create<SftpState>((set, get) => ({
       if (!localPath) return;
 
       set({ isLoading: true, error: null });
+      const transferId = `download-${Date.now()}`;
       await invoke('sftp_download_file', {
         sessionId,
         remotePath: sourcePath,
         localPath,
+        transferId,
       });
       set({ isLoading: false });
     } catch (err) {
       console.error(err);
-      set({ error: String(err), isLoading: false });
+      const message = String(err);
+      set({
+        error: message.includes('Transfer cancelled') ? null : message,
+        isLoading: false,
+        transfer: null,
+      });
     }
   },
 
@@ -139,15 +176,22 @@ export const useSftpStore = create<SftpState>((set, get) => ({
         : `${state.currentPath}/${fileName}`;
 
       set({ isLoading: true, error: null });
+      const transferId = `upload-${Date.now()}`;
       await invoke('sftp_upload_file', {
         sessionId,
         localPath: pathStr,
         remotePath: destPath,
+        transferId,
       });
       await get().fetchDirectory(sessionId);
     } catch (err) {
       console.error(err);
-      set({ error: String(err), isLoading: false });
+      const message = String(err);
+      set({
+        error: message.includes('Transfer cancelled') ? null : message,
+        isLoading: false,
+        transfer: null,
+      });
     }
   },
 

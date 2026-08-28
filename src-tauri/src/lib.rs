@@ -6,6 +6,7 @@ mod session_manager;
 mod session_types;
 mod sftp_utils;
 mod ssh;
+mod transfers;
 
 use crate::credentials::CredentialService;
 use crate::health::{collect_health, HealthSnapshot};
@@ -16,6 +17,9 @@ use crate::session_types::{
     SshSessionStatus,
 };
 use crate::ssh::SshSession;
+use crate::transfers::{
+    emit_transfer, is_cancelled, TransferEvent, TransferManager, TransferStatus,
+};
 use bytes::Bytes;
 use std::collections::HashMap;
 use tauri::{AppHandle, State};
@@ -209,9 +213,11 @@ async fn ssh_send_data(
 async fn ssh_disconnect(
     app_handle: AppHandle,
     state: State<'_, AppState>,
+    transfers: State<'_, TransferManager>,
     session_id: String,
 ) -> Result<(), String> {
     state.ssh_sessions.remove(&session_id).await;
+    transfers.cancel_session(&session_id).await;
     state.sftp_sessions.lock().await.remove(&session_id);
 
     emit_ssh_session_state(
@@ -281,60 +287,228 @@ async fn sftp_list_dir(
 
 #[tauri::command]
 async fn sftp_download_file(
+    app_handle: AppHandle,
     state: State<'_, AppState>,
+    transfers: State<'_, TransferManager>,
     session_id: String,
     remote_path: String,
     local_path: String,
+    transfer_id: String,
 ) -> Result<(), String> {
     log::info!("Downloading {} to {}", remote_path, local_path);
-    let sftp_sessions = state.sftp_sessions.lock().await;
-    let sftp = sftp_sessions
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
         .get(&session_id)
+        .cloned()
         .ok_or("SFTP session not found")?;
-
     let mut remote_file = sftp
         .open(&remote_path)
         .await
         .map_err(|e| format!("Failed to open remote file: {e:?}"))?;
-    let mut data: Vec<u8> = Vec::new();
-    remote_file
-        .read_to_end(&mut data)
+    let total = remote_file
+        .metadata()
         .await
-        .map_err(|e| format!("Read failed: {e:?}"))?;
-    tokio::fs::write(&local_path, &data)
+        .ok()
+        .map(|metadata| metadata.len());
+    let partial_path = format!("{local_path}.mobaxtauri-part");
+    let mut local_file = tokio::fs::File::create(&partial_path)
         .await
-        .map_err(|e| format!("Failed to save local file: {e:?}"))?;
+        .map_err(|e| format!("Failed to create local file: {e:?}"))?;
+    let cancellation = transfers
+        .begin(transfer_id.clone(), session_id.clone())
+        .await;
+    let mut buffer = vec![0_u8; 64 * 1024];
+    let mut transferred = 0_u64;
 
-    Ok(())
+    emit_transfer(
+        &app_handle,
+        TransferEvent {
+            transfer_id: transfer_id.clone(),
+            session_id: session_id.clone(),
+            status: TransferStatus::Running,
+            transferred,
+            total,
+            message: None,
+        },
+    );
+
+    let result = async {
+        loop {
+            if is_cancelled(&cancellation) {
+                return Err("Transfer cancelled".to_string());
+            }
+            let count = remote_file
+                .read(&mut buffer)
+                .await
+                .map_err(|e| format!("Read failed: {e:?}"))?;
+            if count == 0 {
+                break;
+            }
+            local_file
+                .write_all(&buffer[..count])
+                .await
+                .map_err(|e| format!("Write failed: {e:?}"))?;
+            transferred += count as u64;
+            emit_transfer(
+                &app_handle,
+                TransferEvent {
+                    transfer_id: transfer_id.clone(),
+                    session_id: session_id.clone(),
+                    status: TransferStatus::Running,
+                    transferred,
+                    total,
+                    message: None,
+                },
+            );
+        }
+        local_file
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush local file: {e:?}"))?;
+        if tokio::fs::try_exists(&local_path).await.unwrap_or(false) {
+            tokio::fs::remove_file(&local_path)
+                .await
+                .map_err(|e| format!("Failed to replace local file: {e:?}"))?;
+        }
+        tokio::fs::rename(&partial_path, &local_path)
+            .await
+            .map_err(|e| format!("Failed to finalize local file: {e:?}"))
+    }
+    .await;
+
+    transfers.finish(&transfer_id).await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&partial_path).await;
+    }
+    emit_transfer(
+        &app_handle,
+        TransferEvent {
+            transfer_id,
+            session_id,
+            status: match &result {
+                Ok(()) => TransferStatus::Completed,
+                Err(error) if error == "Transfer cancelled" => TransferStatus::Cancelled,
+                Err(_) => TransferStatus::Failed,
+            },
+            transferred,
+            total,
+            message: result.as_ref().err().cloned(),
+        },
+    );
+    result
 }
 
 #[tauri::command]
 async fn sftp_upload_file(
+    app_handle: AppHandle,
     state: State<'_, AppState>,
+    transfers: State<'_, TransferManager>,
     session_id: String,
     local_path: String,
     remote_path: String,
+    transfer_id: String,
 ) -> Result<(), String> {
     log::info!("Uploading {} to {}", local_path, remote_path);
-    let sftp_sessions = state.sftp_sessions.lock().await;
-    let sftp = sftp_sessions
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
         .get(&session_id)
+        .cloned()
         .ok_or("SFTP session not found")?;
-
-    let data = tokio::fs::read(&local_path)
+    let mut local_file = tokio::fs::File::open(&local_path)
         .await
         .map_err(|e| format!("Failed to read local file: {e:?}"))?;
-
+    let total = local_file
+        .metadata()
+        .await
+        .ok()
+        .map(|metadata| metadata.len());
+    let partial_path = format!("{remote_path}.mobaxtauri-part");
     let mut remote_file = sftp
-        .create(&remote_path)
+        .create(&partial_path)
         .await
         .map_err(|e| format!("Failed to create remote file: {e:?}"))?;
-    remote_file
-        .write_all(&data)
-        .await
-        .map_err(|e| format!("Write failed: {e:?}"))?;
+    let cancellation = transfers
+        .begin(transfer_id.clone(), session_id.clone())
+        .await;
+    let mut buffer = vec![0_u8; 64 * 1024];
+    let mut transferred = 0_u64;
 
-    Ok(())
+    let result = async {
+        loop {
+            if is_cancelled(&cancellation) {
+                return Err("Transfer cancelled".to_string());
+            }
+            let count = local_file
+                .read(&mut buffer)
+                .await
+                .map_err(|e| format!("Read failed: {e:?}"))?;
+            if count == 0 {
+                break;
+            }
+            remote_file
+                .write_all(&buffer[..count])
+                .await
+                .map_err(|e| format!("Write failed: {e:?}"))?;
+            transferred += count as u64;
+            emit_transfer(
+                &app_handle,
+                TransferEvent {
+                    transfer_id: transfer_id.clone(),
+                    session_id: session_id.clone(),
+                    status: TransferStatus::Running,
+                    transferred,
+                    total,
+                    message: None,
+                },
+            );
+        }
+        remote_file
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush remote file: {e:?}"))?;
+        let _ = sftp.remove_file(&remote_path).await;
+        sftp.rename(&partial_path, &remote_path)
+            .await
+            .map_err(|e| format!("Failed to finalize remote file: {e:?}"))
+    }
+    .await;
+
+    transfers.finish(&transfer_id).await;
+    if result.is_err() {
+        let _ = sftp.remove_file(&partial_path).await;
+    }
+    emit_transfer(
+        &app_handle,
+        TransferEvent {
+            transfer_id,
+            session_id,
+            status: match &result {
+                Ok(()) => TransferStatus::Completed,
+                Err(error) if error == "Transfer cancelled" => TransferStatus::Cancelled,
+                Err(_) => TransferStatus::Failed,
+            },
+            transferred,
+            total,
+            message: result.as_ref().err().cloned(),
+        },
+    );
+    result
+}
+
+#[tauri::command]
+async fn sftp_cancel_transfer(
+    transfers: State<'_, TransferManager>,
+    transfer_id: String,
+) -> Result<(), String> {
+    if transfers.cancel(&transfer_id).await {
+        Ok(())
+    } else {
+        Err("Transfer not found".into())
+    }
 }
 
 #[tauri::command]
@@ -638,6 +812,7 @@ pub fn run() {
         })
         .manage(PersistenceService::default())
         .manage(CredentialService::default())
+        .manage(TransferManager::default())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(
@@ -700,7 +875,8 @@ pub fn run() {
             credential_unlock,
             credential_save,
             credential_delete,
-            export_terminal_recording
+            export_terminal_recording,
+            sftp_cancel_transfer
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

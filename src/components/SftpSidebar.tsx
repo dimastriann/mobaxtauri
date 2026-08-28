@@ -1,5 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { VStack, HStack, Text, Box, Icon, Spinner, IconButton, Flex } from '@chakra-ui/react';
+import {
+  VStack,
+  HStack,
+  Text,
+  Box,
+  Icon,
+  Spinner,
+  IconButton,
+  Flex,
+  Button,
+} from '@chakra-ui/react';
 import {
   LuFolder,
   LuFile,
@@ -22,6 +32,7 @@ import { ask } from '@tauri-apps/plugin-dialog';
 import { useSftpStore } from '../store/useSftpStore';
 import { useSessionStore } from '../store/useSessionStore';
 import { SSH_SESSION_STATE_EVENT, type SshSessionStateEvent } from '../types/ssh';
+import { SFTP_TRANSFER_EVENT, type SftpTransferEvent } from '../types/sftp';
 import SftpEditorModal from './SftpEditorModal';
 
 const SftpSidebar: React.FC = () => {
@@ -45,6 +56,9 @@ const SftpSidebar: React.FC = () => {
     deleteFile,
     createDir,
     reset,
+    transfer,
+    updateTransfer,
+    cancelTransfer,
   } = useSftpStore();
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: any } | null>(null);
@@ -85,6 +99,15 @@ const SftpSidebar: React.FC = () => {
       if (unlisten) unlisten();
     };
   }, [activeSessionId, reset]);
+
+  useEffect(() => {
+    const unlisten = listen<SftpTransferEvent>(SFTP_TRANSFER_EVENT, ({ payload }) => {
+      if (payload.sessionId === activeSessionId) updateTransfer(payload);
+    });
+    return () => {
+      unlisten.then((dispose) => dispose());
+    };
+  }, [activeSessionId, updateTransfer]);
 
   useEffect(() => {
     if (activeSessionId && activeSessionId !== 'local' && activeSession?.status === 'connected') {
@@ -256,6 +279,32 @@ const SftpSidebar: React.FC = () => {
       <Box p={2} bg="bg.muted" borderBottom="1px solid" borderColor="border.subtle">
         {renderBreadcrumbs()}
       </Box>
+
+      {transfer && (
+        <Box px={2} py={2} borderBottom="1px solid" borderColor="border.subtle" bg="bg.muted">
+          <HStack justify="space-between" mb={1}>
+            <Text fontSize="10px" color="fg.muted">
+              Transferring {Math.round(transfer.transferred / 1024)} KB
+              {transfer.total ? ` / ${Math.round(transfer.total / 1024)} KB` : ''}
+            </Text>
+            <Button size="xs" variant="ghost" onClick={() => void cancelTransfer()}>
+              Cancel
+            </Button>
+          </HStack>
+          <Box h="3px" bg="bg.emphasized" borderRadius="full" overflow="hidden">
+            <Box
+              h="full"
+              bg="blue.fg"
+              width={
+                transfer.total
+                  ? `${Math.min(100, (transfer.transferred / transfer.total) * 100)}%`
+                  : '25%'
+              }
+              transition="width 120ms linear"
+            />
+          </Box>
+        </Box>
+      )}
 
       {/* File List */}
       <VStack

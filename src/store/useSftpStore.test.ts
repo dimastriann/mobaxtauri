@@ -82,4 +82,38 @@ describe('useSftpStore', () => {
     expect(state.error).toContain('Connection lost');
     expect(state.isLoading).toBe(false);
   });
+
+  it('tracks progress and delegates cancellation to Rust', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    useSftpStore.getState().updateTransfer({
+      transferId: 'transfer-1',
+      sessionId: 'session-1',
+      status: 'running',
+      transferred: 64,
+      total: 128,
+      message: null,
+    });
+
+    expect(useSftpStore.getState().transfer?.transferred).toBe(64);
+    await useSftpStore.getState().cancelTransfer();
+
+    expect(invoke).toHaveBeenCalledWith('sftp_cancel_transfer', {
+      transferId: 'transfer-1',
+    });
+  });
+
+  it('clears progress when a transfer completes', () => {
+    useSftpStore.getState().updateTransfer({
+      transferId: 'transfer-1',
+      sessionId: 'session-1',
+      status: 'completed',
+      transferred: 128,
+      total: 128,
+      message: null,
+    });
+
+    expect(useSftpStore.getState().transfer).toBeNull();
+    expect(useSftpStore.getState().isLoading).toBe(false);
+  });
 });
