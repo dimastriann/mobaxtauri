@@ -222,6 +222,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
   // ── Reconnect / disconnect banner ────────────────────────────
   const showReconnectBanner = useCallback((term: XTerm) => {
+    if (isDisconnectedRef.current) return;
     isDisconnectedRef.current = true;
     term.writeln('');
     term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
@@ -349,10 +350,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           }
           updateStatus('disconnected');
           useSessionStore.getState().recordConnection(sessionId, 'disconnected');
+          if (event.payload.reason === 'requested') return;
           showReconnectBanner(term);
-          if (event.payload.reason !== 'requested') {
-            invoke('ssh_disconnect', { sessionId }).catch(() => {});
-          }
+          invoke('ssh_disconnect', { sessionId }).catch(() => {});
         }),
       ]);
       unlistenDataRef.current = () => {
