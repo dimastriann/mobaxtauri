@@ -1,9 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { HStack, Box, Text } from '@chakra-ui/react';
 import { useSessionStore } from '../store/useSessionStore';
 
 const HealthBar: React.FC = () => {
   const [expanded, setExpanded] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const sessions = useSessionStore((state) => state.sessions);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
@@ -16,7 +21,7 @@ const HealthBar: React.FC = () => {
     return null;
   const h = activeSession.health;
   const history = activeSession.healthHistory ?? [];
-  const isStale = Date.now() - h.timestamp > 15_000;
+  const isStale = now - h.timestamp > 15_000;
   const barColor = (pct: number) => (pct > 90 ? 'red.400' : pct > 70 ? 'orange.400' : 'green.400');
 
   return (
