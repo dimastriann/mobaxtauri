@@ -95,9 +95,12 @@ function App() {
   const { handleImportJSON, handleImportSSHConfig, handleImportMobaXterm } = useExportImport();
 
   // ── Connection Logic ───────────────────────────────────────
-  const handleQuickConnect = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleQuickConnect = async (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    valueOverride?: string,
+  ) => {
     if (e.key === 'Enter') {
-      const str = quickConnectStr.trim();
+      const str = (valueOverride ?? quickConnectStr).trim();
       if (!str) return;
 
       const match = str.match(/^([^@]+)@([^:]+)(?::(\d+))?$/);
@@ -437,7 +440,10 @@ function App() {
           <Dashboard
             onQuickConnect={(str) => {
               setQuickConnectStr(str);
-              handleQuickConnect({ key: 'Enter', target: { value: str } } as any);
+              void handleQuickConnect(
+                { key: 'Enter' } as React.KeyboardEvent<HTMLInputElement>,
+                str,
+              );
             }}
             onConnectSession={handleConnectSession}
           />
