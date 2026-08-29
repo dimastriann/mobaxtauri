@@ -122,6 +122,7 @@ function App() {
         user,
         port,
         status: 'connecting',
+        ephemeral: true,
       });
 
       if (mainView === 'dashboard') {

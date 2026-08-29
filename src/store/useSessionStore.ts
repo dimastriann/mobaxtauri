@@ -27,6 +27,7 @@ export interface Session {
   isFavorite?: boolean;
   os?: string;
   hasBell?: boolean;
+  ephemeral?: boolean;
 }
 
 export interface Folder {

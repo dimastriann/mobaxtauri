@@ -28,7 +28,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
   };
 
   const activeSessionsCount = sessions.filter((s) => s.status === 'connected').length;
-  const sshSessions = sessions.filter((s) => s.type === 'ssh');
+  const sshSessions = sessions.filter((s) => s.type === 'ssh' && !s.ephemeral);
 
   const prodCount = sshSessions.filter((s) => s.tag === 'prod').length;
   const stagingCount = sshSessions.filter((s) => s.tag === 'staging').length;

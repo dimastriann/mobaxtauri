@@ -125,13 +125,14 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+  const visibleSessions = sessions.filter((session) => !session.ephemeral);
   const filteredSessions = normalizedQuery
-    ? sessions.filter((session) =>
+    ? visibleSessions.filter((session) =>
         [session.name, session.host, session.tag].some((value) =>
           value?.toLocaleLowerCase().includes(normalizedQuery),
         ),
       )
-    : sessions;
+    : visibleSessions;
   const localSession = filteredSessions.find((s) => s.id === 'local');
   const hasResults = filteredSessions.length > 0;
   const workspaces = useSessionStore((state) => state.workspaces);
