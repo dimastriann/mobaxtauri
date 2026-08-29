@@ -89,6 +89,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
         <Flex gap={2}>
           <Input
             placeholder="user@host:port (Press Enter to connect)"
+            list="quick-connect-hosts"
             size="md"
             variant="subtle"
             value={quickConnectStr}
@@ -99,6 +100,14 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
             bg="bg.muted"
             _focus={{ bg: 'bg.panel', borderColor: 'brand.500' }}
           />
+          <datalist id="quick-connect-hosts">
+            {recentSessions.map((session) => (
+              <option
+                key={session.id}
+                value={`${session.user}@${session.host}:${session.port || 22}`}
+              />
+            ))}
+          </datalist>
           <Button
             colorPalette="brand"
             size="md"
