@@ -4,7 +4,13 @@ use crate::session_types::{emit_ssh_session_state, SshDisconnectReason, SshSessi
 use crate::ssh::ClientHandler;
 use bytes::Bytes;
 use russh::ChannelId;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 use tauri::AppHandle;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -17,12 +23,25 @@ struct ManagedSshSession {
     health_task: JoinHandle<()>,
 }
 
-#[derive(Default)]
 pub struct SessionManager {
     sessions: Mutex<HashMap<String, ManagedSshSession>>,
+    health_interval_secs: Arc<AtomicU64>,
+}
+
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+            health_interval_secs: Arc::new(AtomicU64::new(5)),
+        }
+    }
 }
 
 impl SessionManager {
+    pub fn set_health_interval(&self, seconds: u64) {
+        self.health_interval_secs.store(seconds, Ordering::Relaxed);
+    }
+
     pub async fn insert(
         &self,
         app_handle: AppHandle,
@@ -39,7 +58,12 @@ impl SessionManager {
             Arc::clone(&handle),
             channel_id,
         );
-        let health_task = spawn_health_monitor(app_handle, session_id.clone(), Arc::clone(&handle));
+        let health_task = spawn_health_monitor(
+            app_handle,
+            session_id.clone(),
+            Arc::clone(&handle),
+            Arc::clone(&self.health_interval_secs),
+        );
 
         let replaced = self.sessions.lock().await.insert(
             session_id,
@@ -115,12 +139,14 @@ fn spawn_health_monitor(
     app_handle: AppHandle,
     session_id: String,
     handle: Arc<russh::client::Handle<ClientHandler>>,
+    interval_secs: Arc<AtomicU64>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-
         loop {
-            interval.tick().await;
+            tokio::time::sleep(std::time::Duration::from_secs(
+                interval_secs.load(Ordering::Relaxed).max(2),
+            ))
+            .await;
             match collect_health(Arc::clone(&handle)).await {
                 Ok(health) => emit_ssh_health(&app_handle, session_id.clone(), Some(health)),
                 Err(error) => log::debug!("Health check failed for {session_id}: {error}"),

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import {
   Stack,
   Input,
@@ -441,6 +442,9 @@ const SshSettings: React.FC = () => {
     () => localStorage.getItem('ssh-default-port') || '22',
   );
   const [timeout, setTimeout_] = useState(() => localStorage.getItem('ssh-timeout') || '15');
+  const [healthInterval, setHealthInterval] = useState(
+    () => localStorage.getItem('health-interval') || '5',
+  );
 
   const saveDefaultPort = (val: string) => {
     setDefaultPort(val);
@@ -452,11 +456,29 @@ const SshSettings: React.FC = () => {
     localStorage.setItem('ssh-timeout', val);
   };
 
+  const saveHealthInterval = (val: string) => {
+    setHealthInterval(val);
+    localStorage.setItem('health-interval', val);
+    void invoke('set_health_interval', { seconds: Number(val) });
+  };
+
   return (
     <Stack gap={4}>
       <Text fontSize="14px" fontWeight="bold" color="fg">
         SSH Defaults
       </Text>
+      <Box>
+        <Text fontSize="13px" color="fg" mb={1}>
+          Health Monitor Interval
+        </Text>
+        <select value={healthInterval} onChange={(e) => saveHealthInterval(e.target.value)}>
+          <option value="0">Off</option>
+          <option value="2">2 seconds</option>
+          <option value="5">5 seconds</option>
+          <option value="15">15 seconds</option>
+          <option value="60">60 seconds</option>
+        </select>
+      </Box>
       <Box>
         <Text fontSize="13px" color="fg" mb={1}>
           Default Port

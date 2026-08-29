@@ -32,6 +32,17 @@ pub struct AppState {
 }
 
 #[tauri::command]
+fn set_health_interval(state: State<'_, AppState>, seconds: u64) -> Result<(), String> {
+    if seconds != 0 && !matches!(seconds, 2 | 5 | 15 | 60) {
+        return Err("Health interval must be 0, 2, 5, 15, or 60 seconds".into());
+    }
+    state
+        .ssh_sessions
+        .set_health_interval(if seconds == 0 { 86_400 } else { seconds });
+    Ok(())
+}
+
+#[tauri::command]
 async fn credential_unlock(
     app_handle: AppHandle,
     credentials: State<'_, CredentialService>,
@@ -853,6 +864,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             ssh_connect,
+            set_health_interval,
             ssh_send_data,
             ssh_disconnect,
             ssh_resize,
