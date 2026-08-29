@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { HStack, Box, Text } from '@chakra-ui/react';
 import { useSessionStore } from '../store/useSessionStore';
 
 const HealthBar: React.FC = () => {
+  const [expanded, setExpanded] = useState(false);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const sessions = useSessionStore((state) => state.sessions);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
@@ -31,6 +32,9 @@ const HealthBar: React.FC = () => {
       color="fg.muted"
       fontFamily="monospace"
       flexWrap="wrap"
+      cursor="pointer"
+      onClick={() => setExpanded((value) => !value)}
+      title="Click to show detailed health values"
     >
       <HStack
         gap={1}
@@ -65,6 +69,12 @@ const HealthBar: React.FC = () => {
         </Box>
       </HStack>
       {isStale && <Text color="orange.400">stale</Text>}
+      {expanded && (
+        <Text color="fg.muted" whiteSpace="nowrap">
+          RAM {h.ram_used.toFixed(0)}/{h.ram_total.toFixed(0)} MB · SWAP {h.swap_used.toFixed(0)}/
+          {h.swap_total.toFixed(0)} MB · DISK {h.disk.toFixed(0)}%
+        </Text>
+      )}
       <HStack gap={1} flexShrink={0}>
         <Text color="fg.subtle" fontWeight="600">
           RAM
