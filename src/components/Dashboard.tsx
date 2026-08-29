@@ -16,11 +16,26 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
   const folders = useSessionStore((state) => state.folders);
 
   const [quickConnectStr, setQuickConnectStr] = useState('');
+  const [quickHistory, setQuickHistory] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('quick-connect-history') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const submitQuickConnect = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const next = [trimmed, ...quickHistory.filter((item) => item !== trimmed)].slice(0, 8);
+    setQuickHistory(next);
+    localStorage.setItem('quick-connect-history', JSON.stringify(next));
+    onQuickConnect(trimmed);
+    setQuickConnectStr('');
+  };
 
   const handleQuickConnect = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && quickConnectStr.trim() !== '') {
-      onQuickConnect(quickConnectStr);
-      setQuickConnectStr('');
+      submitQuickConnect(quickConnectStr);
     }
   };
 
@@ -114,28 +129,35 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
             px={5}
             onClick={() => {
               if (quickConnectStr.trim()) {
-                onQuickConnect(quickConnectStr);
-                setQuickConnectStr('');
+                submitQuickConnect(quickConnectStr);
               }
             }}
           >
             Connect
           </Button>
         </Flex>
-        {recentSessions.length > 0 && (
+        {quickHistory.length > 0 && (
           <Flex gap={2} mt={2} flexWrap="wrap">
-            {recentSessions.slice(0, 5).map((session) => (
+            {quickHistory.slice(0, 5).map((entry) => (
               <Button
-                key={session.id}
+                key={entry}
                 size="xs"
                 variant="subtle"
-                onClick={() =>
-                  setQuickConnectStr(`${session.user}@${session.host}:${session.port || 22}`)
-                }
+                onClick={() => setQuickConnectStr(entry)}
               >
-                {session.name}
+                {entry}
               </Button>
             ))}
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => {
+                setQuickHistory([]);
+                localStorage.removeItem('quick-connect-history');
+              }}
+            >
+              Clear
+            </Button>
           </Flex>
         )}
       </Box>
