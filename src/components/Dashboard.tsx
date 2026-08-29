@@ -16,9 +16,6 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
   const folders = useSessionStore((state) => state.folders);
 
   const [quickConnectStr, setQuickConnectStr] = useState('');
-  const [showRecentSuggestions, setShowRecentSuggestions] = useState(
-    () => localStorage.getItem('quick-connect-hide-suggestions') !== 'true',
-  );
 
   const handleQuickConnect = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && quickConnectStr.trim() !== '') {
@@ -92,7 +89,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
         <Flex gap={2}>
           <Input
             placeholder="user@host:port (Press Enter to connect)"
-            list={showRecentSuggestions ? 'quick-connect-hosts' : undefined}
+            list="quick-connect-hosts"
             size="md"
             variant="subtle"
             value={quickConnectStr}
@@ -124,19 +121,23 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
           >
             Connect
           </Button>
-          {showRecentSuggestions && recentSessions.length > 0 && (
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => {
-                setShowRecentSuggestions(false);
-                localStorage.setItem('quick-connect-hide-suggestions', 'true');
-              }}
-            >
-              Clear
-            </Button>
-          )}
         </Flex>
+        {recentSessions.length > 0 && (
+          <Flex gap={2} mt={2} flexWrap="wrap">
+            {recentSessions.slice(0, 5).map((session) => (
+              <Button
+                key={session.id}
+                size="xs"
+                variant="subtle"
+                onClick={() =>
+                  setQuickConnectStr(`${session.user}@${session.host}:${session.port || 22}`)
+                }
+              >
+                {session.name}
+              </Button>
+            ))}
+          </Flex>
+        )}
       </Box>
 
       <Flex direction={{ base: 'column-reverse', '2xl': 'row' }} gap={5} align="flex-start">
