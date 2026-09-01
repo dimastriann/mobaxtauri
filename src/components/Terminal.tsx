@@ -80,6 +80,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const unlistenDataRef = useRef<UnlistenFn | null>(null);
   const isDisconnectedRef = useRef(false);
+  const lastActivityUpdateRef = useRef(0);
   const isPasswordModeRef = useRef(false);
   const passwordBufRef = useRef('');
   const bellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -342,7 +343,11 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       const [unData, unState] = await Promise.all([
         listen<string>(`ssh-data-${sessionId}`, (event) => {
           term.write(event.payload);
-          useSessionStore.getState().updateLastActivity(sessionId);
+          const now = Date.now();
+          if (now - lastActivityUpdateRef.current >= 1000) {
+            lastActivityUpdateRef.current = now;
+            useSessionStore.getState().updateLastActivity(sessionId);
+          }
         }),
         listen<SshSessionStateEvent>(SSH_SESSION_STATE_EVENT, (event) => {
           if (event.payload.sessionId !== sessionId || event.payload.status !== 'disconnected') {
@@ -424,7 +429,11 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         invoke('ssh_send_data', { sessionId, data }).catch((err: unknown) => {
           console.error('Failed to send terminal data:', err);
           const errStr = String(err);
-          if (errStr.includes('Send failed') || errStr.includes('Session not found')) {
+          if (
+            errStr.includes('Send failed') ||
+            errStr.includes('Send timed out') ||
+            errStr.includes('Session not found')
+          ) {
             updateStatus('disconnected', errStr);
             showReconnectBanner(term);
           }

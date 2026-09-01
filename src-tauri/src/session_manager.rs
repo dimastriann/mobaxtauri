@@ -19,6 +19,7 @@ struct ManagedSshSession {
     handle: Arc<russh::client::Handle<ClientHandler>>,
     channel_id: ChannelId,
     channel: Arc<russh::Channel<russh::client::Msg>>,
+    write_lock: Arc<Mutex<()>>,
     keepalive_task: JoinHandle<()>,
     health_task: JoinHandle<()>,
 }
@@ -71,6 +72,7 @@ impl SessionManager {
                 handle,
                 channel_id,
                 channel,
+                write_lock: Arc::new(Mutex::new(())),
                 keepalive_task,
                 health_task,
             },
@@ -108,12 +110,25 @@ impl SessionManager {
     pub async fn shell_target(
         &self,
         session_id: &str,
-    ) -> Result<(Arc<russh::client::Handle<ClientHandler>>, ChannelId), String> {
+    ) -> Result<
+        (
+            Arc<russh::client::Handle<ClientHandler>>,
+            ChannelId,
+            Arc<Mutex<()>>,
+        ),
+        String,
+    > {
         self.sessions
             .lock()
             .await
             .get(session_id)
-            .map(|session| (Arc::clone(&session.handle), session.channel_id))
+            .map(|session| {
+                (
+                    Arc::clone(&session.handle),
+                    session.channel_id,
+                    Arc::clone(&session.write_lock),
+                )
+            })
             .ok_or_else(|| "Session not found".to_string())
     }
 
@@ -164,6 +179,7 @@ fn spawn_keepalive(
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
         interval.tick().await;
+        let mut consecutive_failures = 0_u8;
 
         loop {
             interval.tick().await;
@@ -173,7 +189,14 @@ fn spawn_keepalive(
             )
             .await;
 
-            if !matches!(result, Ok(Ok(()))) {
+            if matches!(result, Ok(Ok(()))) {
+                consecutive_failures = 0;
+                continue;
+            }
+
+            consecutive_failures += 1;
+            log::warn!("SSH keepalive attempt {consecutive_failures}/3 failed for {session_id}");
+            if consecutive_failures >= 3 {
                 emit_ssh_session_state(
                     &app_handle,
                     session_id.clone(),

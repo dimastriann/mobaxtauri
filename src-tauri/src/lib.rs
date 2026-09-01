@@ -210,7 +210,8 @@ async fn ssh_send_data(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    let (handle, channel_id) = state.ssh_sessions.shell_target(&session_id).await?;
+    let (handle, channel_id, write_lock) = state.ssh_sessions.shell_target(&session_id).await?;
+    let _write_guard = write_lock.lock().await;
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
         handle.data(channel_id, Bytes::from(data.as_bytes().to_vec())),

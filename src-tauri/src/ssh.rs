@@ -6,11 +6,16 @@ use russh::keys::PublicKey;
 use russh_sftp::client::SftpSession;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
+use tokio::sync::mpsc;
+
+const TERMINAL_OUTPUT_BATCH_DELAY: std::time::Duration = std::time::Duration::from_millis(8);
+const TERMINAL_OUTPUT_BATCH_BYTES: usize = 256 * 1024;
 
 pub struct ClientHandler {
     pub app_handle: AppHandle,
     pub session_id: String,
     pub shell_channel_id: Arc<tokio::sync::Mutex<Option<russh::ChannelId>>>,
+    pub terminal_output: mpsc::UnboundedSender<Vec<u8>>,
 }
 
 impl Handler for ClientHandler {
@@ -30,9 +35,7 @@ impl Handler for ClientHandler {
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
         if Some(channel) == *self.shell_channel_id.lock().await {
-            let payload = String::from_utf8_lossy(data).to_string();
-            let event_name = format!("ssh-data-{}", self.session_id);
-            let _ = self.app_handle.emit(&event_name, payload);
+            let _ = self.terminal_output.send(data.to_vec());
         }
         Ok(())
     }
@@ -45,10 +48,7 @@ impl Handler for ClientHandler {
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
         if ext == 1 && Some(channel) == *self.shell_channel_id.lock().await {
-            // stderr
-            let payload = String::from_utf8_lossy(data).to_string();
-            let event_name = format!("ssh-data-{}", self.session_id);
-            let _ = self.app_handle.emit(&event_name, payload);
+            let _ = self.terminal_output.send(data.to_vec());
         }
         Ok(())
     }
@@ -111,10 +111,13 @@ impl SshSession {
         let config = russh::client::Config::default();
         let config = Arc::new(config);
         let shell_channel_id = Arc::new(tokio::sync::Mutex::new(None));
+        let (terminal_output, terminal_output_rx) = mpsc::unbounded_channel();
+        spawn_terminal_output(app_handle.clone(), session_id.clone(), terminal_output_rx);
         let sh = ClientHandler {
             app_handle,
             session_id,
             shell_channel_id: shell_channel_id.clone(),
+            terminal_output,
         };
 
         log::info!("TCP connecting to {}:{}...", host, port);
@@ -183,4 +186,30 @@ impl SshSession {
 
         Ok((session, channel_id, channel, sftp))
     }
+}
+
+fn spawn_terminal_output(
+    app_handle: AppHandle,
+    session_id: String,
+    mut receiver: mpsc::UnboundedReceiver<Vec<u8>>,
+) {
+    tokio::spawn(async move {
+        let event_name = format!("ssh-data-{session_id}");
+        while let Some(first) = receiver.recv().await {
+            let mut batch = first;
+            tokio::time::sleep(TERMINAL_OUTPUT_BATCH_DELAY).await;
+
+            while batch.len() < TERMINAL_OUTPUT_BATCH_BYTES {
+                match receiver.try_recv() {
+                    Ok(chunk) => batch.extend_from_slice(&chunk),
+                    Err(_) => break,
+                }
+            }
+
+            let payload = String::from_utf8_lossy(&batch).into_owned();
+            if let Err(error) = app_handle.emit(&event_name, payload) {
+                log::warn!("Failed to emit terminal output for {session_id}: {error}");
+            }
+        }
+    });
 }
