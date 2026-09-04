@@ -12,7 +12,7 @@ export interface SshConnectRequest {
 
 export type SshSessionStatus = 'connecting' | 'connected' | 'disconnected' | 'failed';
 
-export type SshDisconnectReason = 'requested' | 'remote_eof' | 'remote_closed' | 'keepalive_failed';
+export type SshDisconnectReason = 'requested' | 'remote_eof' | 'remote_closed';
 
 export interface SshSessionStateEvent {
   sessionId: string;

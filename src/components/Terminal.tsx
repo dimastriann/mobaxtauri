@@ -412,9 +412,12 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           return;
         }
         if (data === 'r' || data === 'R') {
-          // Always prompt for password on reconnect — the saved one might be stale/wrong
           isDisconnectedRef.current = false;
-          promptPassword();
+          if (currentSession?.password || currentSession?.savePassword) {
+            doConnect();
+          } else {
+            promptPassword();
+          }
           return;
         }
         if (data === 'q' || data === 'Q') {

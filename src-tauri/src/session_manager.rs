@@ -1,8 +1,6 @@
 use crate::health::collect_health;
 use crate::session_types::emit_ssh_health;
-use crate::session_types::{emit_ssh_session_state, SshDisconnectReason, SshSessionStatus};
 use crate::ssh::ClientHandler;
-use bytes::Bytes;
 use russh::ChannelId;
 use std::{
     collections::HashMap,
@@ -20,7 +18,6 @@ struct ManagedSshSession {
     channel_id: ChannelId,
     channel: Arc<russh::Channel<russh::client::Msg>>,
     write_lock: Arc<Mutex<()>>,
-    keepalive_task: JoinHandle<()>,
     health_task: JoinHandle<()>,
 }
 
@@ -53,12 +50,6 @@ impl SessionManager {
     ) {
         let handle = Arc::new(handle);
         let channel = Arc::new(channel);
-        let keepalive_task = spawn_keepalive(
-            app_handle.clone(),
-            session_id.clone(),
-            Arc::clone(&handle),
-            channel_id,
-        );
         let health_task = spawn_health_monitor(
             app_handle,
             session_id.clone(),
@@ -73,13 +64,11 @@ impl SessionManager {
                 channel_id,
                 channel,
                 write_lock: Arc::new(Mutex::new(())),
-                keepalive_task,
                 health_task,
             },
         );
 
         if let Some(previous) = replaced {
-            previous.keepalive_task.abort();
             previous.health_task.abort();
         }
     }
@@ -87,7 +76,6 @@ impl SessionManager {
     pub async fn remove(&self, session_id: &str) -> bool {
         let removed = self.sessions.lock().await.remove(session_id);
         if let Some(session) = removed {
-            session.keepalive_task.abort();
             session.health_task.abort();
             true
         } else {
@@ -165,46 +153,6 @@ fn spawn_health_monitor(
             match collect_health(Arc::clone(&handle)).await {
                 Ok(health) => emit_ssh_health(&app_handle, session_id.clone(), Some(health)),
                 Err(error) => log::debug!("Health check failed for {session_id}: {error}"),
-            }
-        }
-    })
-}
-
-fn spawn_keepalive(
-    app_handle: AppHandle,
-    session_id: String,
-    handle: Arc<russh::client::Handle<ClientHandler>>,
-    channel_id: ChannelId,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
-        interval.tick().await;
-        let mut consecutive_failures = 0_u8;
-
-        loop {
-            interval.tick().await;
-            let result = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                handle.data(channel_id, Bytes::new()),
-            )
-            .await;
-
-            if matches!(result, Ok(Ok(()))) {
-                consecutive_failures = 0;
-                continue;
-            }
-
-            consecutive_failures += 1;
-            log::warn!("SSH keepalive attempt {consecutive_failures}/3 failed for {session_id}");
-            if consecutive_failures >= 3 {
-                emit_ssh_session_state(
-                    &app_handle,
-                    session_id.clone(),
-                    SshSessionStatus::Disconnected,
-                    Some("SSH keepalive failed".into()),
-                    Some(SshDisconnectReason::KeepaliveFailed),
-                );
-                break;
             }
         }
     })

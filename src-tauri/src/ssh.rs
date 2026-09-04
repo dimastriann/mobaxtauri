@@ -108,7 +108,14 @@ impl SshSession {
         ),
         Box<dyn std::error::Error>,
     > {
-        let config = russh::client::Config::default();
+        // Let russh send protocol-level keepalives. Channel data (including an
+        // empty payload) is subject to terminal flow control and can time out
+        // while a full-screen application is producing heavy output.
+        let config = russh::client::Config {
+            keepalive_interval: Some(std::time::Duration::from_secs(15)),
+            keepalive_max: 3,
+            ..Default::default()
+        };
         let config = Arc::new(config);
         let shell_channel_id = Arc::new(tokio::sync::Mutex::new(None));
         let (terminal_output, terminal_output_rx) = mpsc::unbounded_channel();

@@ -40,7 +40,6 @@ pub enum SshDisconnectReason {
     Requested,
     RemoteEof,
     RemoteClosed,
-    KeepaliveFailed,
 }
 
 pub fn emit_ssh_health(
@@ -90,7 +89,7 @@ pub fn emit_ssh_session_state(
 
 #[cfg(test)]
 mod tests {
-    use super::{SshDisconnectReason, SshSessionStateEvent, SshSessionStatus};
+    use super::{SshSessionStateEvent, SshSessionStatus};
 
     #[test]
     fn serializes_session_state_for_the_frontend_contract() {
@@ -120,20 +119,6 @@ mod tests {
         let value = serde_json::to_value(event).expect("session event should serialize");
 
         assert!(value.get("message").is_none());
-    }
-
-    #[test]
-    fn serializes_a_disconnect_reason() {
-        let event = SshSessionStateEvent {
-            session_id: "ssh-production".into(),
-            status: SshSessionStatus::Disconnected,
-            message: Some("SSH keepalive failed".into()),
-            reason: Some(SshDisconnectReason::KeepaliveFailed),
-        };
-
-        let value = serde_json::to_value(event).expect("session event should serialize");
-
-        assert_eq!(value["reason"], "keepalive_failed");
     }
 
     #[test]
