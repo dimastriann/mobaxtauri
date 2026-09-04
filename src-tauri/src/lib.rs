@@ -93,6 +93,7 @@ async fn ssh_connect(
     credentials: State<'_, CredentialService>,
     request: SshConnectRequest,
 ) -> Result<String, String> {
+    let connection_timeout = request.connection_timeout()?;
     let SshConnectRequest {
         session_id,
         host,
@@ -101,6 +102,7 @@ async fn ssh_connect(
         password,
         private_key_path,
         use_saved_credential,
+        connection_timeout_secs: _,
     } = request;
     log::info!("Attempting to connect to {}:{} as {}", host, port, user);
     emit_ssh_session_state(
@@ -140,9 +142,8 @@ async fn ssh_connect(
         private_key_path,
     );
 
-    // Add a 15-second timeout to the connection attempt
     let (handle, channel_id, channel, sftp) =
-        match tokio::time::timeout(std::time::Duration::from_secs(15), connect_future).await {
+        match tokio::time::timeout(connection_timeout, connect_future).await {
             Ok(Ok(res)) => res,
             Ok(Err(e)) => {
                 log::error!("Connection error: {}", e);
@@ -157,8 +158,9 @@ async fn ssh_connect(
                 return Err(message);
             }
             Err(_) => {
-                log::error!("Connection timed out after 15s");
-                let message = "Connection timed out".to_string();
+                let timeout_secs = connection_timeout.as_secs();
+                log::error!("Connection timed out after {timeout_secs}s");
+                let message = format!("Connection timed out after {timeout_secs} seconds");
                 emit_ssh_session_state(
                     &app_handle,
                     session_id,

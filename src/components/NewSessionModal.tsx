@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getSshConnectionTimeoutSeconds, type SshConnectRequest } from '../types/ssh';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Stack, Input, Button, HStack, Text } from '@chakra-ui/react';
 import { Session, useSessionStore } from '../store/useSessionStore';
@@ -149,7 +150,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
           password: password || null,
           privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : null,
           useSavedCredential: false,
-        },
+          connectionTimeoutSecs: getSshConnectionTimeoutSeconds(),
+        } satisfies SshConnectRequest,
       });
       updateStatus(sessionId, 'connected');
 

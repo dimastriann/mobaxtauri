@@ -1,4 +1,16 @@
 export const SSH_SESSION_STATE_EVENT = 'ssh-session-state';
+export const DEFAULT_SSH_CONNECTION_TIMEOUT_SECONDS = 15;
+const MIN_SSH_CONNECTION_TIMEOUT_SECONDS = 5;
+const MAX_SSH_CONNECTION_TIMEOUT_SECONDS = 120;
+
+export const getSshConnectionTimeoutSeconds = (): number => {
+  const configured = Number(localStorage.getItem('ssh-timeout'));
+  return Number.isInteger(configured) &&
+    configured >= MIN_SSH_CONNECTION_TIMEOUT_SECONDS &&
+    configured <= MAX_SSH_CONNECTION_TIMEOUT_SECONDS
+    ? configured
+    : DEFAULT_SSH_CONNECTION_TIMEOUT_SECONDS;
+};
 
 export interface SshConnectRequest {
   sessionId: string;
@@ -8,6 +20,7 @@ export interface SshConnectRequest {
   password: string | null;
   privateKeyPath: string | null;
   useSavedCredential: boolean;
+  connectionTimeoutSecs: number;
 }
 
 export type SshSessionStatus = 'connecting' | 'connected' | 'disconnected' | 'failed';

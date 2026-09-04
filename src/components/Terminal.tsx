@@ -6,7 +6,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
-import { SSH_SESSION_STATE_EVENT, type SshSessionStateEvent } from '../types/ssh';
+import {
+  getSshConnectionTimeoutSeconds,
+  SSH_SESSION_STATE_EVENT,
+  type SshConnectRequest,
+  type SshSessionStateEvent,
+} from '../types/ssh';
 import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
@@ -155,6 +160,8 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       if (connectionAttemptRef.current) return;
       const session = getSession();
       if (!session || session.type !== 'ssh') return;
+      const { host, user } = session;
+      if (!host || !user) return;
 
       const term = xtermRef.current;
       if (!term) return;
@@ -164,19 +171,20 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       try {
         updateStatus('connecting');
         term.writeln(
-          `\r\n\x1b[38;5;81m● Connecting to ${session.user}@${session.host}:${session.port || 22}...\x1b[0m`,
+          `\r\n\x1b[38;5;81m● Connecting to ${user}@${host}:${session.port || 22}...\x1b[0m`,
         );
 
         await invoke('ssh_connect', {
           request: {
             sessionId,
-            host: session.host,
+            host,
             port: session.port || 22,
-            user: session.user,
+            user,
             password: password ?? session.password ?? null,
             privateKeyPath: session.privateKeyPath ?? null,
             useSavedCredential: Boolean(session.savePassword && !password && !session.password),
-          },
+            connectionTimeoutSecs: getSshConnectionTimeoutSeconds(),
+          } satisfies SshConnectRequest,
         });
         updateStatus('connected');
         useSessionStore.getState().recordConnection(sessionId, 'connected');

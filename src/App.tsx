@@ -32,7 +32,12 @@ import { Session, useSessionStore } from './store/useSessionStore';
 import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { emit, listen } from '@tauri-apps/api/event';
-import { SSH_HEALTH_EVENT, type SshHealthEvent } from './types/ssh';
+import {
+  getSshConnectionTimeoutSeconds,
+  SSH_HEALTH_EVENT,
+  type SshConnectRequest,
+  type SshHealthEvent,
+} from './types/ssh';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 import {
   KeyboardShortcuts,
@@ -140,7 +145,8 @@ function App() {
             password: null,
             privateKeyPath: null,
             useSavedCredential: false,
-          },
+            connectionTimeoutSecs: getSshConnectionTimeoutSeconds(),
+          } satisfies SshConnectRequest,
         });
         useSessionStore.getState().updateSessionStatus(sessionId, 'connected');
         setQuickConnectStr('');

@@ -1,9 +1,17 @@
 use crate::health::HealthSnapshot;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 pub const SSH_SESSION_STATE_EVENT: &str = "ssh-session-state";
 pub const SSH_HEALTH_EVENT: &str = "ssh-health";
+const DEFAULT_CONNECTION_TIMEOUT_SECS: u64 = 15;
+const MIN_CONNECTION_TIMEOUT_SECS: u64 = 5;
+const MAX_CONNECTION_TIMEOUT_SECS: u64 = 120;
+
+fn default_connection_timeout_secs() -> u64 {
+    DEFAULT_CONNECTION_TIMEOUT_SECS
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +24,22 @@ pub struct SshConnectRequest {
     pub private_key_path: Option<String>,
     #[serde(default)]
     pub use_saved_credential: bool,
+    #[serde(default = "default_connection_timeout_secs")]
+    pub connection_timeout_secs: u64,
+}
+
+impl SshConnectRequest {
+    pub fn connection_timeout(&self) -> Result<Duration, String> {
+        if !(MIN_CONNECTION_TIMEOUT_SECS..=MAX_CONNECTION_TIMEOUT_SECS)
+            .contains(&self.connection_timeout_secs)
+        {
+            return Err(format!(
+                "Connection timeout must be between {MIN_CONNECTION_TIMEOUT_SECS} and {MAX_CONNECTION_TIMEOUT_SECS} seconds"
+            ));
+        }
+
+        Ok(Duration::from_secs(self.connection_timeout_secs))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -89,7 +113,47 @@ pub fn emit_ssh_session_state(
 
 #[cfg(test)]
 mod tests {
-    use super::{SshSessionStateEvent, SshSessionStatus};
+    use super::{SshConnectRequest, SshSessionStateEvent, SshSessionStatus};
+    use std::time::Duration;
+
+    fn connect_request(timeout: u64) -> SshConnectRequest {
+        SshConnectRequest {
+            session_id: "ssh-production".into(),
+            host: "example.com".into(),
+            port: 22,
+            user: "operator".into(),
+            password: None,
+            private_key_path: None,
+            use_saved_credential: false,
+            connection_timeout_secs: timeout,
+        }
+    }
+
+    #[test]
+    fn validates_connection_timeout_bounds() {
+        assert_eq!(
+            connect_request(30).connection_timeout().unwrap(),
+            Duration::from_secs(30)
+        );
+        assert!(connect_request(4).connection_timeout().is_err());
+        assert!(connect_request(121).connection_timeout().is_err());
+    }
+
+    #[test]
+    fn defaults_connection_timeout_for_older_clients() {
+        let request: SshConnectRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "ssh-production",
+            "host": "example.com",
+            "port": 22,
+            "user": "operator",
+            "password": null,
+            "privateKeyPath": null,
+            "useSavedCredential": false
+        }))
+        .expect("request should deserialize");
+
+        assert_eq!(request.connection_timeout(), Ok(Duration::from_secs(15)));
+    }
 
     #[test]
     fn serializes_session_state_for_the_frontend_contract() {
