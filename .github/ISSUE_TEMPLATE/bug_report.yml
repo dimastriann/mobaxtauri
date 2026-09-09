@@ -20,7 +20,7 @@ body:
   - type: input
     attributes:
       label: MobaXTauri version
-      placeholder: v0.3.0 or commit SHA
+      placeholder: Version number or commit SHA
     validations:
       required: true
   - type: dropdown

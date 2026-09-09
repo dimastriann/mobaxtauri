@@ -1,6 +1,6 @@
 [package]
 name = "mobaxtauri"
-version = "0.3.0"
+version = "0.3.1"
 description = "MobaXTauri - SSH Terminal Manager"
 authors = ["dimastriann", "dimastriannugraha@gmail.com"]
 edition = "2021"
