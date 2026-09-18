@@ -202,8 +202,13 @@ fn spawn_terminal_output(
 ) {
     tokio::spawn(async move {
         let event_name = format!("ssh-data-{session_id}");
+        // A chunk boundary can split a multi-byte UTF-8 character; the
+        // incomplete tail is carried into the next batch instead of being
+        // decoded as U+FFFD replacement characters.
+        let mut pending: Vec<u8> = Vec::new();
         while let Some(first) = receiver.recv().await {
-            let mut batch = first;
+            let mut batch = std::mem::take(&mut pending);
+            batch.extend_from_slice(&first);
             tokio::time::sleep(TERMINAL_OUTPUT_BATCH_DELAY).await;
 
             while batch.len() < TERMINAL_OUTPUT_BATCH_BYTES {
@@ -213,10 +218,75 @@ fn spawn_terminal_output(
                 }
             }
 
-            let payload = String::from_utf8_lossy(&batch).into_owned();
+            let complete_len = complete_utf8_len(&batch);
+            let payload = String::from_utf8_lossy(&batch[..complete_len]).into_owned();
+            pending = batch.split_off(complete_len);
             if let Err(error) = app_handle.emit(&event_name, payload) {
                 log::warn!("Failed to emit terminal output for {session_id}: {error}");
             }
         }
+        // Receiver closed: flush any carried bytes so nothing is dropped.
+        if !pending.is_empty() {
+            let payload = String::from_utf8_lossy(&pending).into_owned();
+            let _ = app_handle.emit(&event_name, payload);
+        }
     });
+}
+
+/// Length of the leading portion of `data` that forms complete UTF-8.
+/// Trailing invalid bytes are included (they decode to U+FFFD); only a
+/// trailing incomplete multi-byte sequence is excluded, since the next
+/// chunk may complete it.
+fn complete_utf8_len(data: &[u8]) -> usize {
+    let mut offset = 0;
+    loop {
+        match std::str::from_utf8(&data[offset..]) {
+            Ok(_) => return data.len(),
+            // `None` means the sequence is truncated by the end of the
+            // slice: everything from `valid_up_to` on is an incomplete
+            // character and must be carried over.
+            Err(error) => match error.error_len() {
+                Some(invalid_len) => offset += error.valid_up_to() + invalid_len,
+                None => return offset + error.valid_up_to(),
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::complete_utf8_len;
+
+    #[test]
+    fn keeps_ascii_whole() {
+        assert_eq!(complete_utf8_len(b"hello"), 5);
+        assert_eq!(complete_utf8_len(&[]), 0);
+    }
+
+    #[test]
+    fn holds_back_split_three_byte_char() {
+        // '日' = E6 97 A5
+        assert_eq!(complete_utf8_len(&[0xE6, 0x97]), 0);
+        assert_eq!(complete_utf8_len(&[b'a', 0xE6, 0x97]), 1);
+        assert_eq!(complete_utf8_len(&[0xE6, 0x97, 0xA5]), 3);
+    }
+
+    #[test]
+    fn holds_back_split_four_byte_char() {
+        // '😀' = F0 9F 98 80
+        assert_eq!(complete_utf8_len(&[0xF0, 0x9F, 0x98]), 0);
+        assert_eq!(complete_utf8_len(&[0xF0, 0x9F, 0x98, 0x80]), 4);
+    }
+
+    #[test]
+    fn includes_invalid_bytes_for_replacement() {
+        // 0xFF is invalid, not incomplete: it must be emitted (as U+FFFD),
+        // never carried, or the stream would stall.
+        assert_eq!(complete_utf8_len(&[b'a', 0xFF, b'b']), 3);
+    }
+
+    #[test]
+    fn invalid_bytes_before_incomplete_tail() {
+        assert_eq!(complete_utf8_len(&[0xFF, 0xE6, 0x97]), 1);
+    }
 }
