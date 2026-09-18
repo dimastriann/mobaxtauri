@@ -17,7 +17,7 @@ const TERMINAL_OUTPUT_COALESCE_DELAY: std::time::Duration = std::time::Duration:
 pub struct ClientHandler {
     pub app_handle: AppHandle,
     pub session_id: String,
-    pub shell_channel_id: Arc<tokio::sync::Mutex<Option<russh::ChannelId>>>,
+    pub shell_channel_id: Arc<std::sync::OnceLock<russh::ChannelId>>,
     pub terminal_output: mpsc::UnboundedSender<Vec<u8>>,
 }
 
@@ -37,7 +37,7 @@ impl Handler for ClientHandler {
         data: &[u8],
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
-        if Some(channel) == *self.shell_channel_id.lock().await {
+        if self.shell_channel_id.get() == Some(&channel) {
             let _ = self.terminal_output.send(data.to_vec());
         }
         Ok(())
@@ -50,7 +50,7 @@ impl Handler for ClientHandler {
         data: &[u8],
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
-        if ext == 1 && Some(channel) == *self.shell_channel_id.lock().await {
+        if ext == 1 && self.shell_channel_id.get() == Some(&channel) {
             let _ = self.terminal_output.send(data.to_vec());
         }
         Ok(())
@@ -61,7 +61,7 @@ impl Handler for ClientHandler {
         channel: russh::ChannelId,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
-        if Some(channel) == *self.shell_channel_id.lock().await {
+        if self.shell_channel_id.get() == Some(&channel) {
             emit_ssh_session_state(
                 &self.app_handle,
                 self.session_id.clone(),
@@ -78,7 +78,7 @@ impl Handler for ClientHandler {
         channel: russh::ChannelId,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
-        if Some(channel) == *self.shell_channel_id.lock().await {
+        if self.shell_channel_id.get() == Some(&channel) {
             emit_ssh_session_state(
                 &self.app_handle,
                 self.session_id.clone(),
@@ -120,7 +120,7 @@ impl SshSession {
             ..Default::default()
         };
         let config = Arc::new(config);
-        let shell_channel_id = Arc::new(tokio::sync::Mutex::new(None));
+        let shell_channel_id = Arc::new(std::sync::OnceLock::new());
         let (terminal_output, terminal_output_rx) = mpsc::unbounded_channel();
         spawn_terminal_output(app_handle.clone(), session_id.clone(), terminal_output_rx);
         let sh = ClientHandler {
@@ -177,7 +177,7 @@ impl SshSession {
         let channel = session.channel_open_session().await?;
         log::info!("Channel opened with ID: {}", channel.id());
         let channel_id = channel.id();
-        *shell_channel_id.lock().await = Some(channel_id);
+        let _ = shell_channel_id.set(channel_id);
 
         log::info!("Requesting PTY...");
         channel
