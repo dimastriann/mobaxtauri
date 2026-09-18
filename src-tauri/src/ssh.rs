@@ -8,8 +8,11 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
-const TERMINAL_OUTPUT_BATCH_DELAY: std::time::Duration = std::time::Duration::from_millis(16);
 const TERMINAL_OUTPUT_BATCH_BYTES: usize = 256 * 1024;
+// Only large bursts pay an extra coalesce round; interactive output is
+// forwarded with no added delay (the frontend rAF loop already coalesces).
+const TERMINAL_OUTPUT_COALESCE_BYTES: usize = 64 * 1024;
+const TERMINAL_OUTPUT_COALESCE_DELAY: std::time::Duration = std::time::Duration::from_millis(4);
 
 pub struct ClientHandler {
     pub app_handle: AppHandle,
@@ -209,13 +212,11 @@ fn spawn_terminal_output(
         while let Some(first) = receiver.recv().await {
             let mut batch = std::mem::take(&mut pending);
             batch.extend_from_slice(&first);
-            tokio::time::sleep(TERMINAL_OUTPUT_BATCH_DELAY).await;
+            drain_receiver(&mut receiver, &mut batch);
 
-            while batch.len() < TERMINAL_OUTPUT_BATCH_BYTES {
-                match receiver.try_recv() {
-                    Ok(chunk) => batch.extend_from_slice(&chunk),
-                    Err(_) => break,
-                }
+            if batch.len() >= TERMINAL_OUTPUT_COALESCE_BYTES {
+                tokio::time::sleep(TERMINAL_OUTPUT_COALESCE_DELAY).await;
+                drain_receiver(&mut receiver, &mut batch);
             }
 
             let complete_len = complete_utf8_len(&batch);
@@ -231,6 +232,15 @@ fn spawn_terminal_output(
             let _ = app_handle.emit(&event_name, payload);
         }
     });
+}
+
+fn drain_receiver(receiver: &mut mpsc::UnboundedReceiver<Vec<u8>>, batch: &mut Vec<u8>) {
+    while batch.len() < TERMINAL_OUTPUT_BATCH_BYTES {
+        match receiver.try_recv() {
+            Ok(chunk) => batch.extend_from_slice(&chunk),
+            Err(_) => break,
+        }
+    }
 }
 
 /// Length of the leading portion of `data` that forms complete UTF-8.
