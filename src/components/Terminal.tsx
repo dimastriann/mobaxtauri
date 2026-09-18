@@ -335,28 +335,28 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
     const session = getSession();
     let disposed = false;
-    let pendingOutput = '';
+    let pendingOutput: string[] = [];
     let outputWriteInProgress = false;
     let outputFrame: number | null = null;
     let inputChain: Promise<void> = Promise.resolve();
 
     const flushOutput = () => {
       outputFrame = null;
-      if (disposed || outputWriteInProgress || !pendingOutput) return;
+      if (disposed || outputWriteInProgress || pendingOutput.length === 0) return;
 
-      const output = pendingOutput;
-      pendingOutput = '';
+      const output = pendingOutput.join('');
+      pendingOutput = [];
       outputWriteInProgress = true;
       term.write(output, () => {
         outputWriteInProgress = false;
-        if (!disposed && pendingOutput && outputFrame === null) {
+        if (!disposed && pendingOutput.length > 0 && outputFrame === null) {
           outputFrame = requestAnimationFrame(flushOutput);
         }
       });
     };
 
     const queueOutput = (data: string) => {
-      pendingOutput += data;
+      pendingOutput.push(data);
       if (!outputWriteInProgress && outputFrame === null) {
         outputFrame = requestAnimationFrame(flushOutput);
       }
@@ -529,7 +529,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     return () => {
       disposed = true;
       if (outputFrame !== null) cancelAnimationFrame(outputFrame);
-      pendingOutput = '';
+      pendingOutput = [];
       window.removeEventListener('resize', handleResize);
       unlistenSnippet.then((fn) => fn());
       unlistenDataRef.current?.();
