@@ -334,6 +334,54 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     fitRef.current = fitAddon;
 
     const session = getSession();
+    let disposed = false;
+    let pendingOutput = '';
+    let outputWriteInProgress = false;
+    let outputFrame: number | null = null;
+    let inputChain: Promise<void> = Promise.resolve();
+
+    const flushOutput = () => {
+      outputFrame = null;
+      if (disposed || outputWriteInProgress || !pendingOutput) return;
+
+      const output = pendingOutput;
+      pendingOutput = '';
+      outputWriteInProgress = true;
+      term.write(output, () => {
+        outputWriteInProgress = false;
+        if (!disposed && pendingOutput && outputFrame === null) {
+          outputFrame = requestAnimationFrame(flushOutput);
+        }
+      });
+    };
+
+    const queueOutput = (data: string) => {
+      pendingOutput += data;
+      if (!outputWriteInProgress && outputFrame === null) {
+        outputFrame = requestAnimationFrame(flushOutput);
+      }
+    };
+
+    const sendSshData = (data: string, source = 'terminal') => {
+      inputChain = inputChain
+        .then(async () => {
+          if (disposed) return;
+          await invoke('ssh_send_data', { sessionId, data });
+        })
+        .catch((err: unknown) => {
+          if (disposed) return;
+          console.error(`Failed to send ${source} data:`, err);
+          const errStr = String(err);
+          if (
+            errStr.includes('Send failed') ||
+            errStr.includes('Send timed out') ||
+            errStr.includes('Session not found')
+          ) {
+            updateStatus('disconnected', errStr);
+            showReconnectBanner(term);
+          }
+        });
+    };
 
     // ── Welcome banner ─────────────────────────────────────
     term.writeln(`\x1b[38;5;81m● MobaxTauri\x1b[0m v0.3.1`);
@@ -350,7 +398,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     const setupListeners = async () => {
       const [unData, unState] = await Promise.all([
         listen<string>(`ssh-data-${sessionId}`, (event) => {
-          term.write(event.payload);
+          queueOutput(event.payload);
           const now = Date.now();
           if (now - lastActivityUpdateRef.current >= 1000) {
             lastActivityUpdateRef.current = now;
@@ -372,10 +420,22 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         unData();
         unState();
       };
+      if (disposed) unlistenDataRef.current();
     };
 
     if (session?.type === 'ssh') {
-      setupListeners();
+      void setupListeners()
+        .then(() => {
+          if (disposed) return;
+          if (session.password || session.savePassword) {
+            void doConnect();
+          } else {
+            promptPassword();
+          }
+        })
+        .catch((error: unknown) => {
+          if (!disposed) console.error('Failed to attach SSH terminal listeners:', error);
+        });
     }
 
     // ── Terminal input handler ──────────────────────────────
@@ -437,32 +497,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
       // Normal mode: send data to SSH backend
       if (currentSession?.type === 'ssh') {
-        invoke('ssh_send_data', { sessionId, data }).catch((err: unknown) => {
-          console.error('Failed to send terminal data:', err);
-          const errStr = String(err);
-          if (
-            errStr.includes('Send failed') ||
-            errStr.includes('Send timed out') ||
-            errStr.includes('Session not found')
-          ) {
-            updateStatus('disconnected', errStr);
-            showReconnectBanner(term);
-          }
-        });
+        sendSshData(data);
       }
     });
-
-    // ── Auto-connect SSH sessions ──────────────────────────
-    if (session?.type === 'ssh') {
-      // Always reconnect: closeTab marks sessions as disconnected,
-      // and even if the backend session was dropped, this ensures
-      // we establish a fresh connection.
-      if (session.password || session.savePassword) {
-        doConnect();
-      } else {
-        promptPassword();
-      }
-    }
 
     // ── Resize handler ─────────────────────────────────────
     const handleResize = () => {
@@ -482,9 +519,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       const data = event.payload;
       const currentSession = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
       if (currentSession?.type === 'ssh') {
-        invoke('ssh_send_data', { sessionId, data }).catch((err) => {
-          console.error('[TERMINAL] Snippet send failed:', err);
-        });
+        sendSshData(data, 'snippet');
       } else {
         term.write(data);
       }
@@ -492,6 +527,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
     // ── Cleanup on tab close ───────────────────────────────
     return () => {
+      disposed = true;
+      if (outputFrame !== null) cancelAnimationFrame(outputFrame);
+      pendingOutput = '';
       window.removeEventListener('resize', handleResize);
       unlistenSnippet.then((fn) => fn());
       unlistenDataRef.current?.();

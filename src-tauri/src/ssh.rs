@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
-const TERMINAL_OUTPUT_BATCH_DELAY: std::time::Duration = std::time::Duration::from_millis(8);
+const TERMINAL_OUTPUT_BATCH_DELAY: std::time::Duration = std::time::Duration::from_millis(16);
 const TERMINAL_OUTPUT_BATCH_BYTES: usize = 256 * 1024;
 
 pub struct ClientHandler {
