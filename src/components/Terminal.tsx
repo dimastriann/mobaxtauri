@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -303,6 +304,14 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     searchAddonRef.current = searchAddon;
 
     term.open(terminalRef.current);
+
+    // GPU-accelerated rendering; fall back to the DOM renderer when a
+    // WebGL context cannot be created (e.g. missing GPU or blocked driver).
+    try {
+      term.loadAddon(new WebglAddon());
+    } catch {
+      // keep default renderer
+    }
 
     term.onBell(() => {
       if (bellTimerRef.current) clearTimeout(bellTimerRef.current);
