@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { HStack, Box, Text } from '@chakra-ui/react';
+import { invoke } from '@tauri-apps/api/core';
 import { useSessionStore } from '../store/useSessionStore';
 
 const HealthBar: React.FC = () => {
@@ -12,6 +13,13 @@ const HealthBar: React.FC = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const sessions = useSessionStore((state) => state.sessions);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
+
+  // The backend slows health polling while no bar is rendered.
+  const isVisible =
+    activeSession?.type === 'ssh' && activeSession.status === 'connected' && !!activeSession.health;
+  useEffect(() => {
+    void invoke('set_health_visibility', { visible: isVisible }).catch(() => {});
+  }, [isVisible]);
 
   if (
     activeSession?.type !== 'ssh' ||

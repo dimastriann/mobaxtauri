@@ -5,13 +5,16 @@ use russh::ChannelId;
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
 use tauri::AppHandle;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
+
+const HEALTH_INTERVAL_DEFAULT_SECS: u64 = 5;
+const HEALTH_INTERVAL_HIDDEN_SECS: u64 = 15;
 
 struct ManagedSshSession {
     handle: Arc<russh::client::Handle<ClientHandler>>,
@@ -23,21 +26,51 @@ struct ManagedSshSession {
 
 pub struct SessionManager {
     sessions: Mutex<HashMap<String, ManagedSshSession>>,
+    // Live interval read by every monitor task.
     health_interval_secs: Arc<AtomicU64>,
+    health_configured_secs: Arc<AtomicU64>,
+    health_visible: Arc<AtomicBool>,
+}
+
+/// Interval actually used by monitors. A hidden health bar can only slow
+/// polling down — it never polls faster than the user-configured rate, so
+/// slow or disabled settings are preserved.
+fn effective_interval(configured_secs: u64, visible: bool) -> u64 {
+    if visible {
+        configured_secs
+    } else {
+        configured_secs.max(HEALTH_INTERVAL_HIDDEN_SECS)
+    }
 }
 
 impl Default for SessionManager {
     fn default() -> Self {
         Self {
             sessions: Mutex::new(HashMap::new()),
-            health_interval_secs: Arc::new(AtomicU64::new(5)),
+            health_interval_secs: Arc::new(AtomicU64::new(HEALTH_INTERVAL_DEFAULT_SECS)),
+            health_configured_secs: Arc::new(AtomicU64::new(HEALTH_INTERVAL_DEFAULT_SECS)),
+            health_visible: Arc::new(AtomicBool::new(true)),
         }
     }
 }
 
 impl SessionManager {
     pub fn set_health_interval(&self, seconds: u64) {
-        self.health_interval_secs.store(seconds, Ordering::Relaxed);
+        self.health_configured_secs
+            .store(seconds, Ordering::Relaxed);
+        self.refresh_interval();
+    }
+
+    pub fn set_health_visibility(&self, visible: bool) {
+        self.health_visible.store(visible, Ordering::Relaxed);
+        self.refresh_interval();
+    }
+
+    fn refresh_interval(&self) {
+        let configured = self.health_configured_secs.load(Ordering::Relaxed);
+        let visible = self.health_visible.load(Ordering::Relaxed);
+        self.health_interval_secs
+            .store(effective_interval(configured, visible), Ordering::Relaxed);
     }
 
     pub async fn insert(
@@ -160,10 +193,20 @@ fn spawn_health_monitor(
 
 #[cfg(test)]
 mod tests {
-    use super::SessionManager;
+    use super::{effective_interval, SessionManager};
 
     #[tokio::test]
     async fn starts_without_managed_sessions() {
         assert!(SessionManager::default().is_empty().await);
+    }
+
+    #[test]
+    fn hidden_health_bar_never_polls_faster_than_configured() {
+        assert_eq!(effective_interval(5, false), 15);
+        assert_eq!(effective_interval(2, false), 15);
+        assert_eq!(effective_interval(60, false), 60);
+        assert_eq!(effective_interval(86_400, false), 86_400);
+        assert_eq!(effective_interval(5, true), 5);
+        assert_eq!(effective_interval(2, true), 2);
     }
 }

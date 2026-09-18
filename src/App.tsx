@@ -237,6 +237,15 @@ function App() {
   };
 
   // ── Effects ────────────────────────────────────────────────
+  // Re-apply the user's saved health polling interval on startup; the
+  // backend only keeps it in memory between runs.
+  useEffect(() => {
+    const seconds = Number(localStorage.getItem('health-interval') ?? '5');
+    if (Number.isFinite(seconds) && seconds > 0) {
+      void invoke('set_health_interval', { seconds }).catch(() => {});
+    }
+  }, []);
+
   useEffect(() => {
     const handleGlobalClick = () => setSidebarMenu(null);
     window.addEventListener('click', handleGlobalClick);

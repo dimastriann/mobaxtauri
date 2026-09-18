@@ -43,6 +43,12 @@ fn set_health_interval(state: State<'_, AppState>, seconds: u64) -> Result<(), S
 }
 
 #[tauri::command]
+fn set_health_visibility(state: State<'_, AppState>, visible: bool) -> Result<(), String> {
+    state.ssh_sessions.set_health_visibility(visible);
+    Ok(())
+}
+
+#[tauri::command]
 async fn credential_unlock(
     app_handle: AppHandle,
     credentials: State<'_, CredentialService>,
@@ -868,6 +874,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ssh_connect,
             set_health_interval,
+            set_health_visibility,
             ssh_send_data,
             ssh_disconnect,
             ssh_resize,
