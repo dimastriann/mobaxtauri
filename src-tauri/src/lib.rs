@@ -1,5 +1,6 @@
 mod credentials;
 mod health;
+pub mod known_hosts;
 mod persistence;
 mod recording;
 mod session_manager;
