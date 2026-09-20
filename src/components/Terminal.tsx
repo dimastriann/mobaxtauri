@@ -9,10 +9,13 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
 import {
   getSshConnectionTimeoutSeconds,
+  SSH_HOST_KEY_EVENT,
   SSH_SESSION_STATE_EVENT,
   type SshConnectRequest,
+  type SshHostKeyEvent,
   type SshSessionStateEvent,
 } from '../types/ssh';
+import HostKeyModal from './HostKeyModal';
 import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
@@ -100,6 +103,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [hostKeyPrompt, setHostKeyPrompt] = useState<SshHostKeyEvent | null>(null);
   const [showBellFlash, setShowBellFlash] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingMessage, setRecordingMessage] = useState<string | null>(null);
@@ -216,6 +220,25 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       }
     },
     [sessionId, getSession, updateStatus],
+  );
+
+  // Store the presented key and retry the connection (Trust and connect).
+  const acceptHostKey = useCallback(
+    async (prompt: SshHostKeyEvent) => {
+      setHostKeyPrompt(null);
+      try {
+        await invoke('ssh_trust_host_key', {
+          host: prompt.host,
+          port: prompt.port,
+          keyType: prompt.keyType,
+          fingerprint: prompt.fingerprint,
+        });
+        void doConnect();
+      } catch (err) {
+        console.error('Failed to store host key:', err);
+      }
+    },
+    [doConnect],
   );
 
   // ── Password prompt inside terminal ─────────────────────────
@@ -405,7 +428,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
     // ── SSH data listener (from backend) ───────────────────
     const setupListeners = async () => {
-      const [unData, unState] = await Promise.all([
+      const [unData, unState, unHostKey] = await Promise.all([
         listen<string>(`ssh-data-${sessionId}`, (event) => {
           queueOutput(event.payload);
           const now = Date.now();
@@ -424,10 +447,15 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           showReconnectBanner(term);
           invoke('ssh_disconnect', { sessionId }).catch(() => {});
         }),
+        listen<SshHostKeyEvent>(SSH_HOST_KEY_EVENT, (event) => {
+          if (event.payload.sessionId !== sessionId) return;
+          setHostKeyPrompt(event.payload);
+        }),
       ]);
       unlistenDataRef.current = () => {
         unData();
         unState();
+        unHostKey();
       };
       if (disposed) unlistenDataRef.current();
     };
@@ -735,6 +763,11 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           </HStack>
         </Box>
       )}
+      <HostKeyModal
+        prompt={hostKeyPrompt}
+        onAccept={acceptHostKey}
+        onReject={() => setHostKeyPrompt(null)}
+      />
       <div ref={terminalRef} style={{ height: '100%', width: '100%' }} />
     </Box>
   );
