@@ -19,6 +19,7 @@
     "project:check": "tsc --noEmit && eslint src && prettier --check \"src/**/*.{ts,tsx,css,html,json}\" && cargo clippy --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2.2.0",
     "@tauri-apps/plugin-dialog": "^2.7.0",
