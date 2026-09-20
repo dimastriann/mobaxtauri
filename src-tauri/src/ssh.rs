@@ -1,4 +1,8 @@
-use crate::session_types::{emit_ssh_session_state, SshDisconnectReason, SshSessionStatus};
+use crate::known_hosts::{HostKeyAction, KnownHostsService};
+use crate::session_types::{
+    emit_ssh_host_key, emit_ssh_session_state, SshDisconnectReason, SshHostKeyEvent,
+    SshSessionStatus,
+};
 use russh::client::{AuthResult, Handler, Session};
 use russh::keys::ssh_key::PrivateKey;
 use russh::keys::PrivateKeyWithHashAlg;
@@ -17,7 +21,10 @@ const TERMINAL_OUTPUT_COALESCE_DELAY: std::time::Duration = std::time::Duration:
 pub struct ClientHandler {
     pub app_handle: AppHandle,
     pub session_id: String,
+    pub host: String,
+    pub port: u16,
     pub shell_channel_id: Arc<std::sync::OnceLock<russh::ChannelId>>,
+    pub known_hosts: Arc<KnownHostsService>,
     pub terminal_output: mpsc::UnboundedSender<Vec<u8>>,
 }
 
@@ -26,9 +33,57 @@ impl Handler for ClientHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &PublicKey,
+        server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        let fingerprint = server_public_key
+            .fingerprint(russh::keys::HashAlg::Sha256)
+            .to_string();
+        let key_type = server_public_key.algorithm().to_string();
+        let action = self
+            .known_hosts
+            .resolve(&self.app_handle, &self.host, self.port, &fingerprint)
+            .await;
+        match action {
+            Ok(HostKeyAction::Accept) => Ok(true),
+            Ok(action @ (HostKeyAction::Unknown | HostKeyAction::Mismatch)) => {
+                if action == HostKeyAction::Mismatch {
+                    log::warn!(
+                        "HOST KEY MISMATCH for {}:{} — refusing connection",
+                        self.host,
+                        self.port
+                    );
+                } else {
+                    log::info!(
+                        "Unknown host key for {}:{} ({}, {})",
+                        self.host,
+                        self.port,
+                        key_type,
+                        fingerprint
+                    );
+                }
+                emit_ssh_host_key(
+                    &self.app_handle,
+                    SshHostKeyEvent {
+                        session_id: self.session_id.clone(),
+                        host: self.host.clone(),
+                        port: self.port,
+                        key_type,
+                        fingerprint,
+                        mismatch: action == HostKeyAction::Mismatch,
+                    },
+                );
+                Ok(false)
+            }
+            // Fail closed: an unreadable store must not silently trust keys.
+            Err(error) => {
+                log::error!(
+                    "Host key verification failed for {}:{}: {error}",
+                    self.host,
+                    self.port
+                );
+                Ok(false)
+            }
+        }
     }
 
     async fn data(
@@ -94,6 +149,9 @@ impl Handler for ClientHandler {
 pub struct SshSession;
 
 impl SshSession {
+    // Roadmap tracks the too_many_arguments baseline; a params struct is a
+    // planned follow-up.
+    #[allow(clippy::too_many_arguments)]
     pub async fn connect(
         app_handle: AppHandle,
         session_id: String,
@@ -102,6 +160,7 @@ impl SshSession {
         user: String,
         password: Option<String>,
         private_key_path: Option<String>,
+        known_hosts: Arc<KnownHostsService>,
     ) -> Result<
         (
             russh::client::Handle<ClientHandler>,
@@ -126,7 +185,10 @@ impl SshSession {
         let sh = ClientHandler {
             app_handle,
             session_id,
+            host: host.clone(),
+            port,
             shell_channel_id: shell_channel_id.clone(),
+            known_hosts,
             terminal_output,
         };
 

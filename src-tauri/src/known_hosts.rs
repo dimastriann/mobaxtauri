@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tauri::{AppHandle, Manager};
 
 pub const KNOWN_HOSTS_FILE: &str = "known_hosts.json";
 
@@ -71,6 +74,122 @@ pub fn parse_known_hosts(json: &str) -> Result<Vec<KnownHost>, String> {
 pub fn serialize_known_hosts(entries: &[KnownHost]) -> Result<String, String> {
     serde_json::to_string_pretty(entries)
         .map_err(|error| format!("Failed to serialize known hosts: {error}"))
+}
+
+/// JSON-file-backed store of trusted host keys, resolved lazily against
+/// the app data directory like `CredentialService`.
+#[derive(Clone, Default)]
+pub struct KnownHostsService {
+    state: Arc<tokio::sync::Mutex<Option<KnownHostsState>>>,
+}
+
+struct KnownHostsState {
+    path: PathBuf,
+    entries: Vec<KnownHost>,
+}
+
+impl KnownHostsService {
+    pub async fn resolve(
+        &self,
+        app_handle: &AppHandle,
+        host: &str,
+        port: u16,
+        fingerprint: &str,
+    ) -> Result<HostKeyAction, String> {
+        self.ensure_loaded(app_handle).await?;
+        let state = self.state.lock().await;
+        let loaded = state.as_ref().ok_or("Known hosts store is locked")?;
+        Ok(resolve_host_key(&loaded.entries, host, port, fingerprint))
+    }
+
+    pub async fn trust(
+        &self,
+        app_handle: &AppHandle,
+        host: &str,
+        port: u16,
+        key_type: String,
+        fingerprint: String,
+    ) -> Result<(), String> {
+        self.ensure_loaded(app_handle).await?;
+        let mut state = self.state.lock().await;
+        let loaded = state.as_mut().ok_or("Known hosts store is locked")?;
+        upsert_host(
+            &mut loaded.entries,
+            KnownHost {
+                host: host.into(),
+                port,
+                key_type,
+                fingerprint,
+                first_seen: now_unix_secs(),
+            },
+        );
+        persist(loaded).await
+    }
+
+    pub async fn remove(
+        &self,
+        app_handle: &AppHandle,
+        host: &str,
+        port: u16,
+    ) -> Result<bool, String> {
+        self.ensure_loaded(app_handle).await?;
+        let mut state = self.state.lock().await;
+        let loaded = state.as_mut().ok_or("Known hosts store is locked")?;
+        let removed = remove_host(&mut loaded.entries, host, port);
+        if removed {
+            persist(loaded).await?;
+        }
+        Ok(removed)
+    }
+
+    async fn ensure_loaded(&self, app_handle: &AppHandle) -> Result<(), String> {
+        let mut state = self.state.lock().await;
+        if state.is_some() {
+            return Ok(());
+        }
+        let path = known_hosts_path(app_handle)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("Failed to create app data directory: {error}"))?;
+        }
+        let entries = match tokio::fs::read_to_string(&path).await {
+            Ok(json) => match parse_known_hosts(&json) {
+                Ok(entries) => entries,
+                Err(error) => {
+                    // A corrupt file must never make the app trust keys;
+                    // starting fresh only causes re-prompting.
+                    log::warn!("{error}; starting with an empty known-hosts store");
+                    Vec::new()
+                }
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => return Err(format!("Failed to read known hosts: {error}")),
+        };
+        *state = Some(KnownHostsState { path, entries });
+        Ok(())
+    }
+}
+
+async fn persist(state: &KnownHostsState) -> Result<(), String> {
+    let json = serialize_known_hosts(&state.entries)?;
+    tokio::fs::write(&state.path, json)
+        .await
+        .map_err(|error| format!("Failed to write known hosts: {error}"))
+}
+
+fn known_hosts_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
+    app_handle
+        .path()
+        .app_data_dir()
+        .map(|directory| directory.join(KNOWN_HOSTS_FILE))
+        .map_err(|error| format!("Failed to resolve known hosts path: {error}"))
+}
+
+fn now_unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

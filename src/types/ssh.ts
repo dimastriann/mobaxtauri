@@ -52,3 +52,17 @@ export interface SshHealthEvent {
 }
 
 export const SSH_HEALTH_EVENT = 'ssh-health';
+
+export const SSH_HOST_KEY_EVENT = 'ssh-host-key';
+
+/// Emitted when a server presents a key that is not in the known-hosts
+/// store. `mismatch: true` marks the dangerous case: the host is known
+/// with a different key (possible man-in-the-middle).
+export interface SshHostKeyEvent {
+  sessionId: string;
+  host: string;
+  port: number;
+  keyType: string;
+  fingerprint: string;
+  mismatch: boolean;
+}

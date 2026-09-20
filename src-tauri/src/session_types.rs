@@ -5,6 +5,7 @@ use tauri::{AppHandle, Emitter};
 
 pub const SSH_SESSION_STATE_EVENT: &str = "ssh-session-state";
 pub const SSH_HEALTH_EVENT: &str = "ssh-health";
+pub const SSH_HOST_KEY_EVENT: &str = "ssh-host-key";
 const DEFAULT_CONNECTION_TIMEOUT_SECS: u64 = 15;
 const MIN_CONNECTION_TIMEOUT_SECS: u64 = 5;
 const MAX_CONNECTION_TIMEOUT_SECS: u64 = 120;
@@ -108,6 +109,25 @@ pub fn emit_ssh_session_state(
 
     if let Err(error) = app_handle.emit(SSH_SESSION_STATE_EVENT, payload) {
         log::warn!("Failed to emit SSH session state: {error}");
+    }
+}
+
+/// Emitted when the server presents a key that is not trusted. `mismatch`
+/// marks the dangerous case: the host is known with a different key.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshHostKeyEvent {
+    pub session_id: String,
+    pub host: String,
+    pub port: u16,
+    pub key_type: String,
+    pub fingerprint: String,
+    pub mismatch: bool,
+}
+
+pub fn emit_ssh_host_key(app_handle: &AppHandle, event: SshHostKeyEvent) {
+    if let Err(error) = app_handle.emit(SSH_HOST_KEY_EVENT, event) {
+        log::warn!("Failed to emit SSH host key event: {error}");
     }
 }
 

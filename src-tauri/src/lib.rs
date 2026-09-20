@@ -11,6 +11,7 @@ mod transfers;
 
 use crate::credentials::CredentialService;
 use crate::health::{collect_health, HealthSnapshot};
+use crate::known_hosts::KnownHostsService;
 use crate::persistence::{AppDataDocument, PersistenceService};
 use crate::session_manager::SessionManager;
 use crate::session_types::{
@@ -23,6 +24,7 @@ use crate::transfers::{
 };
 use bytes::Bytes;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tauri::{AppHandle, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
@@ -47,6 +49,20 @@ fn set_health_interval(state: State<'_, AppState>, seconds: u64) -> Result<(), S
 fn set_health_visibility(state: State<'_, AppState>, visible: bool) -> Result<(), String> {
     state.ssh_sessions.set_health_visibility(visible);
     Ok(())
+}
+
+#[tauri::command]
+async fn ssh_trust_host_key(
+    app_handle: AppHandle,
+    known_hosts: State<'_, KnownHostsService>,
+    host: String,
+    port: u16,
+    key_type: String,
+    fingerprint: String,
+) -> Result<(), String> {
+    known_hosts
+        .trust(&app_handle, &host, port, key_type, fingerprint)
+        .await
 }
 
 #[tauri::command]
@@ -98,6 +114,7 @@ async fn ssh_connect(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     credentials: State<'_, CredentialService>,
+    known_hosts: State<'_, KnownHostsService>,
     request: SshConnectRequest,
 ) -> Result<String, String> {
     let connection_timeout = request.connection_timeout()?;
@@ -147,6 +164,7 @@ async fn ssh_connect(
         user,
         password,
         private_key_path,
+        Arc::new(known_hosts.inner().clone()),
     );
 
     let (handle, channel_id, channel, sftp) =
@@ -833,6 +851,7 @@ pub fn run() {
         })
         .manage(PersistenceService::default())
         .manage(CredentialService::default())
+        .manage(KnownHostsService::default())
         .manage(TransferManager::default())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::new().build())
@@ -876,6 +895,7 @@ pub fn run() {
             ssh_connect,
             set_health_interval,
             set_health_visibility,
+            ssh_trust_host_key,
             ssh_send_data,
             ssh_disconnect,
             ssh_resize,
