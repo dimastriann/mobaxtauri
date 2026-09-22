@@ -21,7 +21,8 @@ use crate::session_types::{
 };
 use crate::ssh::SshSession;
 use crate::transfers::{
-    emit_transfer, is_cancelled, TransferEvent, TransferManager, TransferStatus,
+    calculate_percentage, emit_transfer, is_cancelled, TransferEvent, TransferManager,
+    TransferStatus,
 };
 use bytes::Bytes;
 use std::collections::HashMap;
@@ -377,6 +378,7 @@ async fn sftp_download_file(
             status: TransferStatus::Running,
             transferred,
             total,
+            percent: calculate_percentage(transferred, total),
             message: None,
         },
     );
@@ -406,6 +408,7 @@ async fn sftp_download_file(
                     status: TransferStatus::Running,
                     transferred,
                     total,
+                    percent: calculate_percentage(transferred, total),
                     message: None,
                 },
             );
@@ -441,6 +444,7 @@ async fn sftp_download_file(
             },
             transferred,
             total,
+            percent: calculate_percentage(transferred, total),
             message: result.as_ref().err().cloned(),
         },
     );
@@ -509,6 +513,7 @@ async fn sftp_upload_file(
                     status: TransferStatus::Running,
                     transferred,
                     total,
+                    percent: calculate_percentage(transferred, total),
                     message: None,
                 },
             );
@@ -540,6 +545,7 @@ async fn sftp_upload_file(
             },
             transferred,
             total,
+            percent: calculate_percentage(transferred, total),
             message: result.as_ref().err().cloned(),
         },
     );

@@ -314,6 +314,9 @@ const SftpSidebar: React.FC = () => {
             <Text fontSize="10px" color="fg.muted">
               Transferring {formatFileSize(transfer.transferred)}
               {transfer.total ? ` / ${formatFileSize(transfer.total)}` : ''}
+              {transfer.percent !== undefined && transfer.percent !== null
+                ? ` (${transfer.percent}%)`
+                : ''}
             </Text>
             <Button size="xs" variant="ghost" onClick={() => void cancelTransfer()}>
               Cancel
@@ -324,9 +327,11 @@ const SftpSidebar: React.FC = () => {
               h="full"
               bg="blue.fg"
               width={
-                transfer.total
-                  ? `${Math.min(100, (transfer.transferred / transfer.total) * 100)}%`
-                  : '25%'
+                transfer.percent !== undefined && transfer.percent !== null
+                  ? `${Math.min(100, transfer.percent)}%`
+                  : transfer.total
+                    ? `${Math.min(100, (transfer.transferred / transfer.total) * 100)}%`
+                    : '25%'
               }
               transition="width 120ms linear"
             />

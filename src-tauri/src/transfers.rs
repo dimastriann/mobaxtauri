@@ -28,7 +28,18 @@ pub struct TransferEvent {
     pub status: TransferStatus,
     pub transferred: u64,
     pub total: Option<u64>,
+    pub percent: Option<f32>,
     pub message: Option<String>,
+}
+
+pub fn calculate_percentage(transferred: u64, total: Option<u64>) -> Option<f32> {
+    match total {
+        Some(total_bytes) if total_bytes > 0 => {
+            let pct = (transferred as f64 / total_bytes as f64 * 100.0) as f32;
+            Some((pct * 10.0).round() / 10.0)
+        }
+        _ => None,
+    }
 }
 
 #[derive(Default)]
@@ -117,5 +128,14 @@ mod tests {
         manager.begin("transfer-2".into(), "session-1".into()).await;
 
         assert!(is_cancelled(&first));
+    }
+
+    #[test]
+    fn test_calculate_percentage() {
+        use super::calculate_percentage;
+        assert_eq!(calculate_percentage(50, Some(100)), Some(50.0));
+        assert_eq!(calculate_percentage(1, Some(3)), Some(33.3));
+        assert_eq!(calculate_percentage(100, None), None);
+        assert_eq!(calculate_percentage(100, Some(0)), None);
     }
 }

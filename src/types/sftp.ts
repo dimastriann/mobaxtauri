@@ -8,5 +8,6 @@ export interface SftpTransferEvent {
   status: SftpTransferStatus;
   transferred: number;
   total: number | null;
+  percent?: number | null;
   message: string | null;
 }
