@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   VStack,
   HStack,
@@ -35,6 +35,7 @@ import { SSH_SESSION_STATE_EVENT, type SshSessionStateEvent } from '../types/ssh
 import { SFTP_TRANSFER_EVENT, type SftpTransferEvent } from '../types/sftp';
 import { type SftpFile } from '../store/useSftpStore';
 import { formatFileSize } from '../utils/formatFileSize';
+import { toaster } from './ui/toaster';
 import SftpEditorModal from './SftpEditorModal';
 
 const formatMtime = (secs: number | null): string => {
@@ -93,6 +94,7 @@ const SftpSidebar: React.FC = () => {
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [editorFile, setEditorFile] = useState<{ path: string; name: string } | null>(null);
+  const lastNotifiedTransferRef = useRef<{ id: string; status: string } | null>(null);
 
   const handleCreateFolder = async () => {
     if (!activeSessionId) return;
@@ -130,7 +132,34 @@ const SftpSidebar: React.FC = () => {
 
   useEffect(() => {
     const unlisten = listen<SftpTransferEvent>(SFTP_TRANSFER_EVENT, ({ payload }) => {
-      if (payload.sessionId === activeSessionId) updateTransfer(payload);
+      if (payload.sessionId === activeSessionId) {
+        updateTransfer(payload);
+
+        if (
+          (payload.status === 'completed' || payload.status === 'failed') &&
+          (lastNotifiedTransferRef.current?.id !== payload.transferId ||
+            lastNotifiedTransferRef.current?.status !== payload.status)
+        ) {
+          lastNotifiedTransferRef.current = {
+            id: payload.transferId,
+            status: payload.status,
+          };
+
+          if (payload.status === 'completed') {
+            toaster.create({
+              title: 'Transfer Completed',
+              description: `Transferred ${formatFileSize(payload.transferred)}`,
+              type: 'success',
+            });
+          } else if (payload.status === 'failed') {
+            toaster.create({
+              title: 'Transfer Failed',
+              description: payload.message || 'An error occurred during file transfer.',
+              type: 'error',
+            });
+          }
+        }
+      }
     });
     return () => {
       unlisten.then((dispose) => dispose());
