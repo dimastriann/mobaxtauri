@@ -1,6 +1,6 @@
 mod credentials;
 mod health;
-pub mod known_hosts;
+mod known_hosts;
 mod persistence;
 mod recording;
 mod session_manager;
@@ -8,6 +8,7 @@ mod session_types;
 mod sftp_utils;
 mod ssh;
 mod transfers;
+mod vault_key;
 
 use crate::credentials::CredentialService;
 use crate::health::{collect_health, HealthSnapshot};
@@ -855,39 +856,6 @@ pub fn run() {
         .manage(TransferManager::default())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::new().build())
-        .plugin(
-            tauri_plugin_stronghold::Builder::new(|_pass| {
-                let mut key = [0u8; 32];
-                if _pass.is_empty() {
-                    let dummy = b"mobaxtauri_stronghold_secure_key";
-                    key.copy_from_slice(&dummy[..32]);
-                } else {
-                    use argon2::{Argon2, Params, Version};
-                    let salt = b"mobaxtaurisaltval"; // 17 bytes (min 8)
-                    let params = Params::new(
-                        Params::DEFAULT_M_COST,
-                        Params::DEFAULT_T_COST,
-                        Params::DEFAULT_P_COST,
-                        Some(32),
-                    )
-                    .unwrap();
-                    let argon_instance =
-                        Argon2::new(argon2::Algorithm::Argon2id, Version::default(), params);
-                    let mut hash = [0u8; 32];
-                    if argon_instance
-                        .hash_password_into(_pass.as_bytes(), salt, &mut hash)
-                        .is_ok()
-                    {
-                        key.copy_from_slice(&hash);
-                    } else {
-                        let dummy = b"mobaxtauri_stronghold_secure_key";
-                        key.copy_from_slice(&dummy[..32]);
-                    }
-                }
-                key.to_vec()
-            })
-            .build(),
-        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())

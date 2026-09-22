@@ -1,16 +1,18 @@
+use crate::vault_key::VaultKeyService;
 use iota_stronghold::Client;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_stronghold::stronghold::Stronghold;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as TokioMutex;
 
-const VAULT_FILE: &str = "mobaxtauri-v2.hold";
+const VAULT_FILE: &str = "mobaxtauri-v3.hold";
 const CLIENT_NAME: &[u8] = b"mobaxtauri_client";
-const APPLICATION_KEY: &[u8; 32] = b"mobaxtauri_stronghold_secure_key";
 
 #[derive(Default)]
 pub struct CredentialService {
-    vault: Mutex<Option<CredentialVault>>,
+    vault: TokioMutex<Option<CredentialVault>>,
+    /// Singleton service for managing the encryption key.
+    vault_key: VaultKeyService,
 }
 
 struct CredentialVault {
@@ -25,14 +27,18 @@ impl CredentialService {
             return Ok(());
         }
 
+        // Get the encryption key from the keychain (or generate and store it).
+        let key_bytes = self.vault_key.get_key(app_handle).await?;
+
         let path = vault_path(app_handle)?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|error| format!("Failed to create vault directory: {error}"))?;
+                .map_err(|error| format!("Failed to create app data directory: {error}"))?;
         }
 
         let loaded = tokio::task::spawn_blocking(move || {
-            let stronghold = Stronghold::new(path, APPLICATION_KEY.to_vec())
+            // Create a Stronghold instance using the key from the keychain.
+            let stronghold = Stronghold::new(path, key_bytes)
                 .map_err(|error| format!("Failed to open credential vault: {error}"))?;
             let client = match stronghold.load_client(CLIENT_NAME) {
                 Ok(client) => client,
@@ -113,16 +119,4 @@ fn vault_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
         .app_data_dir()
         .map(|directory| directory.join(VAULT_FILE))
         .map_err(|error| format!("Failed to resolve vault path: {error}"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{APPLICATION_KEY, CLIENT_NAME, VAULT_FILE};
-
-    #[test]
-    fn keeps_the_existing_v2_vault_identity() {
-        assert_eq!(VAULT_FILE, "mobaxtauri-v2.hold");
-        assert_eq!(CLIENT_NAME, b"mobaxtauri_client");
-        assert_eq!(APPLICATION_KEY.len(), 32);
-    }
 }
