@@ -311,12 +311,19 @@ async fn sftp_list_dir(
                     .map(|d| d.as_secs())
             });
 
+            let is_dir = metadata.is_dir();
+            let permissions_str =
+                crate::sftp_utils::format_permissions(metadata.permissions, is_dir);
+
             result.push(serde_json::json!({
                 "name": entry.file_name(),
-                "is_dir": metadata.is_dir(),
-                "is_file": !metadata.is_dir(),
+                "is_dir": is_dir,
+                "is_file": !is_dir,
                 "size": metadata.len(),
                 "modified": modified,
+                "uid": metadata.uid,
+                "gid": metadata.gid,
+                "permissions": permissions_str,
             }));
         }
         Ok(result)

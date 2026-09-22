@@ -8,7 +8,10 @@ export interface SftpFile {
   is_dir: boolean;
   is_file: boolean;
   size: number;
-  modified: number;
+  modified: number | null;
+  uid: number | null;
+  gid: number | null;
+  permissions: string;
 }
 
 interface SftpState {

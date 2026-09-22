@@ -33,7 +33,34 @@ import { useSftpStore } from '../store/useSftpStore';
 import { useSessionStore } from '../store/useSessionStore';
 import { SSH_SESSION_STATE_EVENT, type SshSessionStateEvent } from '../types/ssh';
 import { SFTP_TRANSFER_EVENT, type SftpTransferEvent } from '../types/sftp';
+import { type SftpFile } from '../store/useSftpStore';
 import SftpEditorModal from './SftpEditorModal';
+
+const formatMtime = (secs: number | null): string => {
+  if (!secs) return '';
+  const d = new Date(secs * 1000);
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const formatMetaDetails = (file: SftpFile): string => {
+  const parts: string[] = [];
+  if (file.permissions) parts.push(file.permissions);
+  if (file.uid !== null && file.uid !== undefined) {
+    parts.push(
+      file.gid !== null && file.gid !== undefined ? `${file.uid}:${file.gid}` : `${file.uid}`,
+    );
+  }
+  if (file.modified) {
+    parts.push(formatMtime(file.modified));
+  }
+  return parts.join('  ');
+};
 
 const SftpSidebar: React.FC = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
@@ -382,11 +409,10 @@ const SftpSidebar: React.FC = () => {
                     >
                       {file.name}
                     </Text>
-                    {!file.is_dir && (
-                      <Text fontSize="9px" color="fg.muted">
-                        {(file.size / 1024).toFixed(1)} KB
-                      </Text>
-                    )}
+                    <Text fontSize="9px" color="fg.muted" lineClamp={1}>
+                      {!file.is_dir ? `${(file.size / 1024).toFixed(1)} KB  ` : ''}
+                      {formatMetaDetails(file)}
+                    </Text>
                   </>
                 )}
               </VStack>
