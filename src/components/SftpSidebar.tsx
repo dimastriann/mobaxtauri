@@ -34,6 +34,7 @@ import { useSessionStore } from '../store/useSessionStore';
 import { SSH_SESSION_STATE_EVENT, type SshSessionStateEvent } from '../types/ssh';
 import { SFTP_TRANSFER_EVENT, type SftpTransferEvent } from '../types/sftp';
 import { type SftpFile } from '../store/useSftpStore';
+import { formatFileSize } from '../utils/formatFileSize';
 import SftpEditorModal from './SftpEditorModal';
 
 const formatMtime = (secs: number | null): string => {
@@ -311,8 +312,8 @@ const SftpSidebar: React.FC = () => {
         <Box px={2} py={2} borderBottom="1px solid" borderColor="border.subtle" bg="bg.muted">
           <HStack justify="space-between" mb={1}>
             <Text fontSize="10px" color="fg.muted">
-              Transferring {Math.round(transfer.transferred / 1024)} KB
-              {transfer.total ? ` / ${Math.round(transfer.total / 1024)} KB` : ''}
+              Transferring {formatFileSize(transfer.transferred)}
+              {transfer.total ? ` / ${formatFileSize(transfer.total)}` : ''}
             </Text>
             <Button size="xs" variant="ghost" onClick={() => void cancelTransfer()}>
               Cancel
@@ -410,7 +411,7 @@ const SftpSidebar: React.FC = () => {
                       {file.name}
                     </Text>
                     <Text fontSize="9px" color="fg.muted" lineClamp={1}>
-                      {!file.is_dir ? `${(file.size / 1024).toFixed(1)} KB  ` : ''}
+                      {!file.is_dir ? `${formatFileSize(file.size)}  ` : ''}
                       {formatMetaDetails(file)}
                     </Text>
                   </>
