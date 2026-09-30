@@ -310,13 +310,17 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     const savedFontFamily =
       localStorage.getItem('terminal-font-family') ||
       '"Cascadia Code", Menlo, "Courier New", monospace';
+    const savedScrollback = Math.min(
+      Math.max(parseInt(localStorage.getItem('terminal-scrollback') || '10000', 10), 1000),
+      200000,
+    );
     const term = new XTerm({
       cursorBlink: true,
       fontSize: savedFontSize,
       fontFamily: savedFontFamily,
       theme: isLight ? XTERM_THEME_LIGHT : XTERM_THEME_DARK,
       allowProposedApi: true,
-      scrollback: 10000,
+      scrollback: savedScrollback,
     });
 
     const fitAddon = new FitAddon();

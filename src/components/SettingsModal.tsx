@@ -381,6 +381,9 @@ const TerminalSettings: React.FC = () => {
       localStorage.getItem('terminal-font-family') ||
       '"Cascadia Code", Menlo, "Courier New", monospace',
   );
+  const [scrollback, setScrollback] = useState(
+    () => localStorage.getItem('terminal-scrollback') || '10000',
+  );
 
   const saveFontSize = (val: string) => {
     setFontSize(val);
@@ -390,6 +393,11 @@ const TerminalSettings: React.FC = () => {
   const saveFontFamily = (val: string) => {
     setFontFamily(val);
     localStorage.setItem('terminal-font-family', val);
+  };
+
+  const saveScrollback = (val: string) => {
+    setScrollback(val);
+    localStorage.setItem('terminal-scrollback', val);
   };
 
   return (
@@ -428,6 +436,27 @@ const TerminalSettings: React.FC = () => {
           variant="subtle"
           placeholder="e.g. Cascadia Code, monospace"
         />
+      </Box>
+      <Box>
+        <Text fontSize="13px" color="fg" mb={1}>
+          Scrollback Lines
+        </Text>
+        <HStack gap={2}>
+          <Input
+            size="sm"
+            w="80px"
+            type="number"
+            min={1000}
+            max={200000}
+            step={1000}
+            value={scrollback}
+            onChange={(e) => saveScrollback(e.target.value)}
+            variant="subtle"
+          />
+          <Text fontSize="12px" color="fg.muted">
+            lines
+          </Text>
+        </HStack>
       </Box>
       <Text fontSize="11px" color="fg.muted" fontStyle="italic">
         Changes apply to new terminal sessions. Restart the app to see changes.
