@@ -3,6 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -339,6 +340,12 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     } catch {
       // keep default renderer
     }
+
+    // Unicode 11 width rules keep wide chars/emoji and the cursor aligned
+    // in TUIs such as vim and htop.
+    const unicode11Addon = new Unicode11Addon();
+    term.loadAddon(unicode11Addon);
+    term.unicode.activeVersion = '11';
 
     term.onBell(() => {
       if (bellTimerRef.current) clearTimeout(bellTimerRef.current);
