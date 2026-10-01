@@ -4,8 +4,8 @@ This roadmap communicates direction rather than fixed deadlines. Priorities may 
 
 ## Now: safe public beta
 
-- [ ] Add known-hosts storage and explicit SSH host-key verification (`security`, `help wanted`)
-- [ ] Replace the application-managed vault key with a documented user/OS-backed unlock model (`security`)
+- [x] Add known-hosts storage and explicit SSH host-key verification (`security`, `help wanted`)
+- [x] Replace the application-managed vault key with a documented user/OS-backed unlock model (`security`)
 - [x] Add continuous-integration checks for pull requests
 - [ ] Normalize existing frontend and Rust formatting, then enforce formatting in CI (`testing`, `good first issue`)
 - [ ] Reduce the existing frontend lint-warning baseline (`frontend`, `good first issue`)

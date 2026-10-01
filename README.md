@@ -29,7 +29,7 @@ MobaXTauri is a lightweight, cross-platform desktop application for organizing S
 
 MobaXTauri is **early-beta software**. The main workflows are implemented, but it has not yet received broad platform, server, or security testing. It is suitable for evaluation and development; do not use it for production-sensitive systems yet.
 
-In particular, the current SSH client accepts server host keys without verifying them. Host-key verification is the highest-priority item on the [roadmap](ROADMAP.md).
+In particular, upgrading from a 0.3.x release prompts once for saved credentials: the credential vault moved from an application-managed key to a per-install key stored in the OS keychain (Windows Credential Manager, macOS Keychain, or Linux Secret Service), and the old vault file is not migrated automatically.
 
 ## Features
 
@@ -42,7 +42,7 @@ In particular, the current SSH client accepts server host keys without verifying
 | Productivity | Command snippets, command palette, configurable shortcuts, terminal search, and recording export |
 | Import and export | Application backup/restore, OpenSSH config import, and MobaXterm bookmark import |
 | Host information | Linux-focused OS detection and CPU, memory, swap, and disk health display |
-| Local security | Saved passwords are stored in a local Tauri Stronghold vault rather than the session store |
+| Security | SSH host-key verification with trust prompt (TOFU), and saved passwords stored in a local Stronghold vault keyed by a per-install OS keychain key |
 | Interface | Responsive dashboard, dark/light themes, and persistent background terminal views |
 
 ## Architecture
