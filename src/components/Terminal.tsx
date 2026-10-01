@@ -427,7 +427,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     };
 
     // ── Welcome banner ─────────────────────────────────────
-    term.writeln(`\x1b[38;5;81m● MobaxTauri\x1b[0m v0.3.1`);
+    term.writeln(`\x1b[38;5;81m● MobaxTauri\x1b[0m v0.4.0`);
     if (session?.type === 'ssh') {
       term.writeln(
         `  Session: \x1b[32m${session.name}\x1b[0m  → \x1b[36m${session.user}@${session.host}:${session.port || 22}\x1b[0m`,
