@@ -1,0 +1,13 @@
+# Normalize all text files to LF in the repository; working-tree checkout
+# behavior is left to each platform's git configuration (core.autocrlf).
+* text=auto eol=lf
+
+# Windows scripts must keep CRLF for batch interpreters.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets - never normalize.
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
