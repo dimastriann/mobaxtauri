@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, HStack, Text, Icon } from '@chakra-ui/react';
 
 interface ContextMenuProps {
@@ -8,12 +8,34 @@ interface ContextMenuProps {
   children: React.ReactNode;
 }
 
+// A fixed-position menu with no viewport awareness clips off the bottom
+// or right edge when opened near a window border. Render at the requested
+// anchor first, measure the actual size, then pull it inside the viewport.
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, children }) => {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x, y });
+
+  useEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+    const rect = menu.getBoundingClientRect();
+    const margin = 8;
+    let { x: nextX, y: nextY } = { x: +x.toFixed(0), y: +y.toFixed(0) };
+    if (nextX + rect.width > window.innerWidth - margin) {
+      nextX = Math.max(margin, window.innerWidth - rect.width - margin);
+    }
+    if (nextY + rect.height > window.innerHeight - margin) {
+      nextY = Math.max(margin, window.innerHeight - rect.height - margin);
+    }
+    setPosition({ x: nextX, y: nextY });
+  }, [x, y]);
+
   return (
     <Box
+      ref={menuRef}
       position="fixed"
-      top={y}
-      left={x}
+      top={position.y}
+      left={position.x}
       bg="bg.panel"
       border="1px solid"
       borderColor="border.subtle"
@@ -47,7 +69,7 @@ export const ContextMenuItem: React.FC<ContextMenuItemProps> = ({
       px={3}
       py={2}
       cursor="pointer"
-      _hover={{ bg: 'whiteAlpha.50' }}
+      _hover={{ bg: 'bg.emphasized' }}
       onClick={(e) => {
         e.stopPropagation();
         onClick();

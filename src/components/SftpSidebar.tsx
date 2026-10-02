@@ -36,6 +36,7 @@ import { SFTP_TRANSFER_EVENT, type SftpTransferEvent } from '../types/sftp';
 import { type SftpFile } from '../store/useSftpStore';
 import { formatFileSize } from '../utils/formatFileSize';
 import { toaster } from './ui/toaster';
+import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './ContextMenu';
 import SftpEditorModal from './SftpEditorModal';
 
 const formatMtime = (secs: number | null): string => {
@@ -277,7 +278,7 @@ const SftpSidebar: React.FC = () => {
   };
 
   return (
-    <VStack align="stretch" h="full" gap={0}>
+    <VStack align="stretch" h="full" minH={0} overflow="hidden" gap={0}>
       {/* SFTP Toolbar */}
       <HStack
         p={2}
@@ -372,10 +373,11 @@ const SftpSidebar: React.FC = () => {
       <VStack
         align="stretch"
         flex={1}
+        minH={0}
         overflowY="auto"
         gap={0}
         px={1}
-        pb={4}
+        pb={2}
         className="custom-scrollbar"
       >
         {isLoading && files.length === 0 ? (
@@ -457,27 +459,13 @@ const SftpSidebar: React.FC = () => {
       </VStack>
 
       {contextMenu && (
-        <Box
-          position="fixed"
-          left={contextMenu.x}
-          top={contextMenu.y}
-          bg="bg.panel"
-          border="1px solid"
-          borderColor="border.subtle"
-          borderRadius="md"
-          boxShadow="2xl"
-          zIndex={1000}
-          py={1}
-          minW="140px"
-        >
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
           <VStack align="stretch" gap={0}>
             {!contextMenu.file.is_dir && (
-              <HStack
-                px={3}
-                py={2}
-                cursor="pointer"
-                transition="background 0.1s"
-                _hover={{ bg: 'bg.emphasized' }}
+              <ContextMenuItem
+                icon={LuCode}
+                color="blue.fg"
+                label="Edit File"
                 onClick={() => {
                   const path = currentPath.endsWith('/')
                     ? `${currentPath}${contextMenu.file.name}`
@@ -485,118 +473,66 @@ const SftpSidebar: React.FC = () => {
                   setEditorFile({ path, name: contextMenu.file.name });
                   setContextMenu(null);
                 }}
-              >
-                <Icon as={LuCode} boxSize="14px" color="blue.fg" />
-                <Text fontSize="12px" color="fg">
-                  Edit File
-                </Text>
-              </HStack>
+              />
             )}
-            <HStack
-              px={3}
-              py={2}
-              cursor="pointer"
-              transition="background 0.1s"
-              _hover={{ bg: 'bg.emphasized' }}
+            <ContextMenuItem
+              icon={LuFolderPlus}
+              color="blue.fg"
+              label="New Folder"
               onClick={() => {
                 setContextMenu(null);
                 handleCreateFolder();
               }}
-            >
-              <Icon as={LuFolderPlus} boxSize="14px" color="blue.fg" />
-              <Text fontSize="12px" color="fg">
-                New Folder
-              </Text>
-            </HStack>
-            <HStack
-              px={3}
-              py={2}
-              cursor="pointer"
-              transition="background 0.1s"
-              _hover={{ bg: 'bg.emphasized' }}
+            />
+            <ContextMenuItem
+              icon={LuExternalLink}
+              label="Open File"
               onClick={() => {
                 const name = contextMenu.file.name;
                 setContextMenu(null);
                 openFile(activeSessionId, name);
               }}
-            >
-              <Icon as={LuExternalLink} boxSize="14px" color="fg.subtle" />
-              <Text fontSize="12px" color="fg">
-                Open File
-              </Text>
-            </HStack>
-            <HStack
-              px={3}
-              py={2}
-              cursor="pointer"
-              transition="background 0.1s"
-              _hover={{ bg: 'bg.emphasized' }}
+            />
+            <ContextMenuItem
+              icon={LuDownload}
+              label="Download"
               onClick={() => {
                 const name = contextMenu.file.name;
                 setContextMenu(null);
                 downloadFile(activeSessionId, name);
               }}
-            >
-              <Icon as={LuDownload} boxSize="14px" color="fg.subtle" />
-              <Text fontSize="12px" color="fg">
-                Download
-              </Text>
-            </HStack>
-            <HStack
-              px={3}
-              py={2}
-              cursor="pointer"
-              transition="background 0.1s"
-              _hover={{ bg: 'bg.emphasized' }}
+            />
+            <ContextMenuItem
+              icon={LuCopy}
+              label="Duplicate"
               onClick={() => {
                 const name = contextMenu.file.name;
                 setContextMenu(null);
                 copyFile(activeSessionId, name, `copy_${name}`);
               }}
-            >
-              <Icon as={LuCopy} boxSize="14px" color="fg.subtle" />
-              <Text fontSize="12px" color="fg">
-                Duplicate
-              </Text>
-            </HStack>
-            <Box h="1px" bg="border.subtle" my={1} />
-            <HStack
-              px={3}
-              py={2}
-              cursor="pointer"
-              transition="background 0.1s"
-              _hover={{ bg: 'bg.emphasized' }}
+            />
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              icon={LuPencil}
+              label="Rename"
               onClick={() => {
                 setRenamingFile(contextMenu.file.name);
                 setRenameValue(contextMenu.file.name);
                 setContextMenu(null);
               }}
-            >
-              <Icon as={LuPencil} boxSize="14px" color="fg.subtle" />
-              <Text fontSize="12px" color="fg">
-                Rename
-              </Text>
-            </HStack>
-            <HStack
-              px={3}
-              py={2}
-              cursor="pointer"
-              transition="background 0.1s"
-              _hover={{ bg: 'bg.emphasized' }}
-              onClick={(e) => {
-                e.stopPropagation();
+            />
+            <ContextMenuItem
+              icon={LuTrash2}
+              color="red.fg"
+              label="Delete"
+              onClick={() => {
                 const file = contextMenu.file;
                 setContextMenu(null);
                 handleDelete(file);
               }}
-            >
-              <Icon as={LuTrash2} boxSize="14px" color="red.fg" />
-              <Text fontSize="12px" color="red.fg">
-                Delete
-              </Text>
-            </HStack>
+            />
           </VStack>
-        </Box>
+        </ContextMenu>
       )}
 
       <SftpEditorModal
