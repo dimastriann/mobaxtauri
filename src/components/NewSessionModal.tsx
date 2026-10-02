@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { getSshConnectionTimeoutSeconds, type SshConnectRequest } from '../types/ssh';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Stack, Input, Button, HStack, Text } from '@chakra-ui/react';
 import { Session, useSessionStore } from '../store/useSessionStore';
@@ -42,7 +40,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const folders = useSessionStore((state) => state.folders);
   const addSession = useSessionStore((state) => state.addSession);
   const updateSession = useSessionStore((state) => state.updateSession);
-  const updateStatus = useSessionStore((state) => state.updateSessionStatus);
 
   useEffect(() => {
     setSaveError(null);
@@ -138,39 +135,17 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       tag,
       privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
       savePassword: shouldSavePassword,
+      // Memory-only when the user declined vault saving (persisted stores
+      // strip the password field); lets the terminal's own connect use it.
+      password: shouldSavePassword ? undefined : password || undefined,
     });
 
-    try {
-      await invoke('ssh_connect', {
-        request: {
-          sessionId,
-          host,
-          port,
-          user,
-          password: password || null,
-          privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : null,
-          useSavedCredential: false,
-          connectionTimeoutSecs: getSshConnectionTimeoutSeconds(),
-        } satisfies SshConnectRequest,
-      });
-      updateStatus(sessionId, 'connected');
-
-      // Detect OS
-      try {
-        const detectedOs = await invoke<string>('ssh_detect_os', { sessionId });
-        useSessionStore.getState().updateSession(sessionId, { os: detectedOs });
-      } catch (osErr) {
-        console.warn('OS detection failed:', osErr);
-      }
-
-      onClose();
-    } catch (err) {
-      console.error('SSH Connection failed:', err);
-      updateStatus(sessionId, 'error', String(err));
-      onClose();
-    } finally {
-      setIsConnecting(false);
-    }
+    // The terminal tab owns the connect attempt: it registers its IPC
+    // listeners before dialing, so host-key prompts and auth failures are
+    // never raced by this modal's own direct ssh_connect (which used to
+    // double-connect and lose first-connect host-key prompts).
+    setIsConnecting(false);
+    onClose();
   };
 
   return (
