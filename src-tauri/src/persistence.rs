@@ -99,22 +99,18 @@ fn write_document_atomically(path: &Path, document: &AppDataDocument) -> Result<
     std::fs::write(&temporary, content)
         .map_err(|error| format!("Failed to write temporary app data: {error}"))?;
 
-    if path.exists() {
-        std::fs::copy(path, &backup)
-            .map_err(|error| format!("Failed to back up app data: {error}"))?;
-        std::fs::remove_file(path)
-            .map_err(|error| format!("Failed to replace app data: {error}"))?;
-    }
-
+    // std::fs::rename replaces an existing destination on every platform
+    // (Windows uses MoveFileEx with MOVEFILE_REPLACE_EXISTING), so the
+    // old copy-backup/remove dance is unnecessary. The old file remains
+    // intact if the write or rename fails midway.
     if let Err(error) = std::fs::rename(&temporary, path) {
-        if backup.exists() && !path.exists() {
-            let _ = std::fs::rename(&backup, path);
-        }
+        let _ = std::fs::remove_file(&temporary);
         return Err(format!("Failed to commit app data: {error}"));
     }
 
+    // Leftovers from writes made by older versions using a .backup file.
     if backup.exists() {
-        let _ = std::fs::remove_file(backup);
+        let _ = std::fs::remove_file(&backup);
     }
     Ok(())
 }
