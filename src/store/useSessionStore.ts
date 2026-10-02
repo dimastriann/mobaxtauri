@@ -93,6 +93,8 @@ interface SessionState {
   // Persistence
   loadSessions: () => Promise<void>;
   saveToDisk: () => Promise<void>;
+  scheduleSave: () => void;
+  flushPendingSave: () => Promise<void>;
 
   // Snippet Management
   snippets: Snippet[];
@@ -145,14 +147,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       openTabs: [...state.openTabs, session.id],
       activeSessionId: session.id,
     }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   updateSession: (id, updates) => {
     set((state) => ({
       sessions: state.sessions.map((s) => (s.id === id ? { ...s, ...updates } : s)),
     }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   deleteSession: (id) => {
@@ -180,7 +182,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         }),
       };
     });
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   updateSessionStatus: (id, status, error) =>
@@ -282,14 +284,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((state) => ({
       folders: [...state.folders, { id, name, isCollapsed: false }],
     }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   renameFolder: (id, name) => {
     set((state) => ({
       folders: state.folders.map((f) => (f.id === id ? { ...f, name } : f)),
     }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   deleteFolder: (id) => {
@@ -297,21 +299,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       folders: state.folders.filter((f) => f.id !== id),
       sessions: state.sessions.map((s) => (s.folderId === id ? { ...s, folderId: null } : s)),
     }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   toggleFolderCollapse: (id) => {
     set((state) => ({
       folders: state.folders.map((f) => (f.id === id ? { ...f, isCollapsed: !f.isCollapsed } : f)),
     }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   moveSessionToFolder: (sessionId, folderId) => {
     set((state) => ({
       sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, folderId } : s)),
     }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   closeTab: (id) => {
@@ -374,19 +376,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   addSnippet: (name, command) => {
     const id = `snippet-${Date.now()}`;
     set((state) => ({ snippets: [...state.snippets, { id, name, command }] }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   updateSnippet: (id, updates) => {
     set((state) => ({
       snippets: state.snippets.map((s) => (s.id === id ? { ...s, ...updates } : s)),
     }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   deleteSnippet: (id) => {
     set((state) => ({ snippets: state.snippets.filter((s) => s.id !== id) }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   addWorkspace: (name) => {
@@ -395,12 +397,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((state) => ({
       workspaces: [...state.workspaces, { id, name, sessionIds: [...openTabs], activeSessionId }],
     }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   deleteWorkspace: (id) => {
     set((state) => ({ workspaces: state.workspaces.filter((workspace) => workspace.id !== id) }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   restoreWorkspace: (id) => {
@@ -430,12 +432,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       message,
     };
     set((state) => ({ connectionHistory: [entry, ...state.connectionHistory].slice(0, 200) }));
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   clearConnectionHistory: () => {
     set({ connectionHistory: [] });
-    get().saveToDisk();
+    get().scheduleSave();
   },
 
   loadSessions: async () => {
@@ -549,4 +551,40 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       console.error('[STORE] Failed to save sessions:', err);
     }
   },
+
+  // Coalesce rapid mutations into one disk write. Every folder/tag/rename
+  // edit used to enqueue its own full-document save; the backend write path
+  // is serialized, so bursts made the last save wait in line.
+  scheduleSave: () => {
+    if (saveTimer !== null) return;
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      void get().saveToDisk();
+    }, SAVE_DEBOUNCE_MS);
+  },
+
+  // Force a pending debounced write to run now (used before the app hides).
+  flushPendingSave: async () => {
+    if (saveTimer === null) {
+      await get().saveToDisk();
+      return;
+    }
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    await get().saveToDisk();
+  },
 }));
+
+const SAVE_DEBOUNCE_MS = 300;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Persist any pending debounced write when the webview loses forward
+// visibility (window close, minimize, focus loss), so the last edits are
+// never lost because a 300 ms timer never fired.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      void useSessionStore.getState().flushPendingSave();
+    }
+  });
+}
