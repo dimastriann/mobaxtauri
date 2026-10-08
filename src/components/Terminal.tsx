@@ -236,6 +236,12 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           promptPassword();
           return;
         }
+        if (errMsg.includes('Password authentication was rejected')) {
+          // Wrong credential is the movable part here: let the user retype
+          // instead of forcing a reconnect cycle.
+          promptPassword();
+          return;
+        }
         if (errMsg.includes('KEY PASSPHRASE REQUIRED')) {
           promptPassphrase(null);
           return;

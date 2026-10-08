@@ -146,6 +146,7 @@ mod tests {
             user: "operator".into(),
             password: None,
             private_key_path: None,
+            key_passphrase: None,
             use_saved_credential: false,
             connection_timeout_secs: timeout,
         }

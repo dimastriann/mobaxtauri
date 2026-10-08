@@ -227,8 +227,12 @@ impl SshSession {
         log::info!("TCP connected. Authenticating...");
 
         let mut authenticated = false;
+        // Capture what will be attempted before the values are moved into
+        // the authentication calls; the failure message names them.
+        let key_attempted = private_key_path.is_some();
+        let password_attempted = password.is_some();
 
-        if let Some(key_path) = private_key_path {
+        if let Some(key_path) = private_key_path.as_ref() {
             log::info!("Attempting public key authentication with {}", key_path);
             // A key that cannot be read, parsed, or decrypted is a
             // configuration problem: fail explicitly rather than silently
@@ -258,9 +262,9 @@ impl SshSession {
         }
 
         if !authenticated {
-            if let Some(pwd) = password {
+            if let Some(pwd) = password.as_deref() {
                 log::info!("Attempting password authentication...");
-                let auth_res = session.authenticate_password(user, pwd).await?;
+                let auth_res = session.authenticate_password(user.clone(), pwd).await?;
                 log::info!("Password auth result: {:?}", auth_res);
                 if let AuthResult::Success = auth_res {
                     authenticated = true;
@@ -269,7 +273,9 @@ impl SshSession {
         }
 
         if !authenticated {
-            return Err("Authentication failed".into());
+            return Err(
+                describe_auth_failure(key_attempted, password_attempted, &user, &host).into(),
+            );
         }
 
         log::info!("Opening channel...");
@@ -295,6 +301,37 @@ impl SshSession {
         log::info!("SFTP session initialized.");
 
         Ok((session, channel_id, channel, sftp))
+    }
+}
+
+/// Builds the final authentication failure message, distinguishing what
+/// was actually attempted. "Password" in the wording is load-bearing: the
+/// terminal uses it to decide whether a password re-prompt can help.
+/// Pre-authentication transport errors (DNS refused, handshake aborted,
+/// server closed the TCP stream) already surface as distinct russh errors
+/// and are not handled here.
+fn describe_auth_failure(
+    key_attempted: bool,
+    password_attempted: bool,
+    user: &str,
+    host: &str,
+) -> String {
+    let target = format!("{user}@{host}");
+    match (key_attempted, password_attempted) {
+        (true, true) => {
+            format!(
+                "Public key and password authentication were rejected by {target}; check the key and password configured for this session"
+            )
+        }
+        (true, false) => format!(
+            "Public key authentication was rejected by {target}; the server did not accept this key file"
+        ),
+        (false, true) => format!(
+            "Password authentication was rejected by {target}; the username or password may be wrong"
+        ),
+        (false, false) => format!(
+            "No credential was available when connecting to {target}; configure a password, save one in the vault, or select a private key"
+        ),
     }
 }
 
@@ -365,7 +402,9 @@ fn complete_utf8_len(data: &[u8]) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{complete_utf8_len, decode_private_key, KEY_PASSPHRASE_REQUIRED};
+    use super::{
+        complete_utf8_len, decode_private_key, describe_auth_failure, KEY_PASSPHRASE_REQUIRED,
+    };
 
     const FIXTURE_PASSPHRASE: &str = "mobaxtauri-test-passphrase";
 
@@ -430,6 +469,34 @@ mod tests {
             error.contains("unsupported format"),
             "unexpected error text: {error}"
         );
+    }
+
+    #[test]
+    fn auth_failure_names_what_was_attempted() {
+        let message = describe_auth_failure(false, true, "ops", "prod.example.com");
+        assert!(message.starts_with("Password authentication"), "{message}");
+        assert!(message.contains("ops@prod.example.com"), "{message}");
+    }
+
+    #[test]
+    fn auth_failure_combines_key_and_password() {
+        let message = describe_auth_failure(true, true, "ops", "host");
+        assert!(message.starts_with("Public key and password"), "{message}");
+    }
+
+    #[test]
+    fn auth_failure_key_only_does_not_offer_password_prompt() {
+        let message = describe_auth_failure(true, false, "ops", "host");
+        assert!(
+            message.starts_with("Public key authentication"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn auth_failure_without_credentials_is_a_configuration_error() {
+        let message = describe_auth_failure(false, false, "ops", "host");
+        assert!(message.contains("No credential was available"), "{message}");
     }
 
     #[test]
