@@ -148,6 +148,35 @@ impl Handler for ClientHandler {
 
 pub struct SshSession;
 
+/// Error marker the frontend matches to enter passphrase prompting. It is
+/// followed by nothing the client depends on; the connect flow surfaces it
+/// verbatim as part of the failure message.
+pub const KEY_PASSPHRASE_REQUIRED: &str = "KEY PASSPHRASE REQUIRED";
+
+/// Parses and decrypts an OpenSSH private key, failing with distinct,
+/// user-actionable errors instead of the auth-failure fallthrough:
+///
+/// - Encrypted key without a passphrase → `KEY PASSPHRASE REQUIRED`
+/// - Wrong passphrase / malformed ciphertext → explicit decrypt error
+/// - Unparseable PEM → explicit invalid-key error
+///
+/// Vendored ssh-key 0.6.16 semantics (verified from source): encrypted
+/// keys parse *successfully* into `KeypairData::Encrypted`, so the only
+/// reliable detection is `is_encrypted()`.
+fn decode_private_key(key_data: &str, passphrase: Option<&str>) -> Result<PrivateKey, String> {
+    let key = PrivateKey::from_openssh(key_data)
+        .map_err(|error| format!("Private key is invalid or in an unsupported format: {error}"))?;
+    if !key.is_encrypted() {
+        return Ok(key);
+    }
+    match passphrase {
+        Some(passphrase) => key.decrypt(passphrase).map_err(|error| {
+            format!("Private key passphrase is incorrect or decryption failed: {error}")
+        }),
+        None => Err(KEY_PASSPHRASE_REQUIRED.to_string()),
+    }
+}
+
 impl SshSession {
     // Roadmap tracks the too_many_arguments baseline; a params struct is a
     // planned follow-up.
@@ -200,22 +229,30 @@ impl SshSession {
 
         if let Some(key_path) = private_key_path {
             log::info!("Attempting public key authentication with {}", key_path);
+            // A key that cannot be read, parsed, or decrypted is a
+            // configuration problem: fail explicitly rather than silently
+            // retrying as password auth and reporting "Authentication
+            // failed" for what is really an unusable key.
             match std::fs::read_to_string(&key_path) {
-                Ok(key_data) => match PrivateKey::from_openssh(&key_data) {
+                Ok(key_data) => match decode_private_key(&key_data, None) {
                     Ok(key) => {
                         let key_arc = std::sync::Arc::new(key);
                         let key_alg = PrivateKeyWithHashAlg::new(key_arc, None);
-                        let auth_res = session
+                        match session
                             .authenticate_publickey(user.clone(), key_alg)
-                            .await?;
-                        log::info!("Public key auth result: {:?}", auth_res);
-                        if let AuthResult::Success = auth_res {
-                            authenticated = true;
+                            .await?
+                        {
+                            AuthResult::Success => authenticated = true,
+                            other => {
+                                log::info!("Public key auth rejected: {other:?}");
+                            }
                         }
                     }
-                    Err(e) => log::error!("Failed to parse private key: {}", e),
+                    Err(error) => return Err(error.into()),
                 },
-                Err(e) => log::error!("Failed to read private key file: {}", e),
+                Err(error) => {
+                    return Err(format!("Private key cannot be read: {key_path}: {error}").into())
+                }
             }
         }
 
@@ -327,7 +364,72 @@ fn complete_utf8_len(data: &[u8]) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::complete_utf8_len;
+    use super::{complete_utf8_len, decode_private_key, KEY_PASSPHRASE_REQUIRED};
+
+    const FIXTURE_PASSPHRASE: &str = "mobaxtauri-test-passphrase";
+
+    fn fixture(name: &str) -> String {
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src")
+                .join("test_fixtures")
+                .join(name),
+        )
+        .expect("test fixture must be readable")
+    }
+
+    // Real throwaway RSA-less ed25519 keys generated at authoring time with
+    // ssh-keygen; safe to commit, passphrase is documented above.
+    #[test]
+    fn encrypted_key_without_passphrase_asks_for_one() {
+        let key_data = fixture("encrypted_test_key");
+        let error = decode_private_key(&key_data, None).unwrap_err();
+        assert_eq!(error, KEY_PASSPHRASE_REQUIRED);
+    }
+
+    #[test]
+    fn encrypted_key_decrypts_with_correct_passphrase() {
+        let key_data = fixture("encrypted_test_key");
+        let key = decode_private_key(&key_data, Some(FIXTURE_PASSPHRASE)).expect("must decrypt");
+        assert!(!key.is_encrypted());
+        assert_eq!(key.algorithm(), russh::keys::ssh_key::Algorithm::Ed25519);
+    }
+
+    #[test]
+    fn encrypted_key_rejects_wrong_passphrase() {
+        let key_data = fixture("encrypted_test_key");
+        let error = decode_private_key(&key_data, Some("definitely-wrong")).unwrap_err();
+        assert!(
+            error.contains("passphrase is incorrect"),
+            "unexpected error text: {error}"
+        );
+    }
+
+    #[test]
+    fn plaintext_key_needs_no_passphrase() {
+        let key_data = fixture("plain_test_key");
+        let key = decode_private_key(&key_data, None).expect("plaintext key must parse");
+        assert!(!key.is_encrypted());
+        assert_eq!(key.algorithm(), russh::keys::ssh_key::Algorithm::Ed25519);
+    }
+
+    #[test]
+    fn plaintext_key_passphrase_is_harmless() {
+        // An unencrypted key must not lose usability when a (stale)
+        // passphrase happens to be provided.
+        let key_data = fixture("plain_test_key");
+        let key = decode_private_key(&key_data, Some("unused-passphrase")).expect("must parse");
+        assert!(!key.is_encrypted());
+    }
+
+    #[test]
+    fn malformed_key_data_errors_explicitly() {
+        let error = decode_private_key("not-a-pem", None).unwrap_err();
+        assert!(
+            error.contains("unsupported format"),
+            "unexpected error text: {error}"
+        );
+    }
 
     #[test]
     fn keeps_ascii_whole() {
