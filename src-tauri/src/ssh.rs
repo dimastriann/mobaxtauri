@@ -189,6 +189,7 @@ impl SshSession {
         user: String,
         password: Option<String>,
         private_key_path: Option<String>,
+        key_passphrase: Option<String>,
         known_hosts: Arc<KnownHostsService>,
     ) -> Result<
         (
@@ -234,7 +235,7 @@ impl SshSession {
             // retrying as password auth and reporting "Authentication
             // failed" for what is really an unusable key.
             match std::fs::read_to_string(&key_path) {
-                Ok(key_data) => match decode_private_key(&key_data, None) {
+                Ok(key_data) => match decode_private_key(&key_data, key_passphrase.as_deref()) {
                     Ok(key) => {
                         let key_arc = std::sync::Arc::new(key);
                         let key_alg = PrivateKeyWithHashAlg::new(key_arc, None);

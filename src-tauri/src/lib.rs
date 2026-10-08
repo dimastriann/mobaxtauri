@@ -127,6 +127,7 @@ async fn ssh_connect(
         user,
         password,
         private_key_path,
+        key_passphrase,
         use_saved_credential,
         connection_timeout_secs: _,
     } = request;
@@ -166,6 +167,7 @@ async fn ssh_connect(
         user,
         password,
         private_key_path,
+        key_passphrase,
         Arc::new(known_hosts.inner().clone()),
     );
 

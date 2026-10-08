@@ -24,6 +24,8 @@ pub struct SshConnectRequest {
     pub password: Option<String>,
     pub private_key_path: Option<String>,
     #[serde(default)]
+    pub key_passphrase: Option<String>,
+    #[serde(default)]
     pub use_saved_credential: bool,
     #[serde(default = "default_connection_timeout_secs")]
     pub connection_timeout_secs: u64,

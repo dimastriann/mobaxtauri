@@ -19,6 +19,7 @@ export interface SshConnectRequest {
   user: string;
   password: string | null;
   privateKeyPath: string | null;
+  keyPassphrase?: string | null;
   useSavedCredential: boolean;
   connectionTimeoutSecs: number;
 }

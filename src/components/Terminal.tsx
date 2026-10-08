@@ -93,6 +93,11 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const lastActivityUpdateRef = useRef(0);
   const isPasswordModeRef = useRef(false);
   const passwordBufRef = useRef('');
+  // Passphrase mode reuses the masked-intake machinery but submits into
+  // the private-key passphrase prompt for the next connect attempt.
+  const isPassphraseModeRef = useRef(false);
+  const passphraseBufRef = useRef('');
+  const passphraseRetryRef = useRef(0);
   const bellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocusedRef = useRef(isFocused);
   const wasOfflineRef = useRef(!navigator.onLine);
@@ -160,9 +165,23 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     [sessionId],
   );
 
+  // ── Private-key passphrase prompt inside terminal ────────────
+  // Reuses the masked-intake machinery of the password prompt: keystrokes
+  // stay in refs, backend only ever receives the final attempt payload.
+  const promptPassphrase = useCallback((hint: string | null) => {
+    const term = xtermRef.current;
+    if (!term) return;
+    isPassphraseModeRef.current = true;
+    passphraseBufRef.current = '';
+    if (hint) {
+      term.write(`\x1b[33m${hint}\x1b[0m\r\n`);
+    }
+    term.write('\x1b[33mPrivate key passphrase: \x1b[0m');
+  }, []);
+
   // ── Reconnect logic ────────────────────────────────────────
   const doConnect = useCallback(
-    async (password?: string) => {
+    async (password?: string, keyPassphrase?: string) => {
       if (connectionAttemptRef.current) return;
       const session = getSession();
       if (!session || session.type !== 'ssh') return;
@@ -188,6 +207,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
             user,
             password: password ?? session.password ?? null,
             privateKeyPath: session.privateKeyPath ?? null,
+            keyPassphrase: keyPassphrase ?? null,
             useSavedCredential: Boolean(session.savePassword && !password && !session.password),
             connectionTimeoutSecs: getSshConnectionTimeoutSeconds(),
           } satisfies SshConnectRequest,
@@ -195,6 +215,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         updateStatus('connected');
         useSessionStore.getState().recordConnection(sessionId, 'connected');
         isDisconnectedRef.current = false;
+        passphraseRetryRef.current = 0;
         term.writeln(`\x1b[32m✔ Connected.\x1b[0m\r\n`);
 
         // Detect OS if not already set
@@ -213,6 +234,22 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         term.writeln(`\x1b[31m✘ Connection failed: ${errMsg}\x1b[0m`);
         if (errMsg.includes('Saved credential is unavailable')) {
           promptPassword();
+          return;
+        }
+        if (errMsg.includes('KEY PASSPHRASE REQUIRED')) {
+          promptPassphrase(null);
+          return;
+        }
+        if (errMsg.includes('passphrase is incorrect')) {
+          if (++passphraseRetryRef.current >= 3) {
+            term.writeln(
+              `\x1b[33mPassphrase attempted ${passphraseRetryRef.current} times. Review the key file outside this app if it still fails.\x1b[0m`,
+            );
+            passphraseRetryRef.current = 0;
+            showReconnectBanner(term);
+            return;
+          }
+          promptPassphrase('The key passphrase was rejected. Try again or Ctrl+C to cancel.');
           return;
         }
         showReconnectBanner(term);
@@ -488,6 +525,33 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
     // ── Terminal input handler ──────────────────────────────
     term.onData((data) => {
+      // Passphrase mode: masked intake like password mode, submitted to
+      // the private-key passphrase retry path.
+      if (isPassphraseModeRef.current) {
+        if (data === '\r' || data === '\n') {
+          term.writeln('');
+          isPassphraseModeRef.current = false;
+          const passphrase = passphraseBufRef.current;
+          passphraseBufRef.current = '';
+          doConnect(undefined, passphrase);
+        } else if (data === '\x7f' || data === '\b') {
+          if (passphraseBufRef.current.length > 0) {
+            passphraseBufRef.current = passphraseBufRef.current.slice(0, -1);
+            term.write('\b \b');
+          }
+        } else if (data === '\x03') {
+          // Ctrl+C: cancel prompting, return to the reconnect state
+          term.writeln('\r\n\x1b[90mCancelled.\x1b[0m');
+          isPassphraseModeRef.current = false;
+          passphraseBufRef.current = '';
+          showReconnectBanner(term);
+        } else {
+          passphraseBufRef.current += data;
+          term.write('*');
+        }
+        return;
+      }
+
       // Password mode: capture locally, don't send to backend
       if (isPasswordModeRef.current) {
         if (data === '\r' || data === '\n') {
