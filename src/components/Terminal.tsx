@@ -21,6 +21,7 @@ import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
 import '@xterm/xterm/css/xterm.css';
+import { appendPendingOutput } from '../utils/terminalOutput';
 
 // ── XTerm colour themes ────────────────────────────────────────
 const XTERM_THEME_LIGHT: XTerm['options']['theme'] = {
@@ -422,6 +423,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     const session = getSession();
     let disposed = false;
     let pendingOutput: string[] = [];
+    let pendingOutputChars = 0;
     let outputWriteInProgress = false;
     let outputFrame: number | null = null;
     let inputChain: Promise<void> = Promise.resolve();
@@ -432,6 +434,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
       const output = pendingOutput.join('');
       pendingOutput = [];
+      pendingOutputChars = 0;
       outputWriteInProgress = true;
       term.write(output, () => {
         outputWriteInProgress = false;
@@ -442,7 +445,13 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     };
 
     const queueOutput = (data: string) => {
-      pendingOutput.push(data);
+      // Render-pace the backlog: an unbounded array under a sustained
+      // multi-MB burst grew until GC froze the tab. Bounding it replaces
+      // old queued bytes with a drop notice — the same trade scrollback
+      // already makes.
+      const bounded = appendPendingOutput(pendingOutput, pendingOutputChars, data);
+      pendingOutput = bounded.items;
+      pendingOutputChars = bounded.totalChars;
       if (!outputWriteInProgress && outputFrame === null) {
         outputFrame = requestAnimationFrame(flushOutput);
       }
@@ -648,6 +657,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       disposed = true;
       if (outputFrame !== null) cancelAnimationFrame(outputFrame);
       pendingOutput = [];
+      pendingOutputChars = 0;
       window.removeEventListener('resize', handleResize);
       unlistenSnippet.then((fn) => fn());
       unlistenDataRef.current?.();
