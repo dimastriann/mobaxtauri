@@ -347,9 +347,7 @@ fn spawn_terminal_output(
         // decoded as U+FFFD replacement characters.
         let mut pending: Vec<u8> = Vec::new();
         while let Some(first) = receiver.recv().await {
-            let mut batch = std::mem::take(&mut pending);
-            batch.extend_from_slice(&first);
-            drain_receiver(&mut receiver, &mut batch);
+            let mut batch = take_batch(first, &mut receiver, &mut pending);
 
             if batch.len() >= TERMINAL_OUTPUT_COALESCE_BYTES {
                 tokio::time::sleep(TERMINAL_OUTPUT_COALESCE_DELAY).await;
@@ -369,6 +367,21 @@ fn spawn_terminal_output(
             let _ = app_handle.emit(&event_name, payload);
         }
     });
+}
+
+/// Joins a freshly received chunk with carried bytes plus whatever is
+/// already waiting in the channel, up to the batch cap. The extra-coalesce
+/// stay-awake round lives in `spawn_terminal_output`, so this seam stays
+/// synchronous and mock-testable.
+fn take_batch(
+    first: Vec<u8>,
+    receiver: &mut mpsc::UnboundedReceiver<Vec<u8>>,
+    carry: &mut Vec<u8>,
+) -> Vec<u8> {
+    let mut batch = std::mem::take(carry);
+    batch.extend_from_slice(&first);
+    drain_receiver(receiver, &mut batch);
+    batch
 }
 
 fn drain_receiver(receiver: &mut mpsc::UnboundedReceiver<Vec<u8>>, batch: &mut Vec<u8>) {
@@ -497,6 +510,85 @@ mod tests {
     fn auth_failure_without_credentials_is_a_configuration_error() {
         let message = describe_auth_failure(false, false, "ops", "host");
         assert!(message.contains("No credential was available"), "{message}");
+    }
+
+    // ── Output-pipeline stress (mocked bursts) ─────────────────────
+    use super::{drain_receiver, take_batch};
+    use tokio::sync::mpsc::unbounded_channel;
+
+    /// Synchronous mock of `spawn_terminal_output` semantics: drain to the
+    /// cap, split at UTF-8 safety boundaries, carry incomplete tails. The
+    /// 4ms extra coalesce round only changes how much is drained per
+    /// iteration, never what is decoded, so it is omitted here.
+    fn run_pipeline_mock(chunks: Vec<Vec<u8>>) -> Vec<u8> {
+        let (sender, mut receiver) = unbounded_channel();
+        for chunk in chunks {
+            sender.send(chunk).expect("mock channel open");
+        }
+        drop(sender);
+
+        let mut pending: Vec<u8> = Vec::new();
+        let mut emitted: Vec<u8> = Vec::new();
+        while let Ok(first) = receiver.try_recv() {
+            let mut batch = take_batch(first, &mut receiver, &mut pending);
+            // Mock the ≥64KB extra drain round at zero cost.
+            drain_receiver(&mut receiver, &mut batch);
+
+            let complete_len = complete_utf8_len(&batch);
+            emitted.extend_from_slice(&batch[..complete_len]);
+            pending = batch.split_off(complete_len);
+        }
+        emitted.extend_from_slice(&pending);
+        emitted
+    }
+
+    /// One Odoo-style access-log-ish line with a CJK customer name; chunk
+    /// sizes deliberately misalign with character boundaries.
+    fn stress_line(sequence: usize) -> Vec<u8> {
+        let line = format!(
+            "2026-10-10 09:41:22,{:03} {} INFO moba-test odoo.http: record[{}] partner name=\"株式会社テンソル {}\" HTTP 200 OK 3 rows\r\n",
+            sequence % 1000,
+            1000 + sequence % 2900,
+            sequence % 99999,
+            sequence
+        );
+        line.into_bytes()
+    }
+
+    #[test]
+    fn high_volume_burst_preserves_all_bytes_in_order() {
+        // ~2MB: 10_000 chunks, each carrying 2 whole lines; the chunk edge
+        // splits multi-byte characters mid-sequence at unaligned offsets.
+        const CHUNKS: usize = 10_000;
+        let mut chunks = Vec::with_capacity(CHUNKS);
+        let mut expected: Vec<u8> = Vec::with_capacity(CHUNKS * 400);
+        for sequence in 0..CHUNKS {
+            let a = stress_line(sequence);
+            let b = stress_line(sequence + CHUNKS);
+            let mut chunk = a.clone();
+            chunk.extend_from_slice(&b);
+            // Split at a byte offset inside a multi-byte character.
+            chunks.push(chunk[..chunk.len() - 2].to_vec());
+            chunks.push(chunk[chunk.len() - 2..].to_vec());
+            expected.extend_from_slice(&chunk);
+        }
+
+        let emitted = run_pipeline_mock(chunks);
+
+        assert_eq!(emitted.len(), expected.len());
+        assert_eq!(emitted, expected);
+    }
+
+    #[test]
+    fn single_chunk_larger_than_batch_cap_is_not_truncated() {
+        // A lone 1MB chunk must pass whole: the cap only decides how much
+        // is ADDED to a batch, never how much is emitted.
+        let mut chunk = Vec::with_capacity(1024 * 1024);
+        for sequence in 0..4_000 {
+            chunk.extend_from_slice(&stress_line(sequence));
+        }
+        let emitted = run_pipeline_mock(vec![chunk.clone()]);
+        assert_eq!(emitted, chunk);
     }
 
     #[test]
