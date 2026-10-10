@@ -383,8 +383,20 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
     // GPU-accelerated rendering; fall back to the DOM renderer when a
     // WebGL context cannot be created (e.g. missing GPU or blocked driver).
+    // Contexts are also lost at runtime under sustained heavy output on
+    // some Windows/WebView2 GPU stacks; an unrecovered loss presents as a
+    // terminal that stops repainting entirely, so dispose on loss and let
+    // xterm drop back to its DOM renderer.
     try {
-      term.loadAddon(new WebglAddon());
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        try {
+          webglAddon.dispose();
+        } catch {
+          // already disposed / detached
+        }
+      });
+      term.loadAddon(webglAddon);
     } catch {
       // keep default renderer
     }
