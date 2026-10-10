@@ -3,6 +3,7 @@ import {
   appendPendingOutput,
   OUTPUT_DROPPED_MARKER,
   PENDING_OUTPUT_MAX_CHARS,
+  takeWriteSlice,
 } from './terminalOutput';
 
 describe('appendPendingOutput', () => {
@@ -56,6 +57,51 @@ describe('appendPendingOutput', () => {
     // Only the tail survived, plus the leading marker.
     expect(items[0]).toContain(OUTPUT_DROPPED_MARKER);
     expect(items[0].length).toBeLessThanOrEqual(1000);
+    // Tail without its own line ending: kept verbatim.
     expect(totalChars).toBe(items[0].length);
+  });
+
+  describe('takeWriteSlice', () => {
+    const BUDGET = 100;
+
+    it('returns empty state for an empty queue', () => {
+      expect(takeWriteSlice([], BUDGET)).toEqual({
+        text: '',
+        remaining: [],
+        remainingChars: 0,
+      });
+    });
+
+    it('consumes whole entries greedily up to the budget', () => {
+      const { text, remaining } = takeWriteSlice(['a'.repeat(60), 'b'.repeat(60)], BUDGET);
+      expect(text).toBe('a'.repeat(60));
+      expect(remaining).toEqual(['b'.repeat(60)]);
+    });
+
+    it('slices a first entry that alone exceeds the budget', () => {
+      const { text, remaining, remainingChars } = takeWriteSlice(
+        ['x'.repeat(250), 'y'.repeat(30)],
+        BUDGET,
+      );
+      expect(text).toBe('x'.repeat(100));
+      expect(remaining[0]).toBe('x'.repeat(150));
+      expect(remaining[1]).toBe('y'.repeat(30));
+      expect(remainingChars).toBe(180);
+      // Concatenated halves restore the stream exactly.
+      expect(text + remaining[0] + remaining[1]).toBe('x'.repeat(250) + 'y'.repeat(30));
+    });
+
+    it('takes everything when the queue is smaller than the budget', () => {
+      const { text, remaining } = takeWriteSlice(['hello', 'world'], BUDGET);
+      expect(text).toBe('helloworld');
+      expect(remaining).toEqual([]);
+    });
+
+    it('hands at most one frame even for multi-MB leftovers', () => {
+      const big = 'z'.repeat(2 * 1024 * 1024);
+      const { text, remaining } = takeWriteSlice([big]);
+      expect(text.length).toBe(256 * 1024);
+      expect(remaining[0]).toBe(big.slice(256 * 1024));
+    });
   });
 });

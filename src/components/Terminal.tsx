@@ -21,7 +21,11 @@ import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
 import '@xterm/xterm/css/xterm.css';
-import { appendPendingOutput } from '../utils/terminalOutput';
+import {
+  appendPendingOutput,
+  takeWriteSlice,
+  TERM_WRITE_BUDGET_CHARS,
+} from '../utils/terminalOutput';
 
 // ── XTerm colour themes ────────────────────────────────────────
 const XTERM_THEME_LIGHT: XTerm['options']['theme'] = {
@@ -432,11 +436,14 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       outputFrame = null;
       if (disposed || outputWriteInProgress || pendingOutput.length === 0) return;
 
-      const output = pendingOutput.join('');
-      pendingOutput = [];
-      pendingOutputChars = 0;
+      // Hand xterm at most one frame's worth per write: a single multi-MB
+      // term.write parses synchronously and freezes the tab, which is
+      // exactly what cat/tail/less bursts escalated into.
+      const sliced = takeWriteSlice(pendingOutput, TERM_WRITE_BUDGET_CHARS);
+      pendingOutput = sliced.remaining;
+      pendingOutputChars = sliced.remainingChars;
       outputWriteInProgress = true;
-      term.write(output, () => {
+      term.write(sliced.text, () => {
         outputWriteInProgress = false;
         if (!disposed && pendingOutput.length > 0 && outputFrame === null) {
           outputFrame = requestAnimationFrame(flushOutput);
