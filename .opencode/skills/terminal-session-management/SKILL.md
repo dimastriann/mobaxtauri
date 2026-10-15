@@ -1,6 +1,6 @@
 ---
 name: terminal-session-management
-description: Invariants for SSH session and tab lifecycle in MobaXTauri. Use when changing session_manager.rs, session_types.rs, useSessionStore, workspce save/restore, tab open/close in TabBar, Terminal reconnect flows, or anything mapping UI tabs to session IDs and backend channels.
+description: Invariants for SSH session and tab lifecycle in MobaXTauri. Use when changing session_manager.rs, session_types.rs, useSessionStore, workspace save/restore, tab open/close in TabBar, Terminal reconnect flows, or anything mapping UI tabs to session IDs and backend channels.
 ---
 
 # Terminal session management
