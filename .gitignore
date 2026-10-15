@@ -15,6 +15,9 @@ dist-ssr
 # Local project planning
 planning-project/
 
+# Local scratch artifacts (credentials, drivers, driver logs)
+tmp/
+
 # Editor directories and files
 .vscode/*
 .zed/*
