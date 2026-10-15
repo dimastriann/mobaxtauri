@@ -34,6 +34,19 @@
 - New logic prefers an existing Rust module + unit test over a TypeScript helper
 - Deliberate frontend stays: xterm buffer capture, keystroke-to-IPC path, locale/date formatting
 
+## Code quality principles
+
+- Write clean, efficient, safe code following each language's best practices: idiomatic Rust with no clippy warnings, strictly typed React/TypeScript with no `any` escape hatches.
+- Prefer small, single-responsibility functions; mirror the patterns of existing modules before inventing new structures.
+- No dead code, commented-out blocks, or TODO debris in commits.
+
+## Security
+
+- Never commit, push, or log sensitive data — credentials, private keys, tokens, vault material, host secrets — unless it is clearly labeled dummy data (precedent: the synthetic keys in `src-tauri/src/test_fixtures/`, documented in that folder's README).
+- Never stage anything under `tmp/`, `logs/`, or local-state directories.
+- Review the staged diff before committing; if sensitive material appears, stop and flag it instead of proceeding.
+- If sensitive data has already been committed, alert the user — rotation or history rewrite is a user decision, never an agent action.
+
 ## Release procedure
 
 Version lives in six files — bump all together:
