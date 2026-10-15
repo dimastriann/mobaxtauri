@@ -451,8 +451,8 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     // WebDriver tooling can inspect them; bounded and silent.
     const diagConsole = (diagnostics.__MOBAXTERM_CONSOLE ??= []) as string[];
     const mirror = (label: string, detail: string = '') => {
-        diagConsole.push(`${new Date().toISOString()} ${label}: ${detail}`);
-        if (diagConsole.length > 200) diagConsole.splice(0, diagConsole.length - 200);
+      diagConsole.push(`${new Date().toISOString()} ${label}: ${detail}`);
+      if (diagConsole.length > 200) diagConsole.splice(0, diagConsole.length - 200);
     };
     mirror('mount');
 
@@ -578,7 +578,10 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         })
         .catch((error: unknown) => {
           if (!disposed) {
-            mirror('listener setup failed', typeof error === 'string' ? error : JSON.stringify(error));
+            mirror(
+              'listener setup failed',
+              typeof error === 'string' ? error : JSON.stringify(error),
+            );
             console.error('Failed to attach SSH terminal listeners:', error);
           }
         });
@@ -677,7 +680,10 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
     // Diagnostic hook: external tooling feeds text through the exact same
     // onData path as real keystrokes (password prompts included).
-    const sendHook = (diagnostics.__MOBAXTERM_SEND ??= {}) as Record<string, (text: string) => void>;
+    const sendHook = (diagnostics.__MOBAXTERM_SEND ??= {}) as Record<
+      string,
+      (text: string) => void
+    >;
     sendHook[sessionId] = handleTerminalData;
 
     // ── Resize handler ─────────────────────────────────────
