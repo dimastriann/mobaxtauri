@@ -293,6 +293,10 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   // ── Password prompt inside terminal ─────────────────────────
   const promptPassword = useCallback(() => {
     const term = xtermRef.current;
+    const diagnostics = window as unknown as Record<string, unknown>;
+    const diagConsole = (diagnostics.__MOBAXTERM_CONSOLE ??= []) as string[];
+    diagConsole.push(`${new Date().toISOString()} promptPassword: term=${!!term}`);
+    if (diagConsole.length > 200) diagConsole.splice(0, diagConsole.length - 200);
     if (!term) return;
     const session = getSession();
     isPasswordModeRef.current = true;
@@ -436,6 +440,22 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     xtermRef.current = term;
     fitRef.current = fitAddon;
 
+    // Diagnostic hook for external tooling (WebDriver stress runs): the
+    // buffer stays queryable regardless of the active renderer. Not part
+    // of the app API; harmless when unused.
+    const diagnostics = window as unknown as Record<string, unknown>;
+    const registry = (diagnostics.__MOBAXTERM_TERMS ??= {}) as Record<string, XTerm>;
+    registry[sessionId] = term;
+    diagnostics.__MOBAXTERM_STORE = useSessionStore;
+    // Mirror terminal-lifecycle console failures into an in-memory ring so
+    // WebDriver tooling can inspect them; bounded and silent.
+    const diagConsole = (diagnostics.__MOBAXTERM_CONSOLE ??= []) as string[];
+    const mirror = (label: string, detail: string = '') => {
+        diagConsole.push(`${new Date().toISOString()} ${label}: ${detail}`);
+        if (diagConsole.length > 200) diagConsole.splice(0, diagConsole.length - 200);
+    };
+    mirror('mount');
+
     const session = getSession();
     let disposed = false;
     let pendingOutput: string[] = [];
@@ -545,7 +565,11 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     if (session?.type === 'ssh') {
       void setupListeners()
         .then(() => {
-          if (disposed) return;
+          if (disposed) {
+            mirror('listeners ready but disposed', session?.type);
+            return;
+          }
+          mirror('listeners ready, branching', session.savePassword ? 'saved-c' : 'prompt');
           if (session.password || session.savePassword) {
             void doConnect();
           } else {
@@ -553,12 +577,15 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           }
         })
         .catch((error: unknown) => {
-          if (!disposed) console.error('Failed to attach SSH terminal listeners:', error);
+          if (!disposed) {
+            mirror('listener setup failed', typeof error === 'string' ? error : JSON.stringify(error));
+            console.error('Failed to attach SSH terminal listeners:', error);
+          }
         });
     }
 
     // ── Terminal input handler ──────────────────────────────
-    term.onData((data) => {
+    const handleTerminalData = (data: string) => {
       // Passphrase mode: masked intake like password mode, submitted to
       // the private-key passphrase retry path.
       if (isPassphraseModeRef.current) {
@@ -645,7 +672,13 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       if (currentSession?.type === 'ssh') {
         sendSshData(data);
       }
-    });
+    };
+    term.onData(handleTerminalData);
+
+    // Diagnostic hook: external tooling feeds text through the exact same
+    // onData path as real keystrokes (password prompts included).
+    const sendHook = (diagnostics.__MOBAXTERM_SEND ??= {}) as Record<string, (text: string) => void>;
+    sendHook[sessionId] = handleTerminalData;
 
     // ── Resize handler ─────────────────────────────────────
     const handleResize = () => {
@@ -677,6 +710,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       if (outputFrame !== null) cancelAnimationFrame(outputFrame);
       pendingOutput = [];
       pendingOutputChars = 0;
+      delete (window as unknown as Record<string, Record<string, unknown>>).__MOBAXTERM_SEND?.[
+        sessionId
+      ];
       window.removeEventListener('resize', handleResize);
       unlistenSnippet.then((fn) => fn());
       unlistenDataRef.current?.();
