@@ -8,17 +8,28 @@
 - Do not amend, squash, rebase, or rewrite an existing commit unless the user explicitly requests it.
 - Ensure linting, formatting and testing passed before commit
 
+### Atomic commits
+
+- Slice every feature, bugfix, refactor, or chore into the smallest coherent commits possible — one logical change per commit — so regressions are easy to trace, revert, and bisect.
+- Even small changes get their own commit; never bundle unrelated edits.
+- "Small" means coherent, not broken: every commit must compile and leave the tree in a working state, passing the relevant validation gates.
+- Typical slicing for a cross-stack feature: backend module + unit tests → command wiring → frontend binding, as separate commits.
+- Autonomy: once a slice passes its relevant gates, commit it immediately without waiting for further confirmation.
+
 ## Validation gates (before every commit)
 
 - Full stack: `npm run project:check` (tsc + eslint + prettier + clippy)
 - Backend changes: also `cargo test --manifest-path src-tauri/Cargo.toml`
 - Frontend changes: also `npm test -- --run`
 - Rust style is enforced by `cargo fmt --manifest-path src-tauri/Cargo.toml --all --check`
+- Decide gates by touched area: backend work → Rust gates; frontend work → tsc, eslint, prettier, vitest; changes spanning both (or unsure) → full `npm run project:check` plus the relevant test suites
 - Commit only after the gates relevant to the change pass; note them in the commit body
 
 ## Architecture principle
 
 - Default to implementing data and logic in the Rust backend; the frontend renders
+- Rust-first applies to every kind of change — feature, bugfix, refactor, or chore. TypeScript is the right home only when the logic inherently requires frontend context (DOM/terminal/keystrokes/locale/pure view state)
+- Fix bugs where the fault is: never patch around a backend defect in frontend glue (e.g., normalizing wrong Rust output in a store) — correct the Rust command and update its tests
 - Transformations of SSH/SFTP data (metadata assembly, math, aggregation, policy mapping) happen in Rust and arrive ready to render
 - New logic prefers an existing Rust module + unit test over a TypeScript helper
 - Deliberate frontend stays: xterm buffer capture, keystroke-to-IPC path, locale/date formatting
