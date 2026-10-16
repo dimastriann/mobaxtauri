@@ -6,7 +6,6 @@ use crate::session_types::{
 use russh::client::{AuthResult, Handler, Session};
 use russh::keys::ssh_key::PrivateKey;
 use russh::keys::PrivateKeyWithHashAlg;
-use russh::keys::PublicKey;
 use russh_sftp::client::SftpSession;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -33,8 +32,21 @@ impl Handler for ClientHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
+        let server_public_key = match server_public_key {
+            russh::keys::PublicKeyOrCertificate::PublicKey { key, .. } => key,
+            // Certificate host keys are not part of the supported matrix;
+            // fail closed rather than trusting an unverified certificate.
+            russh::keys::PublicKeyOrCertificate::Certificate(_) => {
+                log::warn!(
+                    "Server presented a certificate host key for {}:{} — not supported, refusing",
+                    self.host,
+                    self.port
+                );
+                return Ok(false);
+            }
+        };
         let fingerprint = server_public_key
             .fingerprint(russh::keys::HashAlg::Sha256)
             .to_string();
@@ -238,7 +250,7 @@ impl SshSession {
             // configuration problem: fail explicitly rather than silently
             // retrying as password auth and reporting "Authentication
             // failed" for what is really an unusable key.
-            match std::fs::read_to_string(&key_path) {
+            match std::fs::read_to_string(key_path) {
                 Ok(key_data) => match decode_private_key(&key_data, key_passphrase.as_deref()) {
                     Ok(key) => {
                         let key_arc = std::sync::Arc::new(key);

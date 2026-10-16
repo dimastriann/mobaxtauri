@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use russh::client::{AuthResult, Handler, Msg, Session};
-use russh::keys::ssh_key::PublicKey;
 use russh::Channel;
 
 /// Headless SSH stress harness for the terminal-output backend drills.
@@ -40,7 +39,10 @@ struct StressHandler {
 impl Handler for StressHandler {
     type Error = russh::Error;
 
-    async fn check_server_key(&mut self, _key: &PublicKey) -> Result<bool, Self::Error> {
+    async fn check_server_key(
+        &mut self,
+        _key: &russh::keys::PublicKeyOrCertificate,
+    ) -> Result<bool, Self::Error> {
         Ok(true)
     }
 
