@@ -19,9 +19,12 @@ const HEALTH_INTERVAL_HIDDEN_SECS: u64 = 15;
 struct ManagedSshSession {
     handle: Arc<russh::client::Handle<ClientHandler>>,
     channel_id: ChannelId,
-    channel: Arc<russh::Channel<russh::client::Msg>>,
+    // Write half only: the read half belongs to the drain task spawned in
+    // insert(), which keeps the russh connection loop unblocked.
+    shell_write: Arc<russh::ChannelWriteHalf<russh::client::Msg>>,
     write_lock: Arc<Mutex<()>>,
     health_task: JoinHandle<()>,
+    drain_task: JoinHandle<()>,
 }
 
 pub struct SessionManager {
@@ -82,7 +85,16 @@ impl SessionManager {
         channel: russh::Channel<russh::client::Msg>,
     ) {
         let handle = Arc::new(handle);
-        let channel = Arc::new(channel);
+        // The russh connection loop awaits pushing every inbound packet into
+        // each channel's bounded queue (channel_buffer_size, default 100)
+        // before delivering to the Handler. Our terminal data path consumes
+        // the Handler side, so nothing ever drained the shell channel queue:
+        // after ~100 queued packets the loop blocked forever, freezing the
+        // whole session (CPU-idle) mid-burst. Split the channel and keep a
+        // dedicated drain task consuming the read half; messages are
+        // discarded there because the Handler already received the data.
+        let (shell_read, shell_write) = channel.split();
+        let drain_task = spawn_shell_queue_drain(shell_read);
         let health_task = spawn_health_monitor(
             app_handle,
             session_id.clone(),
@@ -95,14 +107,16 @@ impl SessionManager {
             ManagedSshSession {
                 handle,
                 channel_id,
-                channel,
+                shell_write: Arc::new(shell_write),
                 write_lock: Arc::new(Mutex::new(())),
                 health_task,
+                drain_task,
             },
         );
 
         if let Some(previous) = replaced {
             previous.health_task.abort();
+            previous.drain_task.abort();
         }
     }
 
@@ -110,6 +124,7 @@ impl SessionManager {
         let removed = self.sessions.lock().await.remove(session_id);
         if let Some(session) = removed {
             session.health_task.abort();
+            session.drain_task.abort();
             true
         } else {
             false
@@ -153,15 +168,15 @@ impl SessionManager {
             .ok_or_else(|| "Session not found".to_string())
     }
 
-    pub async fn shell_channel(
+    pub async fn shell_write_half(
         &self,
         session_id: &str,
-    ) -> Result<Arc<russh::Channel<russh::client::Msg>>, String> {
+    ) -> Result<Arc<russh::ChannelWriteHalf<russh::client::Msg>>, String> {
         self.sessions
             .lock()
             .await
             .get(session_id)
-            .map(|session| Arc::clone(&session.channel))
+            .map(|session| Arc::clone(&session.shell_write))
             .ok_or_else(|| "Session not found".to_string())
     }
 
@@ -191,9 +206,23 @@ fn spawn_health_monitor(
     })
 }
 
+/// Consumes the shell channel's message queue forever. See insert() for why
+/// this exists: without a reader, the russh connection loop deadlocks once
+/// the bounded queue fills during heavy output.
+fn spawn_shell_queue_drain(mut read_half: russh::ChannelReadHalf) -> JoinHandle<()> {
+    tokio::spawn(async move { while read_half.wait().await.is_some() {} })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{effective_interval, SessionManager};
+    use std::time::Duration;
+
+    /// Test-side twin of spawn_shell_queue_drain over a plain bounded mpsc:
+    /// consume messages forever so a producer is never blocked by the cap.
+    async fn drain_channel_forever<T>(mut receiver: tokio::sync::mpsc::Receiver<T>) {
+        while receiver.recv().await.is_some() {}
+    }
 
     #[tokio::test]
     async fn starts_without_managed_sessions() {
@@ -208,5 +237,48 @@ mod tests {
         assert_eq!(effective_interval(86_400, false), 86_400);
         assert_eq!(effective_interval(5, true), 5);
         assert_eq!(effective_interval(2, true), 2);
+    }
+
+    // russh's connection loop awaits pushing into each channel's bounded
+    // queue before delivering to the Handler. These tests replicate that
+    // pattern against a bounded mpsc: without a reader the producer deadlocks
+    // once the queue fills; with the drain task it always completes.
+    const QUEUE_CAP: usize = 8;
+
+    #[tokio::test]
+    async fn bounded_queue_without_drain_deadlocks() {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel::<u32>(QUEUE_CAP);
+        let producer = tokio::spawn(async move {
+            for i in 0..(QUEUE_CAP as u32 * 20) {
+                if sender.send(i).await.is_err() {
+                    return false;
+                }
+            }
+            true
+        });
+        let completed = tokio::time::timeout(Duration::from_millis(300), producer).await;
+        // The queue is full and nobody drains: the producer stays blocked.
+        assert!(completed.is_err(), "unexpected completion without drain");
+        receiver.close();
+    }
+
+    #[tokio::test]
+    async fn bounded_queue_with_drain_never_blocks() {
+        let (sender, receiver) = tokio::sync::mpsc::channel::<u32>(QUEUE_CAP);
+        let drain = tokio::spawn(drain_channel_forever(receiver));
+        let produced = tokio::spawn(async move {
+            for i in 0..(QUEUE_CAP as u32 * 20) {
+                if sender.send(i).await.is_err() {
+                    return 0;
+                }
+            }
+            QUEUE_CAP as u32 * 20
+        });
+        let completed = tokio::time::timeout(Duration::from_secs(5), produced)
+            .await
+            .expect("timed out")
+            .expect("producer failed");
+        assert_eq!(completed, QUEUE_CAP as u32 * 20);
+        drain.abort();
     }
 }

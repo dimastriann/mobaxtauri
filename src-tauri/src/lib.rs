@@ -281,7 +281,7 @@ async fn ssh_resize(
     cols: u32,
     rows: u32,
 ) -> Result<(), String> {
-    let channel = state.ssh_sessions.shell_channel(&session_id).await?;
+    let channel = state.ssh_sessions.shell_write_half(&session_id).await?;
     tokio::time::timeout(
         std::time::Duration::from_secs(3),
         channel.window_change(cols, rows, 0, 0),
