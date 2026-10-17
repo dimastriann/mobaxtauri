@@ -9,6 +9,37 @@ pub fn join_sftp_path(base: &str, name: &str) -> String {
     }
 }
 
+/// Soft cap for files the in-app editor may load into memory.
+pub const EDITOR_MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
+/// Soft cap for files opened in an external application via the OS opener.
+pub const OPEN_MAX_FILE_BYTES: u64 = 256 * 1024 * 1024;
+
+pub fn humanize_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// Returns a user-facing error when `size` exceeds `limit`;
+/// `None` when the size is unknown or within the limit.
+pub fn file_too_large_error(size: Option<u64>, limit: u64) -> Option<String> {
+    let size = size?;
+    if size <= limit {
+        return None;
+    }
+    Some(format!(
+        "File is {} which exceeds the {} limit. Download it instead.",
+        humanize_bytes(size),
+        humanize_bytes(limit)
+    ))
+}
+
 #[allow(dead_code)]
 pub fn get_parent_path(path: &str) -> String {
     if path == "/" || path.is_empty() {
@@ -67,6 +98,24 @@ mod tests {
         assert_eq!(get_parent_path("/home/"), "/");
         assert_eq!(get_parent_path(""), "/");
         assert_eq!(get_parent_path("/etc/docker/daemon.json"), "/etc/docker");
+    }
+
+    #[test]
+    fn test_humanize_bytes() {
+        assert_eq!(humanize_bytes(512), "512 B");
+        assert_eq!(humanize_bytes(2048), "2.0 KB");
+        assert_eq!(humanize_bytes(5 * 1024 * 1024), "5.0 MB");
+        assert_eq!(humanize_bytes(3 * 1024 * 1024 * 1024), "3072.0 MB");
+    }
+
+    #[test]
+    fn test_file_too_large_error() {
+        assert!(file_too_large_error(None, EDITOR_MAX_FILE_BYTES).is_none());
+        assert!(file_too_large_error(Some(1024), EDITOR_MAX_FILE_BYTES).is_none());
+        assert_eq!(
+            file_too_large_error(Some(6 * 1024 * 1024), EDITOR_MAX_FILE_BYTES).as_deref(),
+            Some("File is 6.0 MB which exceeds the 5.0 MB limit. Download it instead.")
+        );
     }
 
     #[test]

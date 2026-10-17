@@ -677,20 +677,29 @@ async fn sftp_open_file(
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     log::info!("Opening file locally {}", remote_path);
-    let sftp_sessions = state.sftp_sessions.lock().await;
-    let sftp = sftp_sessions
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
         .get(&session_id)
+        .cloned()
         .ok_or("SFTP session not found")?;
+
+    let metadata = sftp
+        .metadata(&remote_path)
+        .await
+        .map_err(|e| format!("Failed to stat remote file: {e:?}"))?;
+    if let Some(error) = crate::sftp_utils::file_too_large_error(
+        metadata.size,
+        crate::sftp_utils::OPEN_MAX_FILE_BYTES,
+    ) {
+        return Err(error);
+    }
 
     let mut remote_file = sftp
         .open(&remote_path)
         .await
         .map_err(|e| format!("Failed to open remote file: {e:?}"))?;
-    let mut data: Vec<u8> = Vec::new();
-    remote_file
-        .read_to_end(&mut data)
-        .await
-        .map_err(|e| format!("Read failed: {e:?}"))?;
 
     let file_name = std::path::Path::new(&remote_path)
         .file_name()
@@ -700,9 +709,36 @@ async fn sftp_open_file(
     let mut temp_path = std::env::temp_dir();
     temp_path.push(file_name);
 
-    tokio::fs::write(&temp_path, &data)
+    let mut temp_file = tokio::fs::File::create(&temp_path)
         .await
-        .map_err(|e| format!("Failed to write temp file: {e:?}"))?;
+        .map_err(|e| format!("Failed to create temp file: {e:?}"))?;
+    let mut buffer = vec![0_u8; 64 * 1024];
+
+    let result = async {
+        loop {
+            let count = remote_file
+                .read(&mut buffer)
+                .await
+                .map_err(|e| format!("Read failed: {e:?}"))?;
+            if count == 0 {
+                break;
+            }
+            temp_file
+                .write_all(&buffer[..count])
+                .await
+                .map_err(|e| format!("Failed to write temp file: {e:?}"))?;
+        }
+        temp_file
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush temp file: {e:?}"))
+    }
+    .await;
+
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return result;
+    }
 
     app_handle
         .opener()
@@ -743,6 +779,17 @@ async fn sftp_read_file_content(
     let sftp = sftp_sessions
         .get(&session_id)
         .ok_or("SFTP session not found")?;
+
+    let metadata = sftp
+        .metadata(&remote_path)
+        .await
+        .map_err(|e| format!("Failed to stat remote file: {e:?}"))?;
+    if let Some(error) = crate::sftp_utils::file_too_large_error(
+        metadata.size,
+        crate::sftp_utils::EDITOR_MAX_FILE_BYTES,
+    ) {
+        return Err(error);
+    }
 
     let mut remote_file = sftp
         .open(&remote_path)
