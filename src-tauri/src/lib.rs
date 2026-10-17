@@ -568,37 +568,104 @@ async fn sftp_cancel_transfer(
 
 #[tauri::command]
 async fn sftp_copy_file(
+    app_handle: AppHandle,
     state: State<'_, AppState>,
+    transfers: State<'_, TransferManager>,
     session_id: String,
     source_path: String,
     dest_path: String,
+    transfer_id: String,
 ) -> Result<(), String> {
     log::info!("Copying {} to {}", source_path, dest_path);
-    let sftp_sessions = state.sftp_sessions.lock().await;
-    let sftp = sftp_sessions
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
         .get(&session_id)
+        .cloned()
         .ok_or("SFTP session not found")?;
-
     let mut source_file = sftp
         .open(&source_path)
         .await
         .map_err(|e| format!("Failed to open source file: {e:?}"))?;
-    let mut data: Vec<u8> = Vec::new();
-    source_file
-        .read_to_end(&mut data)
+    let total = source_file
+        .metadata()
         .await
-        .map_err(|e| format!("Read failed: {e:?}"))?;
-
+        .ok()
+        .map(|metadata| metadata.len());
+    let partial_path = format!("{dest_path}.mobaxtauri-part");
     let mut dest_file = sftp
-        .create(&dest_path)
+        .create(&partial_path)
         .await
         .map_err(|e| format!("Failed to create dest file: {e:?}"))?;
-    dest_file
-        .write_all(&data)
-        .await
-        .map_err(|e| format!("Write failed: {e:?}"))?;
+    let cancellation = transfers
+        .begin(transfer_id.clone(), session_id.clone())
+        .await;
+    let mut buffer = vec![0_u8; 64 * 1024];
+    let mut transferred = 0_u64;
 
-    Ok(())
+    let result = async {
+        loop {
+            if is_cancelled(&cancellation) {
+                return Err("Transfer cancelled".to_string());
+            }
+            let count = source_file
+                .read(&mut buffer)
+                .await
+                .map_err(|e| format!("Read failed: {e:?}"))?;
+            if count == 0 {
+                break;
+            }
+            dest_file
+                .write_all(&buffer[..count])
+                .await
+                .map_err(|e| format!("Write failed: {e:?}"))?;
+            transferred += count as u64;
+            emit_transfer(
+                &app_handle,
+                TransferEvent {
+                    transfer_id: transfer_id.clone(),
+                    session_id: session_id.clone(),
+                    status: TransferStatus::Running,
+                    transferred,
+                    total,
+                    percent: calculate_percentage(transferred, total),
+                    message: None,
+                },
+            );
+        }
+        dest_file
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush dest file: {e:?}"))?;
+        let _ = sftp.remove_file(&dest_path).await;
+        sftp.rename(&partial_path, &dest_path)
+            .await
+            .map_err(|e| format!("Failed to finalize dest file: {e:?}"))
+    }
+    .await;
+
+    transfers.finish(&transfer_id).await;
+    if result.is_err() {
+        let _ = sftp.remove_file(&partial_path).await;
+    }
+    emit_transfer(
+        &app_handle,
+        TransferEvent {
+            transfer_id,
+            session_id,
+            status: match &result {
+                Ok(()) => TransferStatus::Completed,
+                Err(error) if error == "Transfer cancelled" => TransferStatus::Cancelled,
+                Err(_) => TransferStatus::Failed,
+            },
+            transferred,
+            total,
+            percent: calculate_percentage(transferred, total),
+            message: result.as_ref().err().cloned(),
+        },
+    );
+    result
 }
 
 #[tauri::command]

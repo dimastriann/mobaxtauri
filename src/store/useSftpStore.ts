@@ -209,15 +209,22 @@ export const useSftpStore = create<SftpState>((set, get) => ({
 
     try {
       set({ isLoading: true, error: null });
+      const transferId = `copy-${Date.now()}`;
       await invoke('sftp_copy_file', {
         sessionId,
         sourcePath,
         destPath,
+        transferId,
       });
       await get().fetchDirectory(sessionId);
     } catch (err) {
       console.error(err);
-      set({ error: String(err), isLoading: false });
+      const message = String(err);
+      set({
+        error: message.includes('Transfer cancelled') ? null : message,
+        isLoading: false,
+        transfer: null,
+      });
     }
   },
 
