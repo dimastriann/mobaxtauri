@@ -5,6 +5,7 @@ mod persistence;
 mod recording;
 mod session_manager;
 mod session_types;
+mod sftp_conflict;
 mod sftp_utils;
 mod ssh;
 mod transfers;
@@ -462,6 +463,7 @@ async fn sftp_upload_file(
     local_path: String,
     remote_path: String,
     transfer_id: String,
+    conflict_policy: Option<String>,
 ) -> Result<(), String> {
     log::info!("Uploading {} to {}", local_path, remote_path);
     let sftp = state
@@ -471,6 +473,15 @@ async fn sftp_upload_file(
         .get(&session_id)
         .cloned()
         .ok_or("SFTP session not found")?;
+    let target_path = crate::sftp_conflict::resolve_destination(
+        &sftp,
+        &remote_path,
+        crate::sftp_conflict::parse_conflict_policy(conflict_policy.as_deref()),
+    )
+    .await?;
+    let Some(target_path) = target_path else {
+        return Ok(());
+    };
     let mut local_file = tokio::fs::File::open(&local_path)
         .await
         .map_err(|e| format!("Failed to read local file: {e:?}"))?;
@@ -479,7 +490,7 @@ async fn sftp_upload_file(
         .await
         .ok()
         .map(|metadata| metadata.len());
-    let partial_path = format!("{remote_path}.mobaxtauri-part");
+    let partial_path = format!("{target_path}.mobaxtauri-part");
     let mut remote_file = sftp
         .create(&partial_path)
         .await
@@ -524,8 +535,8 @@ async fn sftp_upload_file(
             .flush()
             .await
             .map_err(|e| format!("Failed to flush remote file: {e:?}"))?;
-        let _ = sftp.remove_file(&remote_path).await;
-        sftp.rename(&partial_path, &remote_path)
+        let _ = sftp.remove_file(&target_path).await;
+        sftp.rename(&partial_path, &target_path)
             .await
             .map_err(|e| format!("Failed to finalize remote file: {e:?}"))
     }
@@ -575,6 +586,7 @@ async fn sftp_copy_file(
     source_path: String,
     dest_path: String,
     transfer_id: String,
+    conflict_policy: Option<String>,
 ) -> Result<(), String> {
     log::info!("Copying {} to {}", source_path, dest_path);
     let sftp = state
@@ -593,7 +605,16 @@ async fn sftp_copy_file(
         .await
         .ok()
         .map(|metadata| metadata.len());
-    let partial_path = format!("{dest_path}.mobaxtauri-part");
+    let target_path = crate::sftp_conflict::resolve_destination(
+        &sftp,
+        &dest_path,
+        crate::sftp_conflict::parse_conflict_policy(conflict_policy.as_deref()),
+    )
+    .await?;
+    let Some(target_path) = target_path else {
+        return Ok(());
+    };
+    let partial_path = format!("{target_path}.mobaxtauri-part");
     let mut dest_file = sftp
         .create(&partial_path)
         .await
@@ -638,8 +659,8 @@ async fn sftp_copy_file(
             .flush()
             .await
             .map_err(|e| format!("Failed to flush dest file: {e:?}"))?;
-        let _ = sftp.remove_file(&dest_path).await;
-        sftp.rename(&partial_path, &dest_path)
+        let _ = sftp.remove_file(&target_path).await;
+        sftp.rename(&partial_path, &target_path)
             .await
             .map_err(|e| format!("Failed to finalize dest file: {e:?}"))
     }
