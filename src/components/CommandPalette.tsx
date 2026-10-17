@@ -134,14 +134,28 @@ const CommandPalette = ({
     });
   }, [items, query]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setQuery('');
-    setSelectedIndex(0);
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }, [isOpen]);
+  // Reset query/selection during render when the palette opens or the
+  // query changes — the recognized alternative to state-syncing effects.
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (prevIsOpen !== isOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen) {
+      setQuery('');
+      setSelectedIndex(0);
+    }
+  }
 
-  useEffect(() => setSelectedIndex(0), [query]);
+  const [prevQuery, setPrevQuery] = useState(query);
+  if (query !== prevQuery) {
+    setPrevQuery(query);
+    setSelectedIndex(0);
+  }
+
+  useEffect(() => {
+    if (isOpen) {
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     resultsRef.current

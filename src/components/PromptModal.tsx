@@ -32,16 +32,24 @@ const PromptModal: React.FC<PromptModalProps> = ({ isOpen, title, fields, onConf
   const [values, setValues] = useState<Record<string, string>>({});
   const firstInputRef = useRef<HTMLInputElement>(null);
 
-  // Reset state when opening
-  useEffect(() => {
+  // Reset state during render when opening — the recognized alternative
+  // to state-syncing effects.
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (prevIsOpen !== isOpen) {
+    setPrevIsOpen(isOpen);
     if (isOpen) {
       const empty: Record<string, string> = {};
       fields.forEach((f) => (empty[f.key] = ''));
       setValues(empty);
-      // Auto-focus the first input after the dialog animates in
+    }
+  }
+
+  // Auto-focus the first input once the dialog animates in
+  useEffect(() => {
+    if (isOpen) {
       setTimeout(() => firstInputRef.current?.focus(), 50);
     }
-  }, [isOpen, fields]);
+  }, [isOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { HStack, Box, Text, IconButton, Icon } from '@chakra-ui/react';
 import { LuBell, LuChevronLeft, LuChevronRight, LuColumns2, LuPlus, LuX } from 'react-icons/lu';
 import { Session, useSessionStore } from '../store/useSessionStore';
@@ -31,11 +31,9 @@ const TabBar: React.FC<TabBarProps> = ({
   onActivateSession,
 }) => {
   const { sessions, openTabs, activeSessionId, closeTab, reorderTabs } = useSessionStore();
-  const [selectedTabs, setSelectedTabs] = useState<string[]>([]);
+  const [checkedTabs, setCheckedTabs] = useState<string[]>([]);
 
-  useEffect(() => {
-    setSelectedTabs((selected) => selected.filter((id) => openTabs.includes(id)));
-  }, [openTabs]);
+  const selectedTabs = checkedTabs.filter((id) => openTabs.includes(id));
 
   const openSessions = openTabs
     .map((id) => sessions.find((s) => s.id === id))
@@ -78,14 +76,14 @@ const TabBar: React.FC<TabBarProps> = ({
 
   const handleTabClick = (event: React.MouseEvent, sessionId: string) => {
     if (event.ctrlKey || event.metaKey) {
-      setSelectedTabs((selected) =>
+      setCheckedTabs((selected) =>
         selected.includes(sessionId)
           ? selected.filter((id) => id !== sessionId)
           : [...selected, sessionId],
       );
       return;
     }
-    setSelectedTabs([]);
+    setCheckedTabs([]);
     onActivateSession(sessionId);
   };
 
@@ -103,7 +101,7 @@ const TabBar: React.FC<TabBarProps> = ({
     )
       return;
     selectedTabs.forEach(closeTab);
-    setSelectedTabs([]);
+    setCheckedTabs([]);
   };
 
   const moveSelectedTabs = (direction: -1 | 1) => {

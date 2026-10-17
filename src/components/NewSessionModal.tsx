@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Stack, Input, Button, HStack, Text } from '@chakra-ui/react';
 import { Session, useSessionStore } from '../store/useSessionStore';
@@ -41,34 +41,42 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const addSession = useSessionStore((state) => state.addSession);
   const updateSession = useSessionStore((state) => state.updateSession);
 
-  useEffect(() => {
-    setSaveError(null);
-    if (editingSession) {
-      setHost(editingSession.host || '');
-      setUser(editingSession.user || '');
-      setPort(
-        editingSession.port || parseInt(localStorage.getItem('ssh-default-port') || '22', 10),
-      );
-      setName(editingSession.name);
-      setFolderId(editingSession.folderId || null);
-      setTag(editingSession.tag);
-      setUsePrivateKey(!!editingSession.privateKeyPath);
-      setPrivateKeyPath(editingSession.privateKeyPath || '');
-      setSavePassword(editingSession.savePassword ?? true);
-      setPassword('');
-    } else {
-      setHost('');
-      setUser('');
-      setPassword('');
-      setPort(parseInt(localStorage.getItem('ssh-default-port') || '22', 10));
-      setName('');
-      setFolderId(null);
-      setTag(undefined);
-      setUsePrivateKey(false);
-      setPrivateKeyPath('');
-      setSavePassword(true);
+  // Reset the form during render whenever the dialog opens or the edited
+  // session changes — the recognized alternative to state-syncing effects.
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  const [prevEditingSession, setPrevEditingSession] = useState(editingSession);
+  if (prevIsOpen !== isOpen || prevEditingSession !== editingSession) {
+    setPrevIsOpen(isOpen);
+    setPrevEditingSession(editingSession);
+    if (isOpen) {
+      setSaveError(null);
+      if (editingSession) {
+        setHost(editingSession.host || '');
+        setUser(editingSession.user || '');
+        setPort(
+          editingSession.port || parseInt(localStorage.getItem('ssh-default-port') || '22', 10),
+        );
+        setName(editingSession.name);
+        setFolderId(editingSession.folderId || null);
+        setTag(editingSession.tag);
+        setUsePrivateKey(!!editingSession.privateKeyPath);
+        setPrivateKeyPath(editingSession.privateKeyPath || '');
+        setSavePassword(editingSession.savePassword ?? true);
+        setPassword('');
+      } else {
+        setHost('');
+        setUser('');
+        setPassword('');
+        setPort(parseInt(localStorage.getItem('ssh-default-port') || '22', 10));
+        setName('');
+        setFolderId(null);
+        setTag(undefined);
+        setUsePrivateKey(false);
+        setPrivateKeyPath('');
+        setSavePassword(true);
+      }
     }
-  }, [editingSession, isOpen]);
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

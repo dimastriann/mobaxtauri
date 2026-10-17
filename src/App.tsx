@@ -325,11 +325,15 @@ function App() {
     loadSessions();
   }, [loadSessions]);
 
-  useEffect(() => {
+  // Prune the split-view session during render when its tab closes — the
+  // recognized alternative to state-syncing effects.
+  const [prevOpenTabs, setPrevOpenTabs] = useState(openTabs);
+  if (prevOpenTabs !== openTabs) {
+    setPrevOpenTabs(openTabs);
     if (secondarySessionId && !openTabs.includes(secondarySessionId)) {
       setSecondarySessionId(null);
     }
-  }, [openTabs, secondarySessionId]);
+  }
 
   const activateTerminalSession = useCallback(
     (sessionId: string) => {

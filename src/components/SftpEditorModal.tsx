@@ -115,12 +115,6 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
   useEffect(() => {
     if (isOpen && sessionId && filePath) {
       loadContent();
-    } else {
-      setContent('');
-      setSavedContent('');
-      setError(null);
-      setSaveConflict(false);
-      mtimeRef.current = null;
     }
   }, [isOpen, sessionId, filePath]);
 
