@@ -794,7 +794,7 @@ async fn sftp_read_file_content(
     state: State<'_, AppState>,
     session_id: String,
     remote_path: String,
-) -> Result<String, String> {
+) -> Result<SftpReadFileContent, String> {
     log::info!("Reading file content {}", remote_path);
     let sftp_sessions = state.sftp_sessions.lock().await;
     let sftp = sftp_sessions
@@ -822,7 +822,18 @@ async fn sftp_read_file_content(
         .await
         .map_err(|e| format!("Read failed: {e:?}"))?;
 
-    String::from_utf8(data).map_err(|e| format!("File is not valid UTF-8: {e:?}"))
+    String::from_utf8(data)
+        .map(|content| SftpReadFileContent {
+            content,
+            mtime: metadata.mtime,
+        })
+        .map_err(|e| format!("File is not valid UTF-8: {e:?}"))
+}
+
+#[derive(serde::Serialize)]
+struct SftpReadFileContent {
+    content: String,
+    mtime: Option<u32>,
 }
 
 #[tauri::command]
@@ -831,12 +842,21 @@ async fn sftp_write_file_content(
     session_id: String,
     remote_path: String,
     content: String,
+    expected_mtime: Option<u32>,
 ) -> Result<(), String> {
     log::info!("Writing file content {}", remote_path);
     let sftp_sessions = state.sftp_sessions.lock().await;
     let sftp = sftp_sessions
         .get(&session_id)
         .ok_or("SFTP session not found")?;
+
+    if let Ok(metadata) = sftp.metadata(&remote_path).await {
+        if let (Some(expected), Some(current)) = (expected_mtime, metadata.mtime) {
+            if expected != current {
+                return Err(crate::sftp_conflict::file_changed_error(&remote_path));
+            }
+        }
+    }
 
     let mut remote_file = sftp
         .create(&remote_path)

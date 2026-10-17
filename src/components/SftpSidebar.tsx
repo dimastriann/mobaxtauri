@@ -38,6 +38,7 @@ import { formatFileSize } from '../utils/formatFileSize';
 import { toaster } from './ui/toaster';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './ContextMenu';
 import SftpEditorModal from './SftpEditorModal';
+import SftpConflictModal from './SftpConflictModal';
 
 const formatMtime = (secs: number | null): string => {
   if (!secs) return '';
@@ -89,6 +90,9 @@ const SftpSidebar: React.FC = () => {
     transfer,
     updateTransfer,
     cancelTransfer,
+    conflictPrompt,
+    resolveConflict,
+    dismissConflict,
   } = useSftpStore();
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: any } | null>(null);
@@ -541,6 +545,13 @@ const SftpSidebar: React.FC = () => {
         sessionId={activeSessionId}
         filePath={editorFile?.path || ''}
         fileName={editorFile?.name || ''}
+      />
+
+      <SftpConflictModal
+        isOpen={!!conflictPrompt}
+        destName={conflictPrompt?.destName ?? ''}
+        onResolve={resolveConflict}
+        onClose={dismissConflict}
       />
     </VStack>
   );

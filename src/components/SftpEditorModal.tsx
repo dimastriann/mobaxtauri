@@ -2,6 +2,10 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Box, HStack, Button, Text, Spinner, Textarea, Badge } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
 import {
+  SFTP_FILE_CHANGED_MARKER,
+  type SftpReadFileContentPayload,
+} from '../types/sftp';
+import {
   DialogRoot,
   DialogContent,
   DialogHeader,
@@ -90,6 +94,8 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  const [saveConflict, setSaveConflict] = useState(false);
+  const mtimeRef = useRef<number | null>(null);
   const highlightRef = useRef<HTMLPreElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const language =
@@ -113,6 +119,8 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
       setContent('');
       setSavedContent('');
       setError(null);
+      setSaveConflict(false);
+      mtimeRef.current = null;
     }
   }, [isOpen, sessionId, filePath]);
 
@@ -120,12 +128,14 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const data = await invoke<string>('sftp_read_file_content', {
+      const data = await invoke<SftpReadFileContentPayload>('sftp_read_file_content', {
         sessionId,
         remotePath: filePath,
       });
-      setContent(data);
-      setSavedContent(data);
+      setContent(data.content);
+      setSavedContent(data.content);
+      mtimeRef.current = data.mtime;
+      setSaveConflict(false);
     } catch (err) {
       console.error('Failed to read file', err);
       setError(String(err));
@@ -134,7 +144,7 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (force = false) => {
     setIsSaving(true);
     setError(null);
     try {
@@ -142,14 +152,30 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
         sessionId,
         remotePath: filePath,
         content,
+        expectedMtime: force ? null : (mtimeRef.current ?? null),
       });
       setSavedContent(content);
+      mtimeRef.current = null;
+      setSaveConflict(false);
     } catch (err) {
       console.error('Failed to write file', err);
-      setError(String(err));
+      const message = String(err);
+      if (message.includes(SFTP_FILE_CHANGED_MARKER)) {
+        setSaveConflict(true);
+      } else {
+        setError(message);
+      }
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleOverwrite = () => {
+    if (!isSaving) void handleSave(true);
+  };
+
+  const handleReload = () => {
+    if (!isLoading && !isSaving) void loadContent();
   };
 
   const updateCursor = () => {
@@ -203,6 +229,31 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
         </DialogHeader>
 
         <DialogBody flex={1} display="flex" flexDirection="column" p={4} overflow="hidden">
+          {saveConflict && (
+            <HStack
+              mb={3}
+              px={3}
+              py={2}
+              bg="orange.subtle"
+              borderRadius="md"
+              align="center"
+              flexWrap="wrap"
+            >
+              <Text fontSize="11px" color="orange.fg" flex={1}>
+                The file changed on the server since it was loaded. Overwriting replaces the server
+                copy with your edits.
+              </Text>
+              <Button size="xs" colorPalette="red" onClick={handleOverwrite} loading={isSaving}>
+                Overwrite anyway
+              </Button>
+              <Button size="xs" colorPalette="blue" onClick={handleReload}>
+                Reload from server
+              </Button>
+              <Button size="xs" variant="ghost" onClick={() => setSaveConflict(false)}>
+                Dismiss
+              </Button>
+            </HStack>
+          )}
           {isLoading ? (
             <Box display="flex" alignItems="center" justifyContent="center" flex={1}>
               <Spinner size="md" color="#38bdf8" />
@@ -306,7 +357,7 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
             <Button
               colorPalette="blue"
               size="sm"
-              onClick={handleSave}
+              onClick={() => handleSave()}
               loading={isSaving}
               disabled={isLoading || !!error || !isDirty}
             >
