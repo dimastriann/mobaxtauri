@@ -458,6 +458,10 @@ async fn sftp_download_file(
 }
 
 #[tauri::command]
+// Tauri commands receive named keyword arguments over IPC, so a params
+// struct would change the wire contract; the argument list mirrors the
+// event/transfer contract instead.
+#[allow(clippy::too_many_arguments)]
 async fn sftp_upload_file(
     app_handle: AppHandle,
     state: State<'_, AppState>,
@@ -581,6 +585,10 @@ async fn sftp_cancel_transfer(
 }
 
 #[tauri::command]
+// Tauri commands receive named keyword arguments over IPC, so a params
+// struct would change the wire contract; the argument list mirrors the
+// event/transfer contract instead.
+#[allow(clippy::too_many_arguments)]
 async fn sftp_copy_file(
     app_handle: AppHandle,
     state: State<'_, AppState>,
