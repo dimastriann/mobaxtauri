@@ -17,9 +17,17 @@ import {
   LuRefreshCw,
   LuArrowUp,
   LuFileText,
-  LuImage,
+  LuFileCode2,
+  LuFileJson,
+  LuFileTerminal,
+  LuFileImage,
+  LuFileVideo,
+  LuFileMusic,
+  LuFileSpreadsheet,
+  LuFileKey,
+  LuFileCog,
+  LuFileArchive,
   LuCode,
-  LuArchive,
   LuUpload,
   LuDownload,
   LuCopy,
@@ -31,6 +39,7 @@ import {
   LuFolderPlus,
   LuFilePlus,
 } from 'react-icons/lu';
+import type { IconType } from 'react-icons';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
@@ -72,6 +81,41 @@ const formatMetaDetails = (file: SftpFile): string => {
     parts.push(formatMtime(file.modified));
   }
   return parts.join('  ');
+};
+
+interface FileVisual {
+  icon: IconType;
+  color: string;
+  extensions: string[];
+}
+
+const FILE_VISUALS: FileVisual[] = [
+  {
+    icon: LuFileCode2,
+    color: 'blue.fg',
+    extensions: [
+      'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'rs', 'go', 'java', 'kt', 'swift', 'c', 'cpp',
+      'h', 'hpp', 'cs', 'php', 'rb', 'scala',
+    ],
+  },
+  { icon: LuCode, color: 'pink.fg', extensions: ['html', 'htm', 'xml', 'vue', 'svelte'] },
+  { icon: LuFileTerminal, color: 'green.fg', extensions: ['sh', 'bash', 'zsh', 'fish', 'ps1'] },
+  { icon: LuFileJson, color: 'yellow.fg', extensions: ['json'] },
+  { icon: LuFileCog, color: 'fg.muted', extensions: ['yaml', 'yml', 'toml', 'ini', 'conf', 'cfg', 'env'] },
+  { icon: LuFileText, color: 'fg.muted', extensions: ['txt', 'md', 'rtf', 'log', 'properties'] },
+  { icon: LuFileImage, color: 'cyan.fg', extensions: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp'] },
+  { icon: LuFileVideo, color: 'purple.fg', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm'] },
+  { icon: LuFileMusic, color: 'blue.fg', extensions: ['mp3', 'wav', 'flac', 'ogg', 'm4a'] },
+  { icon: LuFileSpreadsheet, color: 'green.fg', extensions: ['csv', 'xls', 'xlsx', 'ods', 'sql'] },
+  { icon: LuFileArchive, color: 'orange.400', extensions: ['zip', 'rar', 'tar', 'gz', 'bz2', 'xz', '7z', 'iso'] },
+  { icon: LuFileKey, color: 'red.fg', extensions: ['pem', 'key', 'crt', 'ppk', 'pub'] },
+];
+
+const getFileVisual = (file: SftpFile): { icon: IconType; color: string } => {
+  if (file.is_dir) return { icon: LuFolder, color: 'orange.fg' };
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  const visual = FILE_VISUALS.find((entry) => entry.extensions.includes(ext));
+  return visual ?? { icon: LuFile, color: 'fg.subtle' };
 };
 
 const SftpSidebar: React.FC = () => {
@@ -337,17 +381,9 @@ const SftpSidebar: React.FC = () => {
     );
   };
 
-  const getFileIcon = (file: any) => {
+  const getFileIcon = (file: SftpFile) => {
     if (file.is_dir) return LuFolder;
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    if (['png', 'jpg', 'jpeg', 'gif', 'svg'].includes(ext)) return LuImage;
-    if (
-      ['js', 'ts', 'tsx', 'py', 'rs', 'cpp', 'h', 'css', 'html', 'json', 'yaml', 'md'].includes(ext)
-    )
-      return LuCode;
-    if (['zip', 'rar', 'tar', 'gz', '7z'].includes(ext)) return LuArchive;
-    if (['txt', 'log', 'config', 'env', 'sh'].includes(ext)) return LuFileText;
-    return LuFile;
+    return getFileVisual(file).icon;
   };
 
   const renderBlankMenu = (menu: { x: number; y: number }) => (
@@ -639,7 +675,7 @@ const SftpSidebar: React.FC = () => {
               <Icon
                 as={getFileIcon(file)}
                 boxSize="14px"
-                color={file.is_dir ? 'orange.fg' : 'fg.subtle'}
+                color={getFileVisual(file).color}
               />
               <VStack align="flex-start" gap={0} flex={1} overflow="hidden">
                 {renamingFile === file.name ? (
