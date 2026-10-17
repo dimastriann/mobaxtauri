@@ -23,17 +23,22 @@ import {
   LuUpload,
   LuDownload,
   LuCopy,
+  LuLink,
+  LuLink2,
   LuExternalLink,
   LuPencil,
   LuTrash2,
   LuFolderPlus,
 } from 'react-icons/lu';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { useSftpStore } from '../store/useSftpStore';
 import { useSessionStore } from '../store/useSessionStore';
 import { SSH_SESSION_STATE_EVENT, type SshSessionStateEvent } from '../types/ssh';
 import { SFTP_TRANSFER_EVENT, type SftpTransferEvent } from '../types/sftp';
+import type { SftpPathVariantsPayload } from '../types/sftp';
 import { type SftpFile } from '../store/useSftpStore';
 import { formatFileSize } from '../utils/formatFileSize';
 import { toaster } from './ui/toaster';
@@ -113,6 +118,59 @@ const SftpSidebar: React.FC = () => {
       await createDir(activeSessionId, name);
     }
   };
+
+  const copyPathVariant = async (file: SftpFile, variant: 'full' | 'relative' | 'name') => {
+    if (!activeSessionId) return;
+    const path = currentPath.endsWith('/')
+      ? `${currentPath}${file.name}`
+      : `${currentPath}/${file.name}`;
+    try {
+      const variants = await invoke<SftpPathVariantsPayload>('sftp_path_variants', {
+        sessionId: activeSessionId,
+        remotePath: path,
+      });
+      const value =
+        variant === 'full'
+          ? variants.fullPath
+          : variant === 'relative'
+            ? variants.relativeToHome
+            : variants.name;
+      await writeText(value);
+      toaster.create({ title: 'Copied to clipboard', description: value, type: 'success' });
+    } catch (err) {
+      console.error('Failed to copy path', err);
+      toaster.create({ title: 'Copy failed', description: String(err), type: 'error' });
+    }
+  };
+
+  const renderCopyPathItems = (file: SftpFile) => (
+    <>
+      <ContextMenuItem
+        icon={LuLink}
+        label="Copy Full Path"
+        onClick={() => {
+          setContextMenu(null);
+          void copyPathVariant(file, 'full');
+        }}
+      />
+      <ContextMenuItem
+        icon={LuLink2}
+        label="Copy Relative Path"
+        onClick={() => {
+          setContextMenu(null);
+          void copyPathVariant(file, 'relative');
+        }}
+      />
+      <ContextMenuItem
+        icon={LuFile}
+        label="Copy Name"
+        onClick={() => {
+          setContextMenu(null);
+          void copyPathVariant(file, 'name');
+        }}
+      />
+    </>
+  );
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
@@ -331,6 +389,8 @@ const SftpSidebar: React.FC = () => {
           }}
         />
         <ContextMenuSeparator />
+        {renderCopyPathItems(file)}
+        <ContextMenuSeparator />
         <ContextMenuItem
           icon={LuPencil}
           label="Rename"
@@ -392,6 +452,8 @@ const SftpSidebar: React.FC = () => {
             copyFile(activeSessionId, file.name, `copy_${file.name}`);
           }}
         />
+        <ContextMenuSeparator />
+        {renderCopyPathItems(file)}
         <ContextMenuSeparator />
         <ContextMenuItem
           icon={LuPencil}

@@ -25,3 +25,10 @@ export interface SftpReadFileContentPayload {
   content: string;
   mtime: number | null;
 }
+
+/** Payload of sftp_path_variants (mirrors Rust SftpPathVariants). */
+export interface SftpPathVariantsPayload {
+  fullPath: string;
+  relativeToHome: string;
+  name: string;
+}
