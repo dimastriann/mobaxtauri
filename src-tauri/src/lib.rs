@@ -931,6 +931,39 @@ async fn sftp_remove(
     Ok(())
 }
 
+#[tauri::command]
+async fn sftp_create_file(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+    conflict_policy: Option<String>,
+) -> Result<(), String> {
+    log::info!("Creating SFTP file {}", path);
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
+        .get(&session_id)
+        .cloned()
+        .ok_or("SFTP session not found")?;
+    let target_path = crate::sftp_conflict::resolve_destination(
+        &sftp,
+        &path,
+        crate::sftp_conflict::parse_conflict_policy(conflict_policy.as_deref()),
+    )
+    .await?;
+    let Some(target_path) = target_path else {
+        return Ok(());
+    };
+
+    let _remote_file = sftp
+        .create(&target_path)
+        .await
+        .map_err(|e| format!("Failed to create file: {e:?}"))?;
+
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SftpPathVariants {
@@ -1100,6 +1133,7 @@ pub fn run() {
             sftp_read_file_content,
             sftp_write_file_content,
             sftp_create_dir,
+            sftp_create_file,
             sftp_path_variants,
             write_text_file,
             read_text_file,
