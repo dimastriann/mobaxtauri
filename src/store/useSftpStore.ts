@@ -19,7 +19,7 @@ export interface SftpFile {
 }
 
 export interface SftpConflictPrompt {
-  kind: 'upload' | 'copy';
+  kind: 'upload' | 'copy' | 'create-file';
   sessionId: string;
   destPath: string;
   destName: string;
@@ -48,6 +48,7 @@ interface SftpState {
   renameFile: (sessionId: string, oldName: string, newName: string) => Promise<void>;
   deleteFile: (sessionId: string, name: string, isDir: boolean) => Promise<void>;
   createDir: (sessionId: string, dirName: string) => Promise<void>;
+  createFile: (sessionId: string, fileName: string) => Promise<void>;
   updateTransfer: (transfer: SftpTransferEvent) => void;
   cancelTransfer: () => Promise<void>;
   resolveConflict: (policy: SftpConflictPolicy) => Promise<void>;
@@ -85,7 +86,7 @@ export const useSftpStore = create<SftpState>((set, get) => ({
         await get().fetchDirectory(prompt.sessionId);
         return;
       }
-      const transferId = `${prompt.kind}-${Date.now()}`;
+      const transferId = `${prompt.kind === 'upload' ? 'upload' : 'copy'}-${Date.now()}`;
       if (prompt.kind === 'upload') {
         await invoke('sftp_upload_file', {
           sessionId: prompt.sessionId,
@@ -94,12 +95,18 @@ export const useSftpStore = create<SftpState>((set, get) => ({
           transferId,
           conflictPolicy: policy,
         });
-      } else {
+      } else if (prompt.kind === 'copy') {
         await invoke('sftp_copy_file', {
           sessionId: prompt.sessionId,
           sourcePath: prompt.sourcePath,
           destPath: prompt.destPath,
           transferId,
+          conflictPolicy: policy,
+        });
+      } else {
+        await invoke('sftp_create_file', {
+          sessionId: prompt.sessionId,
+          path: prompt.destPath,
           conflictPolicy: policy,
         });
       }
@@ -392,6 +399,33 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     } catch (err) {
       console.error(err);
       set({ error: String(err), isLoading: false });
+    }
+  },
+
+  createFile: async (sessionId, fileName) => {
+    const state = get();
+    const path = state.currentPath.endsWith('/')
+      ? `${state.currentPath}${fileName}`
+      : `${state.currentPath}/${fileName}`;
+
+    try {
+      set({ isLoading: true, error: null });
+      await invoke('sftp_create_file', {
+        sessionId,
+        path,
+      });
+      await get().fetchDirectory(sessionId);
+    } catch (err) {
+      console.error(err);
+      const message = String(err);
+      if (message.includes(SFTP_TARGET_EXISTS_MARKER)) {
+        set({
+          isLoading: false,
+          conflictPrompt: { kind: 'create-file', sessionId, destPath: path, destName: fileName },
+        });
+        return;
+      }
+      set({ error: message, isLoading: false });
     }
   },
 }));

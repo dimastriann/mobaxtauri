@@ -29,6 +29,7 @@ import {
   LuPencil,
   LuTrash2,
   LuFolderPlus,
+  LuFilePlus,
 } from 'react-icons/lu';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -45,6 +46,7 @@ import { toaster } from './ui/toaster';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './ContextMenu';
 import SftpEditorModal from './SftpEditorModal';
 import SftpConflictModal from './SftpConflictModal';
+import PromptModal from './PromptModal';
 
 const formatMtime = (secs: number | null): string => {
   if (!secs) return '';
@@ -92,6 +94,7 @@ const SftpSidebar: React.FC = () => {
     renameFile,
     deleteFile,
     createDir,
+    createFile,
     reset,
     transfer,
     updateTransfer,
@@ -109,13 +112,16 @@ const SftpSidebar: React.FC = () => {
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [editorFile, setEditorFile] = useState<{ path: string; name: string } | null>(null);
+  const [createPrompt, setCreatePrompt] = useState<'folder' | 'file' | null>(null);
   const lastNotifiedTransferRef = useRef<{ id: string; status: string } | null>(null);
 
-  const handleCreateFolder = async () => {
-    if (!activeSessionId) return;
-    const name = window.prompt('Enter folder name:');
-    if (name) {
-      await createDir(activeSessionId, name);
+  const handleCreatePromptConfirm = (values: Record<string, string>) => {
+    const name = (values.name ?? '').trim();
+    if (!name || !activeSessionId) return;
+    if (createPrompt === 'file') {
+      void createFile(activeSessionId, name);
+    } else {
+      void createDir(activeSessionId, name);
     }
   };
 
@@ -353,7 +359,16 @@ const SftpSidebar: React.FC = () => {
           label="New Folder"
           onClick={() => {
             setContextMenu(null);
-            handleCreateFolder();
+            setCreatePrompt('folder');
+          }}
+        />
+        <ContextMenuItem
+          icon={LuFilePlus}
+          color="blue.fg"
+          label="New File"
+          onClick={() => {
+            setContextMenu(null);
+            setCreatePrompt('file');
           }}
         />
         <ContextMenuItem
@@ -502,11 +517,21 @@ const SftpSidebar: React.FC = () => {
             aria-label="New Folder"
             size="xs"
             variant="ghost"
-            onClick={handleCreateFolder}
+            onClick={() => setCreatePrompt('folder')}
             color="blue.fg"
             title="New Folder"
           >
             <LuFolderPlus size={14} />
+          </IconButton>
+          <IconButton
+            aria-label="New File"
+            size="xs"
+            variant="ghost"
+            onClick={() => setCreatePrompt('file')}
+            color="blue.fg"
+            title="New File"
+          >
+            <LuFilePlus size={14} />
           </IconButton>
           <IconButton
             aria-label="Up"
@@ -684,6 +709,20 @@ const SftpSidebar: React.FC = () => {
         destName={conflictPrompt?.destName ?? ''}
         onResolve={resolveConflict}
         onClose={dismissConflict}
+      />
+
+      <PromptModal
+        isOpen={!!createPrompt}
+        title={createPrompt === 'file' ? 'New File' : 'New Folder'}
+        fields={[
+          {
+            key: 'name',
+            label: createPrompt === 'file' ? 'File name' : 'Folder name',
+            placeholder: createPrompt === 'file' ? 'notes.txt' : 'documents',
+          },
+        ]}
+        onConfirm={handleCreatePromptConfirm}
+        onClose={() => setCreatePrompt(null)}
       />
     </VStack>
   );
