@@ -8,6 +8,7 @@ import {
   LuCode,
   LuTag,
   LuCopy,
+  LuDownload,
   LuScissors,
   LuClipboard,
   LuMousePointer2,
@@ -97,7 +98,13 @@ function App() {
   const [promptConfig, setPromptConfig] = useState<PromptConfig | null>(null);
   const [quickConnectStr, setQuickConnectStr] = useState('');
   const quickConnectRef = useRef<HTMLInputElement>(null);
-  const { handleImportJSON, handleImportSSHConfig, handleImportMobaXterm } = useExportImport();
+  const {
+    handleImportJSON,
+    handleImportSSHConfig,
+    handleImportMobaXterm,
+    handleExportSession,
+    handleExportFolder,
+  } = useExportImport();
 
   // ── Connection Logic ───────────────────────────────────────
   const handleQuickConnect = async (
@@ -602,6 +609,17 @@ function App() {
                   if (await ask('Delete?')) deleteFolder(id);
                 }}
               />
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                icon={LuDownload}
+                label="Export Folder"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  const name = sidebarMenu.name ?? 'folder';
+                  setSidebarMenu(null);
+                  void handleExportFolder(id, name);
+                }}
+              />
             </>
           )}
           {sidebarMenu.type === 'session' && (
@@ -657,6 +675,16 @@ function App() {
                 }}
               />
               <ContextMenuSeparator />
+              <ContextMenuItem
+                icon={LuDownload}
+                label="Export Session"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  const name = sidebarMenu.name ?? 'session';
+                  setSidebarMenu(null);
+                  void handleExportSession(id, name);
+                }}
+              />
               <ContextMenuItem
                 icon={LuX}
                 label="Delete Session"

@@ -4,6 +4,51 @@ import { useSessionStore } from '../store/useSessionStore';
 import { parseSSHConfig, parseMobaXtermINI } from '../utils/importParsers';
 
 export function useExportImport() {
+  const exportSelection = async (payload: {
+    sessionId?: string;
+    folderId?: string;
+    defaultPath: string;
+  }) => {
+    const selectedPath = await save({
+      filters: [{ name: 'MobaXTauri Backup', extensions: ['json'] }],
+      defaultPath: payload.defaultPath,
+    });
+    if (!selectedPath) return;
+
+    await useSessionStore.getState().flushPendingSave();
+    const count = await invoke<number>('export_app_data_backup', {
+      path: selectedPath,
+      sessionId: payload.sessionId,
+      folderId: payload.folderId,
+      exportedAt: new Date().toISOString(),
+    });
+    await message(`Exported ${count} session(s).`, { title: 'Export', kind: 'info' });
+  };
+
+  const handleExportSession = async (sessionId: string, sessionName: string) => {
+    try {
+      await exportSelection({
+        sessionId,
+        defaultPath: `${sessionName.replace(/[^a-z0-9_-]+/gi, '-')}-session.json`,
+      });
+    } catch (err) {
+      console.error('Session export failed:', err);
+      await message(`Export failed: ${err}`, { title: 'Export Error', kind: 'error' });
+    }
+  };
+
+  const handleExportFolder = async (folderId: string, folderName: string) => {
+    try {
+      await exportSelection({
+        folderId,
+        defaultPath: `${folderName.replace(/[^a-z0-9_-]+/gi, '-')}-folder.json`,
+      });
+    } catch (err) {
+      console.error('Folder export failed:', err);
+      await message(`Export failed: ${err}`, { title: 'Export Error', kind: 'error' });
+    }
+  };
+
   const handleExport = async () => {
     try {
       const selectedPath = await save({
@@ -252,6 +297,8 @@ export function useExportImport() {
 
   return {
     handleExport,
+    handleExportSession,
+    handleExportFolder,
     handleImportJSON,
     handleImportSSHConfig,
     handleImportMobaXterm,
