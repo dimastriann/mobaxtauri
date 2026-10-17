@@ -19,6 +19,7 @@ import {
 import HostKeyModal from './HostKeyModal';
 import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
+import { toaster } from './ui/toaster';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
 import '@xterm/xterm/css/xterm.css';
 import {
@@ -117,7 +118,29 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const [hostKeyPrompt, setHostKeyPrompt] = useState<SshHostKeyEvent | null>(null);
   const [showBellFlash, setShowBellFlash] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [recordingMessage, setRecordingMessage] = useState<string | null>(null);
+
+  const RECORDING_PILL_KEY = 'mobaxtauri-recording-pill-pos';
+  const [pillPos, setPillPos] = useState<{ x: number; y: number }>(() => {
+    try {
+      const raw = localStorage.getItem(RECORDING_PILL_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { x: number; y: number };
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') return parsed;
+      }
+    } catch {
+      // malformed storage → fall back to default corner
+    }
+    return { x: 16, y: 8 };
+  });
+  const dragStateRef = useRef<{ startX: number; startY: number; pillX: number; pillY: number } | null>(
+    null,
+  );
+  const wasDragRef = useRef(false);
+  const pillPosRef = useRef(pillPos);
+
+  useEffect(() => {
+    pillPosRef.current = pillPos;
+  }, [pillPos]);
 
   useEffect(() => {
     isFocusedRef.current = isFocused;
@@ -133,7 +156,11 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       recordingStartLineRef.current = buffer ? buffer.baseY + buffer.cursorY : 0;
       recordingRef.current = true;
       setIsRecording(true);
-      setRecordingMessage(null);
+      toaster.create({
+        title: 'Recording started',
+        description: 'Capturing terminal output from this point.',
+        type: 'info',
+      });
       return;
     }
     recordingRef.current = false;
@@ -157,10 +184,52 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         title: `${session?.name ?? 'Terminal'} · ${new Date().toLocaleString()}`,
         lines: recordedLines,
       });
-      setRecordingMessage(`Saved: ${path.split(/[\\/]/).pop()}`);
+      toaster.create({
+        title: 'Recording saved',
+        description: path.split(/[\\/]/).pop() ?? path,
+        type: 'success',
+      });
     } catch (error) {
-      setRecordingMessage(`Export failed: ${String(error)}`);
+      toaster.create({ title: 'Export failed', description: String(error), type: 'error' });
     }
+  };
+
+  const handlePillPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !event.currentTarget.parentElement) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      pillX: pillPos.x,
+      pillY: pillPos.y,
+    };
+    wasDragRef.current = false;
+  };
+
+  const handlePillPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current;
+    if (!drag) return;
+    const offsetX = event.clientX - drag.startX;
+    const offsetY = event.clientY - drag.startY;
+    if (!wasDragRef.current && Math.abs(offsetX) + Math.abs(offsetY) <= 3) return;
+    wasDragRef.current = true;
+    const parent = event.currentTarget.parentElement as HTMLElement;
+    const bounds = parent.getBoundingClientRect();
+    const pill = event.currentTarget.getBoundingClientRect();
+    const nextX = Math.min(Math.max(drag.pillX + offsetX, 0), bounds.width - pill.width);
+    const nextY = Math.min(Math.max(drag.pillY + offsetY, 0), bounds.height - pill.height);
+    setPillPos({ x: Math.round(nextX), y: Math.round(nextY) });
+  };
+
+  const handlePillPointerUp = () => {
+    if (dragStateRef.current && wasDragRef.current) {
+      try {
+        localStorage.setItem(RECORDING_PILL_KEY, JSON.stringify(pillPosRef.current));
+      } catch {
+        // persistence failure must not break the pill
+      }
+    }
+    dragStateRef.current = null;
   };
 
   const updateStatus = useCallback(
@@ -821,31 +890,55 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         opacity={showBellFlash ? 1 : 0}
         transition="opacity 180ms ease"
       />
-      <HStack position="absolute" top={2} left={4} zIndex={10}>
-        <IconButton
-          aria-label={isRecording ? 'Stop and export recording' : 'Start terminal recording'}
-          title={isRecording ? 'Stop and export recording' : 'Start terminal recording'}
-          size="xs"
-          variant="subtle"
-          colorPalette={isRecording ? 'red' : 'gray'}
-          onClick={toggleRecording}
-        >
-          {isRecording ? <LuSquare /> : <LuCircle />}
-        </IconButton>
-        {isRecording && (
-          <Text fontSize="10px" color="red.fg" fontWeight="bold">
-            RECORDING
-          </Text>
-        )}
-        {recordingMessage && (
-          <Text
-            fontSize="10px"
-            color={recordingMessage.startsWith('Saved') ? 'green.fg' : 'red.fg'}
+      <Box
+        css={{
+          position: 'absolute',
+          top: `${pillPos.y}px`,
+          left: `${pillPos.x}px`,
+          zIndex: 30,
+          cursor: 'grab',
+          userSelect: 'none',
+        }}
+        bg="bg.panel"
+        border="1px solid"
+        borderColor="border.subtle"
+        borderRadius="full"
+        px={1.5}
+        py={1}
+        boxShadow="sm"
+        onPointerDown={handlePillPointerDown}
+        onPointerMove={handlePillPointerMove}
+        onPointerUp={handlePillPointerUp}
+        onPointerCancel={handlePillPointerUp}
+      >
+        <HStack gap={1}>
+          <IconButton
+            aria-label={isRecording ? 'Stop and export recording' : 'Start terminal recording'}
+            title={
+              isRecording
+                ? 'Stop and export recording'
+                : 'Start terminal recording (drag the pill to move it)'
+            }
+            size="2xs"
+            variant="subtle"
+            colorPalette={isRecording ? 'red' : 'gray'}
+            onClick={() => {
+              if (wasDragRef.current) {
+                wasDragRef.current = false;
+                return;
+              }
+              void toggleRecording();
+            }}
           >
-            {recordingMessage}
-          </Text>
-        )}
-      </HStack>
+            {isRecording ? <LuSquare /> : <LuCircle />}
+          </IconButton>
+          {isRecording && (
+            <Text fontSize="10px" color="red.fg" fontWeight="bold" pr={1}>
+              REC
+            </Text>
+          )}
+        </HStack>
+      </Box>
       {showSearch && (
         <Box
           position="absolute"
