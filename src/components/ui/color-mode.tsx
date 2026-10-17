@@ -16,17 +16,17 @@ const ColorModeContext = React.createContext<{ theme: string; setTheme: (t: stri
 });
 
 export function ColorModeProvider({ children, defaultTheme = 'dark' }: ColorModeProviderProps) {
-  const [theme, setThemeState] = React.useState(defaultTheme);
+  const [theme, setThemeState] = React.useState(
+    () => localStorage.getItem('mobaxtauri-theme') || defaultTheme,
+  );
 
-  React.useEffect(() => {
-    const saved = localStorage.getItem('mobaxtauri-theme') || defaultTheme;
-    setTheme(saved);
-  }, []);
-
-  const setTheme = (newTheme: string) => {
+  const setTheme = React.useCallback((newTheme: string) => {
     setThemeState(newTheme);
     localStorage.setItem('mobaxtauri-theme', newTheme);
-    if (newTheme === 'dark') {
+  }, []);
+
+  React.useEffect(() => {
+    if (theme === 'dark') {
       document.documentElement.classList.remove('light');
       document.documentElement.classList.add('dark');
       document.documentElement.style.colorScheme = 'dark';
@@ -37,7 +37,7 @@ export function ColorModeProvider({ children, defaultTheme = 'dark' }: ColorMode
       document.documentElement.style.colorScheme = 'light';
       document.documentElement.setAttribute('data-theme', 'light');
     }
-  };
+  }, [theme]);
 
   return (
     <ColorModeContext.Provider value={{ theme, setTheme }}>{children}</ColorModeContext.Provider>
@@ -66,7 +66,7 @@ export function ColorModeIcon() {
   return colorMode === 'light' ? <LuSun /> : <LuMoon />;
 }
 
-interface ColorModeButtonProps extends Omit<IconButtonProps, 'aria-label'> {}
+type ColorModeButtonProps = Omit<IconButtonProps, 'aria-label'>;
 
 export const ColorModeButton = React.forwardRef<HTMLButtonElement, ColorModeButtonProps>(
   function ColorModeButton(props, ref) {

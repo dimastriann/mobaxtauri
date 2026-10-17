@@ -266,6 +266,11 @@ function App() {
     return () => window.removeEventListener(SHORTCUTS_CHANGED_EVENT, updateShortcuts);
   }, []);
 
+  const handleNewSession = useCallback(() => {
+    setEditingSession(undefined);
+    setModalOpen(true);
+  }, []);
+
   useEffect(() => {
     const handleShortcut = async (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -319,6 +324,7 @@ function App() {
     openTabs,
     closeTab,
     setActiveSession,
+    handleNewSession,
   ]);
 
   useEffect(() => {
@@ -362,10 +368,6 @@ function App() {
   }, []);
 
   // ── UI Handlers ─────────────────────────────────────────────────
-  const handleNewSession = () => {
-    setEditingSession(undefined);
-    setModalOpen(true);
-  };
   const handleAddFolder = () => {
     setPromptConfig({
       title: 'New Folder',

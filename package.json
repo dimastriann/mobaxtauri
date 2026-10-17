@@ -10,13 +10,13 @@
     "tauri": "tauri",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "lint": "eslint src",
+    "lint": "eslint src --max-warnings 0",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,html,json}\"",
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml",
     "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --all",
-    "project:check": "tsc --noEmit && eslint src && prettier --check \"src/**/*.{ts,tsx,css,html,json}\" && cargo clippy --manifest-path src-tauri/Cargo.toml"
+    "project:check": "tsc --noEmit && eslint src --max-warnings 0 && prettier --check \"src/**/*.{ts,tsx,css,html,json}\" && cargo clippy --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

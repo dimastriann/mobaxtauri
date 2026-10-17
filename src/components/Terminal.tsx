@@ -253,7 +253,36 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     term.write('\x1b[33mPrivate key passphrase: \x1b[0m');
   }, []);
 
-  // ── Reconnect logic ────────────────────────────────────────
+  // ── Password prompt inside terminal ─────────────────────────
+  const promptPassword = useCallback(() => {
+    const term = xtermRef.current;
+    const diagnostics = window as unknown as Record<string, unknown>;
+    const diagConsole = (diagnostics.__MOBAXTERM_CONSOLE ??= []) as string[];
+    diagConsole.push(`${new Date().toISOString()} promptPassword: term=${!!term}`);
+    if (diagConsole.length > 200) diagConsole.splice(0, diagConsole.length - 200);
+    if (!term) return;
+    const session = getSession();
+    isPasswordModeRef.current = true;
+    passwordBufRef.current = '';
+    term.write(
+      `\x1b[33mPassword for ${session?.user || 'user'}@${session?.host || 'host'}: \x1b[0m`,
+    );
+  }, [getSession]);
+
+  // ── Reconnect / disconnect banner ────────────────────────────
+  const showReconnectBanner = useCallback((term: XTerm) => {
+    if (isDisconnectedRef.current) return;
+    isDisconnectedRef.current = true;
+    term.writeln('');
+    term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
+    term.writeln('\x1b[33m  ⚠  Session disconnected.\x1b[0m');
+    term.writeln(
+      '\x1b[33m  Press \x1b[1mr\x1b[22m to reconnect  •  \x1b[1mq\x1b[22m to close tab\x1b[0m',
+    );
+    term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
+  }, []);
+
+  // ── Reconnect logic ────────────────────────────────────────────────────────
   const doConnect = useCallback(
     async (password?: string, keyPassphrase?: string) => {
       if (connectionAttemptRef.current) return;
@@ -337,7 +366,14 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         connectionAttemptRef.current = false;
       }
     },
-    [sessionId, getSession, updateStatus],
+    [
+      sessionId,
+      getSession,
+      updateStatus,
+      promptPassword,
+      promptPassphrase,
+      showReconnectBanner,
+    ],
   );
 
   // Store the presented key and retry the connection (Trust and connect).
@@ -358,35 +394,6 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     },
     [doConnect],
   );
-
-  // ── Password prompt inside terminal ─────────────────────────
-  const promptPassword = useCallback(() => {
-    const term = xtermRef.current;
-    const diagnostics = window as unknown as Record<string, unknown>;
-    const diagConsole = (diagnostics.__MOBAXTERM_CONSOLE ??= []) as string[];
-    diagConsole.push(`${new Date().toISOString()} promptPassword: term=${!!term}`);
-    if (diagConsole.length > 200) diagConsole.splice(0, diagConsole.length - 200);
-    if (!term) return;
-    const session = getSession();
-    isPasswordModeRef.current = true;
-    passwordBufRef.current = '';
-    term.write(
-      `\x1b[33mPassword for ${session?.user || 'user'}@${session?.host || 'host'}: \x1b[0m`,
-    );
-  }, [getSession]);
-
-  // ── Reconnect / disconnect banner ────────────────────────────
-  const showReconnectBanner = useCallback((term: XTerm) => {
-    if (isDisconnectedRef.current) return;
-    isDisconnectedRef.current = true;
-    term.writeln('');
-    term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
-    term.writeln('\x1b[33m  ⚠  Session disconnected.\x1b[0m');
-    term.writeln(
-      '\x1b[33m  Press \x1b[1mr\x1b[22m to reconnect  •  \x1b[1mq\x1b[22m to close tab\x1b[0m',
-    );
-    term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
-  }, []);
 
   // Reconnect open SSH terminals when the operating system reports that the
   // network is available again. This reuses the normal credential and key path.
