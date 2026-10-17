@@ -1,10 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Box, HStack, Button, Text, Spinner, Textarea, Badge } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
-import {
-  SFTP_FILE_CHANGED_MARKER,
-  type SftpReadFileContentPayload,
-} from '../types/sftp';
+import { SFTP_FILE_CHANGED_MARKER, type SftpReadFileContentPayload } from '../types/sftp';
 import {
   DialogRoot,
   DialogContent,

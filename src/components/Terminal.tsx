@@ -132,9 +132,12 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     }
     return { x: 16, y: 8 };
   });
-  const dragStateRef = useRef<{ startX: number; startY: number; pillX: number; pillY: number } | null>(
-    null,
-  );
+  const dragStateRef = useRef<{
+    startX: number;
+    startY: number;
+    pillX: number;
+    pillY: number;
+  } | null>(null);
   const wasDragRef = useRef(false);
   const pillPosRef = useRef(pillPos);
 
@@ -366,14 +369,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         connectionAttemptRef.current = false;
       }
     },
-    [
-      sessionId,
-      getSession,
-      updateStatus,
-      promptPassword,
-      promptPassphrase,
-      showReconnectBanner,
-    ],
+    [sessionId, getSession, updateStatus, promptPassword, promptPassphrase, showReconnectBanner],
   );
 
   // Store the presented key and retry the connection (Trust and connect).

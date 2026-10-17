@@ -25,7 +25,12 @@ const SftpConflictModal: React.FC<SftpConflictModalProps> = ({
   onClose,
 }) => {
   return (
-    <DialogRoot open={isOpen} onOpenChange={(e) => !e.open && onClose()} size="sm" placement="center">
+    <DialogRoot
+      open={isOpen}
+      onOpenChange={(e) => !e.open && onClose()}
+      size="sm"
+      placement="center"
+    >
       <DialogContent bg="bg.panel" borderColor="border.subtle">
         <DialogHeader>
           <DialogTitle color="fg.default">Destination already exists</DialogTitle>
@@ -39,8 +44,8 @@ const SftpConflictModal: React.FC<SftpConflictModalProps> = ({
               already exists in the remote folder.
             </Text>
             <Text fontSize="12px" color="fg.muted">
-              Rename saves the new item under a suffixed name, overwrite replaces the existing
-              file, and skip leaves everything unchanged.
+              Rename saves the new item under a suffixed name, overwrite replaces the existing file,
+              and skip leaves everything unchanged.
             </Text>
           </VStack>
         </DialogBody>

@@ -94,20 +94,49 @@ const FILE_VISUALS: FileVisual[] = [
     icon: LuFileCode2,
     color: 'blue.fg',
     extensions: [
-      'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'rs', 'go', 'java', 'kt', 'swift', 'c', 'cpp',
-      'h', 'hpp', 'cs', 'php', 'rb', 'scala',
+      'js',
+      'jsx',
+      'mjs',
+      'cjs',
+      'ts',
+      'tsx',
+      'rs',
+      'go',
+      'java',
+      'kt',
+      'swift',
+      'c',
+      'cpp',
+      'h',
+      'hpp',
+      'cs',
+      'php',
+      'rb',
+      'scala',
     ],
   },
   { icon: LuCode, color: 'pink.fg', extensions: ['html', 'htm', 'xml', 'vue', 'svelte'] },
   { icon: LuFileTerminal, color: 'green.fg', extensions: ['sh', 'bash', 'zsh', 'fish', 'ps1'] },
   { icon: LuFileJson, color: 'yellow.fg', extensions: ['json'] },
-  { icon: LuFileCog, color: 'fg.muted', extensions: ['yaml', 'yml', 'toml', 'ini', 'conf', 'cfg', 'env'] },
+  {
+    icon: LuFileCog,
+    color: 'fg.muted',
+    extensions: ['yaml', 'yml', 'toml', 'ini', 'conf', 'cfg', 'env'],
+  },
   { icon: LuFileText, color: 'fg.muted', extensions: ['txt', 'md', 'rtf', 'log', 'properties'] },
-  { icon: LuFileImage, color: 'cyan.fg', extensions: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp'] },
+  {
+    icon: LuFileImage,
+    color: 'cyan.fg',
+    extensions: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp'],
+  },
   { icon: LuFileVideo, color: 'purple.fg', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm'] },
   { icon: LuFileMusic, color: 'blue.fg', extensions: ['mp3', 'wav', 'flac', 'ogg', 'm4a'] },
   { icon: LuFileSpreadsheet, color: 'green.fg', extensions: ['csv', 'xls', 'xlsx', 'ods', 'sql'] },
-  { icon: LuFileArchive, color: 'orange.400', extensions: ['zip', 'rar', 'tar', 'gz', 'bz2', 'xz', '7z', 'iso'] },
+  {
+    icon: LuFileArchive,
+    color: 'orange.400',
+    extensions: ['zip', 'rar', 'tar', 'gz', 'bz2', 'xz', '7z', 'iso'],
+  },
   { icon: LuFileKey, color: 'red.fg', extensions: ['pem', 'key', 'crt', 'ppk', 'pub'] },
 ];
 
@@ -672,11 +701,7 @@ const SftpSidebar: React.FC = () => {
               gap={3}
               transition="background 0.15s"
             >
-              <Icon
-                as={getFileIcon(file)}
-                boxSize="14px"
-                color={getFileVisual(file).color}
-              />
+              <Icon as={getFileIcon(file)} boxSize="14px" color={getFileVisual(file).color} />
               <VStack align="flex-start" gap={0} flex={1} overflow="hidden">
                 {renamingFile === file.name ? (
                   <Box w="full" py={1}>
