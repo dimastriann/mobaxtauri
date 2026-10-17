@@ -1078,6 +1078,35 @@ async fn ssh_detect_os(state: State<'_, AppState>, session_id: String) -> Result
 }
 
 #[tauri::command]
+async fn export_app_data_backup(
+    app_handle: AppHandle,
+    persistence: State<'_, PersistenceService>,
+    path: String,
+    session_id: Option<String>,
+    folder_id: Option<String>,
+    exported_at: String,
+) -> Result<usize, String> {
+    let selection = match (session_id, folder_id) {
+        (Some(id), None) => crate::persistence::BackupSelection::Session(id),
+        (None, Some(id)) => crate::persistence::BackupSelection::Folder(id),
+        (Some(_), Some(_)) | (None, None) => {
+            return Err("Provide exactly one of sessionId or folderId".to_string())
+        }
+    };
+    let document = persistence
+        .load(&app_handle)
+        .await?
+        .ok_or("No saved session data found")?;
+    let (export, count) =
+        crate::persistence::build_backup_export(&document, &selection, &exported_at)
+            .ok_or_else(|| "No matching session data to export".to_string())?;
+    let content = serde_json::to_string_pretty(&export)
+        .map_err(|e| format!("Failed to serialize backup: {e}"))?;
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write backup file: {e}"))?;
+    Ok(count)
+}
+
+#[tauri::command]
 async fn write_text_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))
 }
@@ -1139,6 +1168,7 @@ pub fn run() {
             read_text_file,
             load_app_data,
             save_app_data,
+            export_app_data_backup,
             credential_unlock,
             credential_save,
             credential_delete,
