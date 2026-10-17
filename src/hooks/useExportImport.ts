@@ -1,6 +1,6 @@
 import { save, open, ask, message } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
-import { useSessionStore } from '../store/useSessionStore';
+import { useSessionStore, type Folder, type Session, type Snippet } from '../store/useSessionStore';
 import { parseSSHConfig, parseMobaXtermINI } from '../utils/importParsers';
 
 export function useExportImport() {
@@ -62,7 +62,7 @@ export function useExportImport() {
       const exportSessions = useSessionStore
         .getState()
         .sessions.filter((s) => s.id !== 'local')
-        .map(({ status, error, lastActivity, ...s }) => s);
+        .map(({ status: _status, error: _error, lastActivity: _lastActivity, ...s }) => s);
 
       const exportData = {
         version: 1,
@@ -95,7 +95,12 @@ export function useExportImport() {
       if (!selectedPath || typeof selectedPath !== 'string') return;
 
       const content = (await invoke('read_text_file', { path: selectedPath })) as string;
-      const data = JSON.parse(content);
+      const data = JSON.parse(content) as {
+        app?: string;
+        sessions?: Array<Omit<Session, 'status'>>;
+        folders?: Folder[];
+        snippets?: Snippet[];
+      };
 
       if (data.app !== 'mobaxtauri') {
         throw new Error('Invalid backup file format.');
@@ -106,9 +111,9 @@ export function useExportImport() {
         { title: 'Import Sessions', kind: 'warning' },
       );
 
-      const importedSessions = (data.sessions || []).map((s: any) => ({
+      const importedSessions = (data.sessions ?? []).map((s) => ({
         ...s,
-        status: 'disconnected',
+        status: 'disconnected' as const,
       }));
 
       const importedFolders = data.folders || [];
@@ -118,7 +123,7 @@ export function useExportImport() {
         // Merge folders
         const existingFolders = useSessionStore.getState().folders;
         const newFolders = [...existingFolders];
-        importedFolders.forEach((f: any) => {
+        importedFolders.forEach((f) => {
           if (!newFolders.some((ex) => ex.id === f.id || ex.name === f.name)) {
             newFolders.push(f);
           }
@@ -127,7 +132,7 @@ export function useExportImport() {
         // Merge sessions
         const existingSessions = useSessionStore.getState().sessions;
         const newSessions = [...existingSessions];
-        importedSessions.forEach((s: any) => {
+        importedSessions.forEach((s) => {
           if (
             !newSessions.some(
               (ex) =>
@@ -141,7 +146,7 @@ export function useExportImport() {
         // Merge snippets
         const existingSnippets = useSessionStore.getState().snippets;
         const newSnippets = [...existingSnippets];
-        importedSnippets.forEach((sn: any) => {
+        importedSnippets.forEach((sn) => {
           if (!newSnippets.some((ex) => ex.id === sn.id || ex.name === sn.name)) {
             newSnippets.push(sn);
           }
@@ -162,7 +167,7 @@ export function useExportImport() {
 
         useSessionStore.setState({
           folders: importedFolders,
-          sessions: [local, ...importedSessions.filter((s: any) => s.id !== 'local')],
+          sessions: [local, ...importedSessions.filter((s) => s.id !== 'local')],
           snippets: importedSnippets,
         });
       }

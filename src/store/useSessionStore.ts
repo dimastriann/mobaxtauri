@@ -535,7 +535,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       const state = get();
       const toSave = state.sessions.map(
-        ({ status, error, lastActivity, password, hasBell, health, healthHistory, ...s }) => s,
+        ({
+          status: _status,
+          error: _error,
+          lastActivity: _lastActivity,
+          password: _password,
+          hasBell: _hasBell,
+          health: _health,
+          healthHistory: _healthHistory,
+          ...s
+        }) => s,
       );
       await invoke('save_app_data', {
         document: {

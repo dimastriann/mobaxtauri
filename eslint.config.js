@@ -58,5 +58,14 @@ export default tseslint.config(
       'react-hooks/preserve-manual-memoization': 'warn',
     },
   },
+  // Chakra CLI-generated ui wrappers re-export non-component bindings
+  // (Dialog.Root, Toaster handles, useColorMode); the fast-refresh warning
+  // does not apply to them.
+  {
+    files: ['src/components/ui/**'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
   prettier
 );

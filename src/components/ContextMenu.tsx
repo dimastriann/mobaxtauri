@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, HStack, Text, Icon } from '@chakra-ui/react';
+import type { IconType } from 'react-icons';
 
 interface ContextMenuProps {
   x: number;
@@ -52,7 +53,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, childre
 };
 
 interface ContextMenuItemProps {
-  icon?: any;
+  icon?: IconType;
   label: string;
   onClick: () => void;
   color?: string;

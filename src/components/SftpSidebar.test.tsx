@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, type Mock } from 'vitest';
 import SftpSidebar from './SftpSidebar';
 import { Provider } from './ui/provider'; // Adjust based on your Chakra setup
 import { useSftpStore } from '../store/useSftpStore';
@@ -14,10 +14,13 @@ vi.mock('../store/useSessionStore', () => ({
   useSessionStore: vi.fn(),
 }));
 
+const mockedUseSessionStore = useSessionStore as unknown as Mock;
+const mockedUseSftpStore = useSftpStore as unknown as Mock;
+
 describe('SftpSidebar', () => {
   it('should render the placeholder when no files are present', () => {
-    (useSessionStore as any).mockReturnValue('session-1');
-    (useSftpStore as any).mockReturnValue({
+    mockedUseSessionStore.mockReturnValue('session-1');
+    mockedUseSftpStore.mockReturnValue({
       currentPath: '/',
       files: [],
       isLoading: false,
@@ -37,7 +40,7 @@ describe('SftpSidebar', () => {
   });
 
   it('should render file names when files are present', () => {
-    (useSftpStore as any).mockReturnValue({
+    mockedUseSftpStore.mockReturnValue({
       currentPath: '/home',
       files: [
         { name: 'test.txt', is_dir: false, is_file: true, size: 1024, modified: 0 },

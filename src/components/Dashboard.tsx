@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Flex, Box, Text, Grid, Input, Icon, Button } from '@chakra-ui/react';
 import { LuTerminal, LuServer, LuCode, LuStar, LuClock, LuZap, LuFolder } from 'react-icons/lu';
+import type { IconType } from 'react-icons';
 import { Session, Folder, useSessionStore } from '../store/useSessionStore';
 import OSIcon from './OSIcon';
 
@@ -402,7 +403,7 @@ function StatCard({
   value,
   color,
 }: {
-  icon: any;
+  icon: IconType;
   title: string;
   value: string;
   color: string;

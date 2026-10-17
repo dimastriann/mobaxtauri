@@ -214,7 +214,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
               <Field label="Tag">
                 <select
                   value={tag || ''}
-                  onChange={(e) => setTag((e.target.value as any) || undefined)}
+                  onChange={(e) => setTag((e.target.value as Session['tag']) || undefined)}
                   style={{
                     width: '100%',
                     height: '32px',
