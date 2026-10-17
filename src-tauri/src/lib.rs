@@ -35,6 +35,7 @@ use tokio::sync::Mutex;
 pub struct AppState {
     pub ssh_sessions: SessionManager,
     pub sftp_sessions: Mutex<HashMap<String, std::sync::Arc<russh_sftp::client::SftpSession>>>,
+    pub sftp_homes: Mutex<HashMap<String, String>>,
 }
 
 #[tauri::command]
@@ -207,6 +208,7 @@ async fn ssh_connect(
     // Clean up any existing session with the same ID
     state.ssh_sessions.remove(&session_id).await;
     state.sftp_sessions.lock().await.remove(&session_id);
+    state.sftp_homes.lock().await.remove(&session_id);
     emit_ssh_health(&app_handle, session_id.clone(), None);
 
     state
@@ -263,6 +265,7 @@ async fn ssh_disconnect(
     state.ssh_sessions.remove(&session_id).await;
     transfers.cancel_session(&session_id).await;
     state.sftp_sessions.lock().await.remove(&session_id);
+    state.sftp_homes.lock().await.remove(&session_id);
 
     emit_ssh_session_state(
         &app_handle,
@@ -831,6 +834,7 @@ async fn sftp_read_file_content(
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SftpReadFileContent {
     content: String,
     mtime: Option<u32>,
@@ -927,6 +931,52 @@ async fn sftp_remove(
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SftpPathVariants {
+    full_path: String,
+    relative_to_home: String,
+    name: String,
+}
+
+#[tauri::command]
+async fn sftp_path_variants(
+    state: State<'_, AppState>,
+    session_id: String,
+    remote_path: String,
+) -> Result<SftpPathVariants, String> {
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
+        .get(&session_id)
+        .cloned()
+        .ok_or("SFTP session not found")?;
+    let cached_home = state.sftp_homes.lock().await.get(&session_id).cloned();
+    let home = match cached_home {
+        Some(home) => Some(home),
+        None => {
+            let resolved = sftp.canonicalize(".").await.ok();
+            if let Some(home) = &resolved {
+                state
+                    .sftp_homes
+                    .lock()
+                    .await
+                    .insert(session_id.clone(), home.clone());
+            }
+            resolved
+        }
+    };
+    let name = crate::sftp_utils::final_segment(&remote_path);
+    let relative_to_home = crate::sftp_utils::relative_to_home(&remote_path, home.as_deref())
+        .unwrap_or_else(|| remote_path.clone());
+    Ok(SftpPathVariants {
+        full_path: remote_path,
+        relative_to_home,
+        name,
+    })
+}
+
 #[tauri::command]
 async fn sftp_create_dir(
     state: State<'_, AppState>,
@@ -1019,6 +1069,7 @@ pub fn run() {
         .manage(AppState {
             ssh_sessions: SessionManager::default(),
             sftp_sessions: Mutex::new(HashMap::new()),
+            sftp_homes: Mutex::new(HashMap::new()),
         })
         .manage(PersistenceService::default())
         .manage(CredentialService::default())
@@ -1049,6 +1100,7 @@ pub fn run() {
             sftp_read_file_content,
             sftp_write_file_content,
             sftp_create_dir,
+            sftp_path_variants,
             write_text_file,
             read_text_file,
             load_app_data,

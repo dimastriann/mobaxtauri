@@ -40,6 +40,31 @@ pub fn file_too_large_error(size: Option<u64>, limit: u64) -> Option<String> {
     ))
 }
 
+/// The final path segment, ignoring a trailing slash.
+pub fn final_segment(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    match trimmed.rfind('/') {
+        Some(idx) => trimmed[idx + 1..].to_string(),
+        None => trimmed.to_string(),
+    }
+}
+
+/// Path relative to the user's home, rendered with `~`, or `None` when the
+/// path is not under the home directory or the home is the degenerate "/".
+pub fn relative_to_home(path: &str, home: Option<&str>) -> Option<String> {
+    let home = home?.trim_end_matches('/');
+    if home.is_empty() {
+        return None;
+    }
+    let trimmed = path.trim_end_matches('/');
+    if trimmed == home {
+        return Some("~".to_string());
+    }
+    trimmed
+        .strip_prefix(&format!("{home}/"))
+        .map(|rest| format!("~/{rest}"))
+}
+
 #[allow(dead_code)]
 pub fn get_parent_path(path: &str) -> String {
     if path == "/" || path.is_empty() {
@@ -116,6 +141,34 @@ mod tests {
             file_too_large_error(Some(6 * 1024 * 1024), EDITOR_MAX_FILE_BYTES).as_deref(),
             Some("File is 6.0 MB which exceeds the 5.0 MB limit. Download it instead.")
         );
+    }
+
+    #[test]
+    fn test_final_segment() {
+        assert_eq!(final_segment("/srv/report.pdf"), "report.pdf");
+        assert_eq!(final_segment("/srv/dir/"), "dir");
+        assert_eq!(final_segment("notes.md"), "notes.md");
+        assert_eq!(final_segment("/srv/notes (2).pdf"), "notes (2).pdf");
+    }
+
+    #[test]
+    fn test_relative_to_home() {
+        assert_eq!(
+            relative_to_home("/root/a/b.txt", Some("/root")),
+            Some("~/a/b.txt".to_string())
+        );
+        assert_eq!(
+            relative_to_home("/root", Some("/root")),
+            Some("~".to_string())
+        );
+        assert_eq!(
+            relative_to_home("/root/", Some("/root")),
+            Some("~".to_string())
+        );
+        assert_eq!(relative_to_home("/etc/hosts", Some("/root")), None);
+        assert_eq!(relative_to_home("/rootfoo/x", Some("/root")), None);
+        assert_eq!(relative_to_home("/root/a", None), None);
+        assert_eq!(relative_to_home("/root/a", Some("/")), None);
     }
 
     #[test]
