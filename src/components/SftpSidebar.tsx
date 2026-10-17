@@ -12,6 +12,7 @@ import {
 } from '@chakra-ui/react';
 import {
   LuFolder,
+  LuFolderOpen,
   LuFile,
   LuRefreshCw,
   LuArrowUp,
@@ -95,7 +96,11 @@ const SftpSidebar: React.FC = () => {
     dismissConflict,
   } = useSftpStore();
 
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: any } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    file: SftpFile | null;
+  } | null>(null);
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [editorFile, setEditorFile] = useState<{ path: string; name: string } | null>(null);
@@ -202,7 +207,7 @@ const SftpSidebar: React.FC = () => {
     );
   }
 
-  const handleFileClick = (file: any) => {
+  const handleFileClick = (file: SftpFile) => {
     if (file.is_dir) {
       cd(activeSessionId, file.name);
     }
@@ -215,7 +220,7 @@ const SftpSidebar: React.FC = () => {
     setRenamingFile(null);
   };
 
-  const handleDelete = async (file: any) => {
+  const handleDelete = async (file: SftpFile) => {
     try {
       const confirmed = await ask(`Are you sure you want to delete ${file.name}?`, {
         title: 'Delete Confirmation',
@@ -280,6 +285,135 @@ const SftpSidebar: React.FC = () => {
     if (['txt', 'log', 'config', 'env', 'sh'].includes(ext)) return LuFileText;
     return LuFile;
   };
+
+  const renderBlankMenu = (menu: { x: number; y: number }) => (
+    <ContextMenu x={menu.x} y={menu.y} onClose={() => setContextMenu(null)}>
+      <VStack align="stretch" gap={0}>
+        <ContextMenuItem
+          icon={LuFolderPlus}
+          color="blue.fg"
+          label="New Folder"
+          onClick={() => {
+            setContextMenu(null);
+            handleCreateFolder();
+          }}
+        />
+        <ContextMenuItem
+          icon={LuUpload}
+          label="Upload File"
+          onClick={() => {
+            setContextMenu(null);
+            uploadFile(activeSessionId);
+          }}
+        />
+        <ContextMenuItem
+          icon={LuRefreshCw}
+          label="Refresh"
+          onClick={() => {
+            setContextMenu(null);
+            refresh(activeSessionId);
+          }}
+        />
+      </VStack>
+    </ContextMenu>
+  );
+
+  const renderFolderMenu = (menu: { x: number; y: number }, file: SftpFile) => (
+    <ContextMenu x={menu.x} y={menu.y} onClose={() => setContextMenu(null)}>
+      <VStack align="stretch" gap={0}>
+        <ContextMenuItem
+          icon={LuFolderOpen}
+          color="blue.fg"
+          label="Open Folder"
+          onClick={() => {
+            setContextMenu(null);
+            cd(activeSessionId, file.name);
+          }}
+        />
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          icon={LuPencil}
+          label="Rename"
+          onClick={() => {
+            setRenamingFile(file.name);
+            setRenameValue(file.name);
+            setContextMenu(null);
+          }}
+        />
+        <ContextMenuItem
+          icon={LuTrash2}
+          color="red.fg"
+          label="Delete"
+          onClick={() => {
+            setContextMenu(null);
+            handleDelete(file);
+          }}
+        />
+      </VStack>
+    </ContextMenu>
+  );
+
+  const renderFileMenu = (menu: { x: number; y: number }, file: SftpFile) => (
+    <ContextMenu x={menu.x} y={menu.y} onClose={() => setContextMenu(null)}>
+      <VStack align="stretch" gap={0}>
+        <ContextMenuItem
+          icon={LuExternalLink}
+          color="blue.fg"
+          label="Open File"
+          onClick={() => {
+            setContextMenu(null);
+            openFile(activeSessionId, file.name);
+          }}
+        />
+        <ContextMenuItem
+          icon={LuCode}
+          label="Edit File"
+          onClick={() => {
+            const path = currentPath.endsWith('/')
+              ? `${currentPath}${file.name}`
+              : `${currentPath}/${file.name}`;
+            setEditorFile({ path, name: file.name });
+            setContextMenu(null);
+          }}
+        />
+        <ContextMenuItem
+          icon={LuDownload}
+          label="Download"
+          onClick={() => {
+            setContextMenu(null);
+            downloadFile(activeSessionId, file.name);
+          }}
+        />
+        <ContextMenuItem
+          icon={LuCopy}
+          label="Duplicate"
+          onClick={() => {
+            setContextMenu(null);
+            copyFile(activeSessionId, file.name, `copy_${file.name}`);
+          }}
+        />
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          icon={LuPencil}
+          label="Rename"
+          onClick={() => {
+            setRenamingFile(file.name);
+            setRenameValue(file.name);
+            setContextMenu(null);
+          }}
+        />
+        <ContextMenuItem
+          icon={LuTrash2}
+          color="red.fg"
+          label="Delete"
+          onClick={() => {
+            setContextMenu(null);
+            handleDelete(file);
+          }}
+        />
+      </VStack>
+    </ContextMenu>
+  );
 
   return (
     <VStack align="stretch" h="full" minH={0} overflow="hidden" gap={0}>
@@ -383,6 +517,10 @@ const SftpSidebar: React.FC = () => {
         px={1}
         pb={2}
         className="custom-scrollbar"
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setContextMenu({ x: e.clientX, y: e.clientY, file: null });
+        }}
       >
         {isLoading && files.length === 0 ? (
           <Flex p={8} justify="center">
@@ -405,6 +543,7 @@ const SftpSidebar: React.FC = () => {
               onDoubleClick={() => handleFileClick(file)}
               onContextMenu={(e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 setContextMenu({ x: e.clientX, y: e.clientY, file });
               }}
               gap={3}
@@ -462,82 +601,13 @@ const SftpSidebar: React.FC = () => {
         )}
       </VStack>
 
-      {contextMenu && (
-        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
-          <VStack align="stretch" gap={0}>
-            {!contextMenu.file.is_dir && (
-              <ContextMenuItem
-                icon={LuCode}
-                color="blue.fg"
-                label="Edit File"
-                onClick={() => {
-                  const path = currentPath.endsWith('/')
-                    ? `${currentPath}${contextMenu.file.name}`
-                    : `${currentPath}/${contextMenu.file.name}`;
-                  setEditorFile({ path, name: contextMenu.file.name });
-                  setContextMenu(null);
-                }}
-              />
-            )}
-            <ContextMenuItem
-              icon={LuFolderPlus}
-              color="blue.fg"
-              label="New Folder"
-              onClick={() => {
-                setContextMenu(null);
-                handleCreateFolder();
-              }}
-            />
-            <ContextMenuItem
-              icon={LuExternalLink}
-              label="Open File"
-              onClick={() => {
-                const name = contextMenu.file.name;
-                setContextMenu(null);
-                openFile(activeSessionId, name);
-              }}
-            />
-            <ContextMenuItem
-              icon={LuDownload}
-              label="Download"
-              onClick={() => {
-                const name = contextMenu.file.name;
-                setContextMenu(null);
-                downloadFile(activeSessionId, name);
-              }}
-            />
-            <ContextMenuItem
-              icon={LuCopy}
-              label="Duplicate"
-              onClick={() => {
-                const name = contextMenu.file.name;
-                setContextMenu(null);
-                copyFile(activeSessionId, name, `copy_${name}`);
-              }}
-            />
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              icon={LuPencil}
-              label="Rename"
-              onClick={() => {
-                setRenamingFile(contextMenu.file.name);
-                setRenameValue(contextMenu.file.name);
-                setContextMenu(null);
-              }}
-            />
-            <ContextMenuItem
-              icon={LuTrash2}
-              color="red.fg"
-              label="Delete"
-              onClick={() => {
-                const file = contextMenu.file;
-                setContextMenu(null);
-                handleDelete(file);
-              }}
-            />
-          </VStack>
-        </ContextMenu>
-      )}
+      {contextMenu && contextMenu.file === null && renderBlankMenu(contextMenu)}
+
+      {contextMenu && contextMenu.file?.is_dir && renderFolderMenu(contextMenu, contextMenu.file)}
+
+      {contextMenu && contextMenu.file && !contextMenu.file.is_dir
+        ? renderFileMenu(contextMenu, contextMenu.file)
+        : null}
 
       <SftpEditorModal
         isOpen={!!editorFile}
