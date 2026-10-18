@@ -11,9 +11,16 @@ export const Toaster = () => {
     <Portal>
       <ChakraToaster toaster={toaster}>
         {(toast) => (
-          <Toast.Root key={toast.id}>
+          <Toast.Root key={toast.id} w="24rem" maxW="calc(100vw - 2rem)">
             <Toast.Title>{toast.title}</Toast.Title>
-            {toast.description && <Toast.Description>{toast.description}</Toast.Description>}
+            {toast.description && (
+              <Toast.Description
+                css={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                lineClamp={6}
+              >
+                {toast.description}
+              </Toast.Description>
+            )}
           </Toast.Root>
         )}
       </ChakraToaster>

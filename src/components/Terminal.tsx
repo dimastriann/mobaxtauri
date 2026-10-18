@@ -132,12 +132,6 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     }
     return { x: 16, y: 8 };
   });
-  const dragStateRef = useRef<{
-    startX: number;
-    startY: number;
-    pillX: number;
-    pillY: number;
-  } | null>(null);
   const wasDragRef = useRef(false);
   const pillPosRef = useRef(pillPos);
 
@@ -199,40 +193,54 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
   const handlePillPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !event.currentTarget.parentElement) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragStateRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      pillX: pillPos.x,
-      pillY: pillPos.y,
+    const pill = event.currentTarget;
+    const bounds = pill.parentElement?.getBoundingClientRect();
+    if (!bounds) return;
+    // Set up window-level drag listeners instead of pointer capture:
+    // capturing on the pill retargets the later click to the pill, so the
+    // record button's onClick would never fire.
+    const start = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      pillX: pillPosRef.current.x,
+      pillY: pillPosRef.current.y,
+      boundWidth: bounds.width,
+      boundHeight: bounds.height,
+      pillWidth: pill.getBoundingClientRect().width,
+      pillHeight: pill.getBoundingClientRect().height,
     };
     wasDragRef.current = false;
-  };
 
-  const handlePillPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragStateRef.current;
-    if (!drag) return;
-    const offsetX = event.clientX - drag.startX;
-    const offsetY = event.clientY - drag.startY;
-    if (!wasDragRef.current && Math.abs(offsetX) + Math.abs(offsetY) <= 3) return;
-    wasDragRef.current = true;
-    const parent = event.currentTarget.parentElement as HTMLElement;
-    const bounds = parent.getBoundingClientRect();
-    const pill = event.currentTarget.getBoundingClientRect();
-    const nextX = Math.min(Math.max(drag.pillX + offsetX, 0), bounds.width - pill.width);
-    const nextY = Math.min(Math.max(drag.pillY + offsetY, 0), bounds.height - pill.height);
-    setPillPos({ x: Math.round(nextX), y: Math.round(nextY) });
-  };
-
-  const handlePillPointerUp = () => {
-    if (dragStateRef.current && wasDragRef.current) {
-      try {
-        localStorage.setItem(RECORDING_PILL_KEY, JSON.stringify(pillPosRef.current));
-      } catch {
-        // persistence failure must not break the pill
+    const onMove = (move: PointerEvent) => {
+      const offsetX = move.clientX - start.pointerX;
+      const offsetY = move.clientY - start.pointerY;
+      if (!wasDragRef.current && Math.abs(offsetX) + Math.abs(offsetY) <= 3) return;
+      wasDragRef.current = true;
+      const nextX = Math.min(
+        Math.max(start.pillX + offsetX, 0),
+        start.boundWidth - start.pillWidth,
+      );
+      const nextY = Math.min(
+        Math.max(start.pillY + offsetY, 0),
+        start.boundHeight - start.pillHeight,
+      );
+      setPillPos({ x: Math.round(nextX), y: Math.round(nextY) });
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (wasDragRef.current) {
+        try {
+          localStorage.setItem(RECORDING_PILL_KEY, JSON.stringify(pillPosRef.current));
+        } catch {
+          // persistence failure must not break the pill
+        }
       }
-    }
-    dragStateRef.current = null;
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   const updateStatus = useCallback(
@@ -910,9 +918,6 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         py={1}
         boxShadow="sm"
         onPointerDown={handlePillPointerDown}
-        onPointerMove={handlePillPointerMove}
-        onPointerUp={handlePillPointerUp}
-        onPointerCancel={handlePillPointerUp}
       >
         <HStack gap={1}>
           <IconButton
