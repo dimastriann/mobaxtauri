@@ -1,9 +1,111 @@
-import { useState } from 'react';
-import { Flex, Box, Text, Grid, Input, Icon, Button } from '@chakra-ui/react';
-import { LuTerminal, LuServer, LuCode, LuStar, LuClock, LuZap, LuFolder } from 'react-icons/lu';
+import React, { useState } from 'react';
+import { Flex, Box, Text, Grid, Input, Icon, Button, IconButton } from '@chakra-ui/react';
+import {
+  LuTerminal,
+  LuServer,
+  LuCode,
+  LuStar,
+  LuClock,
+  LuZap,
+  LuFolder,
+  LuArrowLeft,
+} from 'react-icons/lu';
 import type { IconType } from 'react-icons';
 import { Session, Folder, useSessionStore } from '../store/useSessionStore';
 import OSIcon from './OSIcon';
+
+interface SessionCardProps {
+  session: Session;
+  onConnect: (session: Session) => void;
+}
+
+const SessionCard: React.FC<SessionCardProps> = ({ session, onConnect }) => {
+  const updateSession = useSessionStore((state) => state.updateSession);
+  return (
+    <Box
+      p={4}
+      bg="bg.surface"
+      borderRadius="xl"
+      border="1px solid"
+      borderColor="border.subtle"
+      transition="all 0.2s"
+      _hover={{
+        borderColor: 'brand.500',
+        transform: 'translateY(-2px)',
+        boxShadow: 'md',
+        cursor: 'pointer',
+      }}
+      onClick={() => onConnect(session)}
+      position="relative"
+      overflow="hidden"
+    >
+      <Flex justify="space-between" align="flex-start" mb={3}>
+        <Flex
+          w={10}
+          h={10}
+          borderRadius="lg"
+          bg="bg.muted"
+          align="center"
+          justify="center"
+          color={session.status === 'connected' ? 'green.400' : 'fg.muted'}
+        >
+          <OSIcon os={session.os} boxSize={5} />
+        </Flex>
+      </Flex>
+      <Text fontWeight="medium" fontSize="md" lineClamp={1} mb={1}>
+        {session.name}
+      </Text>
+      <Text fontSize="sm" color="fg.muted" lineClamp={1}>
+        {session.user}@{session.host}
+      </Text>
+
+      <Flex justify="space-between" align="center" mt={3}>
+        <Text fontSize="xs" color="fg.muted">
+          Port {session.port}
+        </Text>
+        <Icon
+          as={LuStar}
+          boxSize={5}
+          color={session.isFavorite ? 'yellow.400' : 'border.subtle'}
+          cursor="pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            updateSession(session.id, { isFavorite: !session.isFavorite });
+          }}
+          _hover={{ color: 'yellow.400' }}
+        />
+      </Flex>
+
+      {session.tag && (
+        <Box
+          position="absolute"
+          top="12px"
+          right="-24px"
+          bg={
+            session.tag === 'prod'
+              ? 'red.500'
+              : session.tag === 'staging'
+                ? 'orange.500'
+                : session.tag === 'dev'
+                  ? 'green.500'
+                  : 'gray.500'
+          }
+          color="white"
+          fontSize="9px"
+          fontWeight="bold"
+          textTransform="uppercase"
+          py={0.5}
+          w="90px"
+          textAlign="center"
+          transform="rotate(45deg)"
+          boxShadow="sm"
+        >
+          {session.tag}
+        </Box>
+      )}
+    </Box>
+  );
+};
 
 interface DashboardProps {
   onQuickConnect: (str: string) => void;
@@ -13,10 +115,10 @@ interface DashboardProps {
 export default function Dashboard({ onQuickConnect, onConnectSession }: DashboardProps) {
   const sessions = useSessionStore((state) => state.sessions);
   const snippets = useSessionStore((state) => state.snippets);
-  const updateSession = useSessionStore((state) => state.updateSession);
   const folders = useSessionStore((state) => state.folders);
 
   const [quickConnectStr, setQuickConnectStr] = useState('');
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [quickHistory, setQuickHistory] = useState<string[]>(() => {
     try {
       return JSON.parse(localStorage.getItem('quick-connect-history') || '[]');
@@ -55,6 +157,11 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
       return (b.lastActivity || 0) - (a.lastActivity || 0);
     })
     .slice(0, 8); // Top 8
+
+  const selectedFolder = folders.find((f) => f.id === selectedFolderId) ?? null;
+  const folderSessions = selectedFolder
+    ? sessions.filter((s) => s.type === 'ssh' && !s.ephemeral && s.folderId === selectedFolder.id)
+    : [];
 
   return (
     <Flex
@@ -190,7 +297,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
                     bg="bg.muted"
                     borderRadius="lg"
                     border="1px solid"
-                    borderColor="border.subtle"
+                    borderColor={f.id === selectedFolderId ? 'brand.500' : 'border.subtle'}
                     align="center"
                     _hover={{
                       borderColor: 'brand.500',
@@ -199,6 +306,13 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
                       cursor: 'pointer',
                     }}
                     transition="all 0.2s"
+                    onClick={() => setSelectedFolderId(f.id)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Show sessions in folder ${f.name}`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') setSelectedFolderId(f.id);
+                    }}
                   >
                     <Icon as={LuFolder} color="brand.500" mr={3} boxSize={5} />
                     <Flex direction="column" flex={1} overflow="hidden">
@@ -220,119 +334,91 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
             </Grid>
           </Box>
 
-          {/* Recent & Favorites */}
+          {/* Folder detail, or Recent & Favorites when no folder is selected */}
           <Flex direction="column">
-            <Flex align="center" mb={4}>
-              <Icon as={LuClock} color="fg.muted" boxSize={5} mr={2} />
-              <Text fontSize="xl" fontWeight="semibold">
-                Recent & Favorites
-              </Text>
-            </Flex>
-
-            {recentSessions.length === 0 ? (
-              <Flex
-                align="center"
-                justify="center"
-                p={10}
-                border="1px dashed"
-                borderColor="border.subtle"
-                borderRadius="xl"
-              >
-                <Text color="fg.muted">
-                  No recent sessions found. Connect to a host to see it here.
-                </Text>
-              </Flex>
-            ) : (
-              <Grid
-                templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' }}
-                gap={4}
-              >
-                {recentSessions.map((session) => (
-                  <Box
-                    key={session.id}
-                    p={4}
-                    bg="bg.surface"
-                    borderRadius="xl"
-                    border="1px solid"
-                    borderColor="border.subtle"
-                    transition="all 0.2s"
-                    _hover={{
-                      borderColor: 'brand.500',
-                      transform: 'translateY(-2px)',
-                      boxShadow: 'md',
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => onConnectSession(session)}
-                    position="relative"
-                    overflow="hidden"
+            {selectedFolder ? (
+              <>
+                <Flex align="center" mb={4}>
+                  <IconButton
+                    aria-label="Back to all folders"
+                    size="xs"
+                    variant="ghost"
+                    mr={2}
+                    onClick={() => setSelectedFolderId(null)}
                   >
-                    <Flex justify="space-between" align="flex-start" mb={3}>
-                      <Flex
-                        w={10}
-                        h={10}
-                        borderRadius="lg"
-                        bg="bg.muted"
-                        align="center"
-                        justify="center"
-                        color={session.status === 'connected' ? 'green.400' : 'fg.muted'}
-                      >
-                        <OSIcon os={session.os} boxSize={5} />
-                      </Flex>
-                    </Flex>
-                    <Text fontWeight="medium" fontSize="md" lineClamp={1} mb={1}>
-                      {session.name}
-                    </Text>
-                    <Text fontSize="sm" color="fg.muted" lineClamp={1}>
-                      {session.user}@{session.host}
-                    </Text>
+                    <LuArrowLeft />
+                  </IconButton>
+                  <Icon as={LuFolder} color="brand.500" boxSize={5} mr={2} />
+                  <Text fontSize="xl" fontWeight="semibold" lineClamp={1}>
+                    {selectedFolder.name}
+                  </Text>
+                </Flex>
 
-                    <Flex justify="space-between" align="center" mt={3}>
-                      <Text fontSize="xs" color="fg.muted">
-                        Port {session.port}
-                      </Text>
-                      <Icon
-                        as={LuStar}
-                        boxSize={5}
-                        color={session.isFavorite ? 'yellow.400' : 'border.subtle'}
-                        cursor="pointer"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          updateSession(session.id, { isFavorite: !session.isFavorite });
-                        }}
-                        _hover={{ color: 'yellow.400' }}
+                {folderSessions.length === 0 ? (
+                  <Flex
+                    align="center"
+                    justify="center"
+                    p={10}
+                    border="1px dashed"
+                    borderColor="border.subtle"
+                    borderRadius="xl"
+                  >
+                    <Text color="fg.muted">
+                      No sessions in this folder yet. Add one from the sidebar.
+                    </Text>
+                  </Flex>
+                ) : (
+                  <Grid
+                    templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' }}
+                    gap={4}
+                  >
+                    {folderSessions.map((session) => (
+                      <SessionCard
+                        key={session.id}
+                        session={session}
+                        onConnect={onConnectSession}
                       />
-                    </Flex>
+                    ))}
+                  </Grid>
+                )}
+              </>
+            ) : (
+              <>
+                <Flex align="center" mb={4}>
+                  <Icon as={LuClock} color="fg.muted" boxSize={5} mr={2} />
+                  <Text fontSize="xl" fontWeight="semibold">
+                    Recent & Favorites
+                  </Text>
+                </Flex>
 
-                    {session.tag && (
-                      <Box
-                        position="absolute"
-                        top="12px"
-                        right="-24px"
-                        bg={
-                          session.tag === 'prod'
-                            ? 'red.500'
-                            : session.tag === 'staging'
-                              ? 'orange.500'
-                              : session.tag === 'dev'
-                                ? 'green.500'
-                                : 'gray.500'
-                        }
-                        color="white"
-                        fontSize="9px"
-                        fontWeight="bold"
-                        textTransform="uppercase"
-                        py={0.5}
-                        w="90px"
-                        textAlign="center"
-                        transform="rotate(45deg)"
-                        boxShadow="sm"
-                      >
-                        {session.tag}
-                      </Box>
-                    )}
-                  </Box>
-                ))}
-              </Grid>
+                {recentSessions.length === 0 ? (
+                  <Flex
+                    align="center"
+                    justify="center"
+                    p={10}
+                    border="1px dashed"
+                    borderColor="border.subtle"
+                    borderRadius="xl"
+                  >
+                    <Text color="fg.muted">
+                      No recent sessions found. Connect to a host to see it here.
+                    </Text>
+                  </Flex>
+                ) : (
+                  <Grid
+                    templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' }}
+                    gap={4}
+                  >
+                    {recentSessions.map((session) => (
+                      <SessionCard
+                        key={session.id}
+                        session={session}
+                        onConnect={onConnectSession}
+                      />
+                    ))}
+                  </Grid>
+                )}
+              </>
             )}
           </Flex>
         </Flex>
