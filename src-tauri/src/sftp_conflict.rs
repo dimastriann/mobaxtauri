@@ -81,6 +81,34 @@ pub async fn resolve_destination(
     }
 }
 
+/// Local-filesystem twin of [`resolve_destination`] for download targets.
+pub async fn resolve_destination_local(
+    dest_path: &std::path::Path,
+    policy: Option<ConflictPolicy>,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let exists = tokio::fs::try_exists(dest_path)
+        .await
+        .map_err(|e| format!("Failed to inspect local target: {e}"))?;
+    if !exists {
+        return Ok(Some(dest_path.to_path_buf()));
+    }
+    match policy {
+        Some(ConflictPolicy::Overwrite) => Ok(Some(dest_path.to_path_buf())),
+        Some(ConflictPolicy::Rename) => {
+            for n in 2..1000 {
+                let candidate =
+                    std::path::PathBuf::from(suffixed_target(&dest_path.to_string_lossy(), n));
+                if !tokio::fs::try_exists(&candidate).await.unwrap_or(true) {
+                    return Ok(Some(candidate));
+                }
+            }
+            Err(conflict_error(&dest_path.to_string_lossy()))
+        }
+        Some(ConflictPolicy::Skip) => Ok(None),
+        None => Err(conflict_error(&dest_path.to_string_lossy())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -130,5 +158,29 @@ mod tests {
         let error = file_changed_error("/srv/notes.md");
         assert!(error.starts_with(FILE_CHANGED));
         assert!(error.ends_with("/srv/notes.md"));
+    }
+
+    #[tokio::test]
+    async fn local_conflict_rename_picks_free_name() {
+        let dir = std::env::temp_dir().join(format!("moba-conflict-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("existing")).expect("create fixture dir");
+
+        let resolved =
+            super::resolve_destination_local(&dir.join("existing"), Some(ConflictPolicy::Rename))
+                .await
+                .expect("resolution works")
+                .expect("rename never skips");
+        assert!(resolved.ends_with("existing (2)"));
+
+        assert!(
+            super::resolve_destination_local(&dir.join("absent"), Some(ConflictPolicy::Skip))
+                .await
+                .expect("resolution works")
+                .is_some(),
+            "missing targets pass through under every policy"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

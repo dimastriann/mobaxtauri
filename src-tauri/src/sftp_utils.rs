@@ -65,6 +65,20 @@ pub fn relative_to_home(path: &str, home: Option<&str>) -> Option<String> {
         .map(|rest| format!("~/{rest}"))
 }
 
+/// The part of `path` that comes after `root`, without a leading slash;
+/// empty when `path` is the root itself. Assumes both are absolute POSIX
+/// paths sharing the root as a prefix.
+pub fn relative_remote_path(root: &str, path: &str) -> String {
+    let root = root.trim_end_matches('/');
+    let path = path.trim_end_matches('/');
+    if path == root {
+        return String::new();
+    }
+    path.strip_prefix(&format!("{root}/"))
+        .unwrap_or(path)
+        .to_string()
+}
+
 #[allow(dead_code)]
 pub fn get_parent_path(path: &str) -> String {
     if path == "/" || path.is_empty() {
@@ -169,6 +183,17 @@ mod tests {
         assert_eq!(relative_to_home("/rootfoo/x", Some("/root")), None);
         assert_eq!(relative_to_home("/root/a", None), None);
         assert_eq!(relative_to_home("/root/a", Some("/")), None);
+    }
+
+    #[test]
+    fn test_relative_remote_path() {
+        assert_eq!(relative_remote_path("/srv/app", "/srv/app"), "");
+        assert_eq!(relative_remote_path("/srv/app", "/srv/app/"), "");
+        assert_eq!(
+            relative_remote_path("/srv/app", "/srv/app/logs/run.log"),
+            "logs/run.log"
+        );
+        assert_eq!(relative_remote_path("/srv/app", "/etc/hosts"), "/etc/hosts");
     }
 
     #[test]
