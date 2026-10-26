@@ -168,6 +168,7 @@ const SftpSidebar: React.FC = () => {
     deleteFile,
     createDir,
     createFile,
+    downloadFolder,
     reset,
     transfer,
     updateTransfer,
@@ -466,6 +467,14 @@ const SftpSidebar: React.FC = () => {
           onClick={() => {
             setContextMenu(null);
             cd(activeSessionId, file.name);
+          }}
+        />
+        <ContextMenuItem
+          icon={LuDownload}
+          label="Download Folder"
+          onClick={() => {
+            setContextMenu(null);
+            void downloadFolder(activeSessionId, file.name);
           }}
         />
         <ContextMenuSeparator />
