@@ -41,7 +41,7 @@ interface SessionItemProps {
   isOpen: boolean;
   onDragStart: (e: React.DragEvent, sessionId: string) => void;
   onContextMenu: (e: React.MouseEvent, id: string, name: string) => void;
-  onClick: () => void;
+  onOpen: () => void;
 }
 
 const SessionItem: React.FC<SessionItemProps> = ({
@@ -50,7 +50,7 @@ const SessionItem: React.FC<SessionItemProps> = ({
   isOpen,
   onDragStart,
   onContextMenu,
-  onClick,
+  onOpen,
 }) => {
   let tagColorStr = 'transparent';
   if (session.tag === 'prod') tagColorStr = 'red.400';
@@ -71,7 +71,13 @@ const SessionItem: React.FC<SessionItemProps> = ({
       onContextMenu={(e) => onContextMenu(e, session.id, session.name)}
       draggable={session.id !== 'local'}
       onDragStart={(e) => onDragStart(e, session.id)}
-      onClick={onClick}
+      onDoubleClick={onOpen}
+      tabIndex={0}
+      role="button"
+      aria-label={`${isOpen ? 'Activate' : 'Connect'} session ${session.name} (double-click)`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onOpen();
+      }}
     >
       <OSIcon
         os={session.type === 'ssh' ? session.os : 'local'}
@@ -341,7 +347,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                           isOpen={openTabs.includes(session.id)}
                           onDragStart={handleDragStart}
                           onContextMenu={(e, id, name) => onContextMenu(e, 'session', id, name)}
-                          onClick={() => openTab(session.id)}
+                          onOpen={() => openTab(session.id)}
                         />
                       ))}
                     </VStack>
@@ -362,7 +368,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                   isOpen={openTabs.includes(session.id)}
                   onDragStart={handleDragStart}
                   onContextMenu={(e, id, name) => onContextMenu(e, 'session', id, name)}
-                  onClick={() => openTab(session.id)}
+                  onOpen={() => openTab(session.id)}
                 />
               ))}
             {localSession && (
@@ -372,7 +378,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                 isOpen={openTabs.includes(localSession.id)}
                 onDragStart={handleDragStart}
                 onContextMenu={(e, id, name) => onContextMenu(e, 'session', id, name)}
-                onClick={() => openTab(localSession.id)}
+                onOpen={() => openTab(localSession.id)}
               />
             )}
             {!hasResults && (
