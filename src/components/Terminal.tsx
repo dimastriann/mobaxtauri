@@ -6,6 +6,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
+import { canConnectDirectly } from '../utils/connectEligibility';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
 import {
@@ -649,8 +650,8 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
             mirror('listeners ready but disposed', session?.type);
             return;
           }
-          mirror('listeners ready, branching', session.savePassword ? 'saved-c' : 'prompt');
-          if (session.password || session.savePassword) {
+          mirror('listeners ready, branching', canConnectDirectly(session) ? 'saved-c' : 'prompt');
+          if (canConnectDirectly(session)) {
             void doConnect();
           } else {
             promptPassword();
@@ -737,7 +738,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         }
         if (data === 'r' || data === 'R') {
           isDisconnectedRef.current = false;
-          if (currentSession?.password || currentSession?.savePassword) {
+          if (currentSession && canConnectDirectly(currentSession)) {
             doConnect();
           } else {
             promptPassword();
