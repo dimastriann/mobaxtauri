@@ -18,9 +18,17 @@ interface NewSessionModalProps {
   isOpen: boolean;
   onClose: () => void;
   editingSession?: Session;
+  /** Pre-fills the form from this session but always creates a new one. */
+  duplicateSource?: Session;
 }
 
-const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, editingSession }) => {
+const NewSessionModal: React.FC<NewSessionModalProps> = ({
+  isOpen,
+  onClose,
+  editingSession,
+  duplicateSource,
+}) => {
+  const source = duplicateSource ?? editingSession;
   const [host, setHost] = useState('');
   const [user, setUser] = useState('');
   const [password, setPassword] = useState('');
@@ -41,27 +49,26 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
   const addSession = useSessionStore((state) => state.addSession);
   const updateSession = useSessionStore((state) => state.updateSession);
 
-  // Reset the form during render whenever the dialog opens or the edited
-  // session changes — the recognized alternative to state-syncing effects.
+  // Reset the form during render whenever the dialog opens or the source
+  // session (edited or duplicated) changes — the recognized alternative to
+  // state-syncing effects.
   const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
-  const [prevEditingSession, setPrevEditingSession] = useState(editingSession);
-  if (prevIsOpen !== isOpen || prevEditingSession !== editingSession) {
+  const [prevSource, setPrevSource] = useState(source);
+  if (prevIsOpen !== isOpen || prevSource !== source) {
     setPrevIsOpen(isOpen);
-    setPrevEditingSession(editingSession);
+    setPrevSource(source);
     if (isOpen) {
       setSaveError(null);
-      if (editingSession) {
-        setHost(editingSession.host || '');
-        setUser(editingSession.user || '');
-        setPort(
-          editingSession.port || parseInt(localStorage.getItem('ssh-default-port') || '22', 10),
-        );
-        setName(editingSession.name);
-        setFolderId(editingSession.folderId || null);
-        setTag(editingSession.tag);
-        setUsePrivateKey(!!editingSession.privateKeyPath);
-        setPrivateKeyPath(editingSession.privateKeyPath || '');
-        setSavePassword(editingSession.savePassword ?? true);
+      if (source) {
+        setHost(source.host || '');
+        setUser(source.user || '');
+        setPort(source.port || parseInt(localStorage.getItem('ssh-default-port') || '22', 10));
+        setName(duplicateSource ? `${source.name} (copy)` : source.name);
+        setFolderId(source.folderId || null);
+        setTag(source.tag);
+        setUsePrivateKey(!!source.privateKeyPath);
+        setPrivateKeyPath(source.privateKeyPath || '');
+        setSavePassword(duplicateSource ? false : (source.savePassword ?? true));
         setPassword('');
       } else {
         setHost('');
@@ -83,7 +90,9 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
     setIsConnecting(true);
     setSaveError(null);
 
-    if (editingSession) {
+    // Duplicates always take the create path below, even though the form
+    // was pre-filled from the source session.
+    if (editingSession && !duplicateSource) {
       let credentialError: string | null = null;
       const shouldSavePassword = savePassword && Boolean(password || editingSession.savePassword);
       try {
@@ -166,7 +175,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
       <DialogContent bg="bg.panel" borderColor="border.subtle">
         <DialogHeader>
           <DialogTitle color="fg.default">
-            {editingSession ? 'Edit SSH Session' : 'New SSH Session'}
+            {duplicateSource
+              ? 'Duplicate SSH Session'
+              : editingSession
+                ? 'Edit SSH Session'
+                : 'New SSH Session'}
           </DialogTitle>
         </DialogHeader>
 
@@ -392,7 +405,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ isOpen, onClose, edit
             size="sm"
             loading={isConnecting}
           >
-            {editingSession ? 'Save Changes' : 'Connect'}
+            {duplicateSource ? 'Create' : editingSession ? 'Save Changes' : 'Connect'}
           </Button>
         </DialogFooter>
         <DialogCloseTrigger />

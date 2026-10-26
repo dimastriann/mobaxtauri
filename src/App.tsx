@@ -60,6 +60,7 @@ interface PromptConfig {
 function App() {
   const [isModalOpen, setModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<Session | undefined>(undefined);
+  const [duplicateSource, setDuplicateSource] = useState<Session | undefined>(undefined);
   const sessions = useSessionStore((state) => state.sessions);
   const snippets = useSessionStore((state) => state.snippets);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
@@ -268,6 +269,7 @@ function App() {
 
   const handleNewSession = useCallback(() => {
     setEditingSession(undefined);
+    setDuplicateSource(undefined);
     setModalOpen(true);
   }, []);
 
@@ -524,6 +526,7 @@ function App() {
         isOpen={isModalOpen}
         onClose={() => setModalOpen(false)}
         editingSession={editingSession}
+        duplicateSource={duplicateSource}
       />
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
@@ -637,6 +640,18 @@ function App() {
                   const id = sidebarMenu.id!;
                   setSidebarMenu(null);
                   setEditingSession(sessions.find((s) => s.id === id));
+                  setDuplicateSource(undefined);
+                  setModalOpen(true);
+                }}
+              />
+              <ContextMenuItem
+                icon={LuCopy}
+                label="Duplicate Session"
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  setSidebarMenu(null);
+                  setEditingSession(undefined);
+                  setDuplicateSource(sessions.find((s) => s.id === id));
                   setModalOpen(true);
                 }}
               />
