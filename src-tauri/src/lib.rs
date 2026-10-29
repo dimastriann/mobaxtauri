@@ -1014,6 +1014,197 @@ async fn sftp_download_folder(
     result
 }
 
+#[tauri::command]
+// Tauri commands receive named keyword arguments over IPC, so a params
+// struct would change the wire contract; the argument list mirrors the
+// event/transfer contract instead.
+#[allow(clippy::too_many_arguments)]
+async fn sftp_upload_folder(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    transfers: State<'_, TransferManager>,
+    session_id: String,
+    local_path: String,
+    remote_path: String,
+    transfer_id: String,
+    conflict_policy: Option<String>,
+) -> Result<(), String> {
+    log::info!("Uploading folder {} to {}", local_path, remote_path);
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
+        .get(&session_id)
+        .cloned()
+        .ok_or("SFTP session not found")?;
+    let target_root = crate::sftp_conflict::resolve_destination(
+        &sftp,
+        &remote_path,
+        crate::sftp_conflict::parse_conflict_policy(conflict_policy.as_deref()),
+    )
+    .await?;
+    let Some(target_root) = target_root else {
+        return Ok(());
+    };
+
+    let local_root = std::path::PathBuf::from(&local_path);
+    let local_metadata = tokio::fs::metadata(&local_root)
+        .await
+        .map_err(|e| format!("Failed to read local folder: {e}"))?;
+    if !local_metadata.is_dir() {
+        return Err(format!(
+            "Local path {} is not a folder",
+            local_root.display()
+        ));
+    }
+
+    // Collect the full file list and byte total up front so the progress
+    // percentage is stable for the whole walk. Directories — including
+    // empty ones — are created remotely before the first file is written.
+    let tree = crate::sftp_utils::collect_local_tree(&local_root).await?;
+    let total = tree.files.iter().map(|(_, size)| *size).sum::<u64>();
+
+    let cancellation = transfers
+        .begin(transfer_id.clone(), session_id.clone())
+        .await;
+    let mut transferred = 0_u64;
+
+    emit_transfer(
+        &app_handle,
+        TransferEvent {
+            transfer_id: transfer_id.clone(),
+            session_id: session_id.clone(),
+            status: TransferStatus::Running,
+            transferred,
+            total: Some(total),
+            percent: calculate_percentage(transferred, Some(total)),
+            message: None,
+        },
+    );
+
+    let result = async {
+        // An existing target must be a directory; a file at the same path
+        // would make every create_dir and rename below fail confusingly.
+        if let Ok(metadata) = sftp.metadata(&target_root).await {
+            if !metadata.is_dir() {
+                return Err(format!(
+                    "Cannot upload folder: {target_root} exists and is not a directory"
+                ));
+            }
+        }
+        for relative in &tree.dirs {
+            if is_cancelled(&cancellation) {
+                return Err("Transfer cancelled".to_string());
+            }
+            let remote_dir = crate::sftp_utils::join_sftp_path(&target_root, relative);
+            // create_dir is non-recursive; the sorted dir list guarantees
+            // each parent exists by the time its children are created.
+            if let Err(error) = sftp.create_dir(&remote_dir).await {
+                match sftp.metadata(&remote_dir).await {
+                    Ok(metadata) if metadata.is_dir() => {}
+                    _ => {
+                        return Err(format!(
+                            "Failed to create remote directory {remote_dir}: {error:?}"
+                        ))
+                    }
+                }
+            }
+        }
+        for (relative, _size) in &tree.files {
+            if is_cancelled(&cancellation) {
+                return Err("Transfer cancelled".to_string());
+            }
+            let remote_file_path = crate::sftp_utils::join_sftp_path(&target_root, relative);
+            let local_file_path = local_root.join(relative);
+            let mut local_file = tokio::fs::File::open(&local_file_path).await.map_err(|e| {
+                format!(
+                    "Failed to open local file {}: {e}",
+                    local_file_path.display()
+                )
+            })?;
+            let partial_path = format!("{remote_file_path}.mobaxtauri-part");
+            let mut remote_file = sftp
+                .create(&partial_path)
+                .await
+                .map_err(|e| format!("Failed to create remote file {remote_file_path}: {e:?}"))?;
+            let mut buffer = vec![0_u8; 64 * 1024];
+
+            let mut file_error = None;
+            loop {
+                if is_cancelled(&cancellation) {
+                    file_error = Some("Transfer cancelled".to_string());
+                    break;
+                }
+                let count = match local_file.read(&mut buffer).await {
+                    Ok(count) => count,
+                    Err(e) => {
+                        file_error = Some(format!(
+                            "Read failed for {}: {e}",
+                            local_file_path.display()
+                        ));
+                        break;
+                    }
+                };
+                if count == 0 {
+                    break;
+                }
+                if let Err(e) = remote_file.write_all(&buffer[..count]).await {
+                    file_error = Some(format!("Write failed for {remote_file_path}: {e:?}"));
+                    break;
+                }
+                transferred += count as u64;
+                emit_transfer(
+                    &app_handle,
+                    TransferEvent {
+                        transfer_id: transfer_id.clone(),
+                        session_id: session_id.clone(),
+                        status: TransferStatus::Running,
+                        transferred,
+                        total: Some(total),
+                        percent: calculate_percentage(transferred, Some(total)),
+                        message: Some(relative.clone()),
+                    },
+                );
+            }
+            if let Some(error) = file_error {
+                let _ = sftp.remove_file(&partial_path).await;
+                return Err(error);
+            }
+            // Drop the handle before the finalizing rename, mirroring the
+            // local-file pattern in folder downloads.
+            let flushed = remote_file.flush().await;
+            drop(remote_file);
+            flushed
+                .map_err(|e| format!("Failed to flush remote file {remote_file_path}: {e:?}"))?;
+            let _ = sftp.remove_file(&remote_file_path).await;
+            sftp.rename(&partial_path, &remote_file_path)
+                .await
+                .map_err(|e| format!("Failed to finalize remote file {remote_file_path}: {e:?}"))?;
+        }
+        Ok(())
+    }
+    .await;
+
+    transfers.finish(&transfer_id).await;
+    emit_transfer(
+        &app_handle,
+        TransferEvent {
+            transfer_id,
+            session_id,
+            status: match &result {
+                Ok(()) => TransferStatus::Completed,
+                Err(error) if error == "Transfer cancelled" => TransferStatus::Cancelled,
+                Err(_) => TransferStatus::Failed,
+            },
+            transferred,
+            total: Some(total),
+            percent: calculate_percentage(transferred, Some(total)),
+            message: result.as_ref().err().cloned(),
+        },
+    );
+    result
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SftpReadFileContent {
@@ -1346,6 +1537,7 @@ pub fn run() {
             sftp_create_file,
             sftp_path_variants,
             sftp_download_folder,
+            sftp_upload_folder,
             write_text_file,
             read_text_file,
             load_app_data,

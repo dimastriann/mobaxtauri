@@ -114,6 +114,58 @@ pub fn format_permissions(permissions: Option<u32>, is_dir: bool) -> String {
     format!("{dir_char}{u_r}{u_w}{u_x}{g_r}{g_w}{g_x}{o_r}{o_w}{o_x}")
 }
 
+/// Local filesystem tree collected by the recursive folder-upload walker.
+pub struct LocalTree {
+    /// Files as `(relative path with '/' separators, size in bytes)`.
+    pub files: Vec<(String, u64)>,
+    /// Directories as relative paths with `/` separators; the empty string
+    /// is the root itself. Sorted, so a parent always precedes its children
+    /// (a parent path is a strict prefix of each child path).
+    pub dirs: Vec<String>,
+}
+
+/// Walk `root` recursively, collecting regular files with their sizes and
+/// every directory, including empty ones. Symlinks and special files are
+/// skipped, mirroring the remote walker used by folder downloads.
+pub async fn collect_local_tree(root: &std::path::Path) -> Result<LocalTree, String> {
+    let mut files: Vec<(String, u64)> = Vec::new();
+    let mut dirs: Vec<String> = vec![String::new()];
+    let mut stack: Vec<(std::path::PathBuf, String)> = vec![(root.to_path_buf(), String::new())];
+    while let Some((dir, rel)) = stack.pop() {
+        let mut entries = tokio::fs::read_dir(&dir)
+            .await
+            .map_err(|e| format!("Failed to read local directory {}: {e}", dir.display()))?;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| format!("Failed to enumerate {}: {e}", dir.display()))?
+        {
+            let file_type = entry
+                .file_type()
+                .await
+                .map_err(|e| format!("Failed to inspect {}: {e}", entry.path().display()))?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            let child_rel = if rel.is_empty() {
+                name
+            } else {
+                format!("{rel}/{name}")
+            };
+            if file_type.is_dir() {
+                dirs.push(child_rel.clone());
+                stack.push((entry.path(), child_rel));
+            } else if file_type.is_file() {
+                let metadata = entry
+                    .metadata()
+                    .await
+                    .map_err(|e| format!("Failed to stat {}: {e}", entry.path().display()))?;
+                files.push((child_rel, metadata.len()));
+            }
+        }
+    }
+    dirs.sort();
+    Ok(LocalTree { files, dirs })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,5 +254,82 @@ mod tests {
         assert_eq!(format_permissions(Some(0o644), false), "-rw-r--r--");
         assert_eq!(format_permissions(Some(0o700), false), "-rwx------");
         assert_eq!(format_permissions(None, false), "—");
+    }
+
+    fn temp_tree(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("moba-tree-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create fixture root");
+        dir
+    }
+
+    #[tokio::test]
+    async fn collects_files_sizes_and_directories() {
+        let root = temp_tree("flat");
+        std::fs::write(root.join("a.txt"), b"12345").expect("write a.txt");
+        std::fs::create_dir_all(root.join("sub")).expect("create sub");
+        std::fs::write(root.join("sub").join("b.bin"), b"xyz").expect("write b.bin");
+        std::fs::create_dir_all(root.join("empty")).expect("create empty");
+
+        let tree = collect_local_tree(&root).await.expect("walk succeeds");
+        let mut names: Vec<&str> = tree.files.iter().map(|(p, _)| p.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["a.txt", "sub/b.bin"]);
+        let sizes: Vec<u64> = tree.files.iter().map(|(_, s)| *s).collect();
+        assert!(sizes.contains(&5) && sizes.contains(&3));
+        assert_eq!(
+            tree.dirs,
+            vec![String::new(), "empty".to_string(), "sub".to_string()]
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn orders_directories_parent_before_child() {
+        let root = temp_tree("nested");
+        std::fs::create_dir_all(root.join("a/b/c")).expect("create nested");
+        std::fs::write(root.join("a/b/c/deep.txt"), b"deep").expect("write deep");
+
+        let tree = collect_local_tree(&root).await.expect("walk succeeds");
+        assert_eq!(
+            tree.dirs,
+            vec![
+                String::new(),
+                "a".to_string(),
+                "a/b".to_string(),
+                "a/b/c".to_string()
+            ]
+        );
+        assert_eq!(tree.files, vec![("a/b/c/deep.txt".to_string(), 4)]);
+        assert_eq!(
+            tree.files.iter().map(|(_, s)| *s).sum::<u64>(),
+            4,
+            "total size feeds the upload progress bar"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn missing_root_reports_error() {
+        let missing =
+            std::env::temp_dir().join(format!("moba-tree-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&missing);
+        assert!(collect_local_tree(&missing).await.is_err());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn skips_symlinks() {
+        let root = temp_tree("symlink");
+        std::fs::write(root.join("real.txt"), b"real").expect("write real");
+        std::os::unix::fs::symlink(root.join("real.txt"), root.join("link.txt"))
+            .expect("create symlink");
+
+        let tree = collect_local_tree(&root).await.expect("walk succeeds");
+        assert_eq!(tree.files, vec![("real.txt".to_string(), 4)]);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
