@@ -1,0 +1,3 @@
+# MobaXTauri
+
+@AGENTS.md
