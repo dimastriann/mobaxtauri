@@ -875,14 +875,17 @@ async fn sftp_download_folder(
     let remote_root = remote_path.trim_end_matches('/').to_string();
 
     // Collect the full file list and byte total up front so the progress
-    // percentage is stable for the whole walk.
+    // percentage is stable for the whole walk. Every directory — including
+    // empty ones — is created locally so downloads preserve the structure
+    // exactly like the upload side.
     async fn collect_files(
         sftp: &russh_sftp::client::SftpSession,
         root: &str,
-    ) -> Result<Vec<(String, u64)>, String> {
-        let mut files = Vec::new();
-        let mut stack = vec![root.to_string()];
-        while let Some(dir) = stack.pop() {
+    ) -> Result<(Vec<(String, u64)>, Vec<String>), String> {
+        let mut files: Vec<(String, u64)> = Vec::new();
+        let mut dirs: Vec<String> = vec![String::new()];
+        let mut stack: Vec<(String, String)> = vec![(root.to_string(), String::new())];
+        while let Some((dir, rel)) = stack.pop() {
             let entries = sftp
                 .read_dir(&dir)
                 .await
@@ -893,15 +896,22 @@ async fn sftp_download_folder(
                     continue;
                 }
                 let child = crate::sftp_utils::join_sftp_path(&dir, &name);
+                let child_rel = if rel.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{rel}/{name}")
+                };
                 let metadata = entry.metadata();
                 if metadata.is_dir() {
-                    stack.push(child);
+                    dirs.push(child_rel.clone());
+                    stack.push((child, child_rel));
                 } else if metadata.is_regular() {
                     files.push((child, metadata.len()));
                 }
             }
         }
-        Ok(files)
+        dirs.sort();
+        Ok((files, dirs))
     }
 
     let cancellation = transfers
@@ -911,9 +921,21 @@ async fn sftp_download_folder(
     let mut final_total: Option<u64> = None;
 
     let result = async {
-        let files = collect_files(&sftp, &remote_root).await?;
+        let (files, dirs) = collect_files(&sftp, &remote_root).await?;
         let total = files.iter().map(|(_, size)| *size).sum::<u64>();
         final_total = Some(total);
+
+        // The sorted dir list guarantees each parent exists before its
+        // children are touched; the empty relative path creates the root.
+        for relative in &dirs {
+            if is_cancelled(&cancellation) {
+                return Err("Transfer cancelled".to_string());
+            }
+            let local_dir_path = target_root.join(relative);
+            tokio::fs::create_dir_all(&local_dir_path)
+                .await
+                .map_err(|e| format!("Failed to create local directory: {e}"))?;
+        }
 
         for (remote_file_path, _size) in &files {
             if is_cancelled(&cancellation) {
@@ -921,11 +943,6 @@ async fn sftp_download_folder(
             }
             let relative = crate::sftp_utils::relative_remote_path(&remote_root, remote_file_path);
             let local_file_path = target_root.join(&relative);
-            if let Some(parent) = local_file_path.parent() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .map_err(|e| format!("Failed to create local directory: {e}"))?;
-            }
 
             let mut remote_file = sftp
                 .open(remote_file_path)
