@@ -19,7 +19,7 @@ export interface SftpFile {
 }
 
 export interface SftpConflictPrompt {
-  kind: 'upload' | 'copy' | 'create-file' | 'folder-download';
+  kind: 'upload' | 'copy' | 'create-file' | 'folder-download' | 'folder-upload';
   sessionId: string;
   destPath: string;
   destName: string;
@@ -44,6 +44,7 @@ interface SftpState {
   downloadFile: (sessionId: string, fileName: string) => Promise<void>;
   downloadFolder: (sessionId: string, folderName: string) => Promise<void>;
   uploadFile: (sessionId: string) => Promise<void>;
+  uploadFolder: (sessionId: string) => Promise<void>;
   copyFile: (sessionId: string, sourceName: string, destName: string) => Promise<void>;
   openFile: (sessionId: string, fileName: string) => Promise<void>;
   renameFile: (sessionId: string, oldName: string, newName: string) => Promise<void>;
@@ -109,6 +110,15 @@ export const useSftpStore = create<SftpState>((set, get) => ({
         await invoke('sftp_create_file', {
           sessionId: prompt.sessionId,
           path: prompt.destPath,
+          conflictPolicy: policy,
+        });
+      } else if (prompt.kind === 'folder-upload') {
+        const transferId = `folder-upload-${Date.now()}`;
+        await invoke('sftp_upload_folder', {
+          sessionId: prompt.sessionId,
+          localPath: prompt.localPath,
+          remotePath: prompt.destPath,
+          transferId,
           conflictPolicy: policy,
         });
       } else {
@@ -323,6 +333,57 @@ export const useSftpStore = create<SftpState>((set, get) => ({
           transfer: null,
           conflictPrompt: {
             kind: 'upload',
+            sessionId,
+            localPath,
+            destPath,
+            destName,
+          },
+        });
+        return;
+      }
+      set({
+        error: message.includes('Transfer cancelled') ? null : message,
+        isLoading: false,
+        transfer: null,
+      });
+    }
+  },
+
+  uploadFolder: async (sessionId) => {
+    const state = get();
+    let localPath: string | null = null;
+    let destPath: string | null = null;
+    let destName: string | null = null;
+    try {
+      const picked = await open({ multiple: false, directory: true });
+      if (!picked || Array.isArray(picked)) return;
+
+      localPath = picked as string;
+      destName = localPath.split(/[/\\]/).filter(Boolean).pop() ?? null;
+      if (!destName) return;
+
+      destPath = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${destName}`
+        : `${state.currentPath}/${destName}`;
+
+      set({ isLoading: true, error: null });
+      const transferId = `folder-upload-${Date.now()}`;
+      await invoke('sftp_upload_folder', {
+        sessionId,
+        localPath,
+        remotePath: destPath,
+        transferId,
+      });
+      await get().fetchDirectory(sessionId);
+    } catch (err) {
+      console.error(err);
+      const message = String(err);
+      if (message.includes(SFTP_TARGET_EXISTS_MARKER) && localPath && destPath && destName) {
+        set({
+          isLoading: false,
+          transfer: null,
+          conflictPrompt: {
+            kind: 'folder-upload',
             sessionId,
             localPath,
             destPath,

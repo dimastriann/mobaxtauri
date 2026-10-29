@@ -6,6 +6,13 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+// Mock the dialog plugin used by upload/download flows
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+  open: vi.fn(),
+  save: vi.fn(),
+  ask: vi.fn(),
+}));
+
 describe('useSftpStore', () => {
   beforeEach(() => {
     useSftpStore.getState().reset();
@@ -115,5 +122,75 @@ describe('useSftpStore', () => {
 
     expect(useSftpStore.getState().transfer).toBeNull();
     expect(useSftpStore.getState().isLoading).toBe(false);
+  });
+
+  it('uploads a picked folder into the current remote path', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    vi.mocked(invoke).mockReset();
+    // call order: list_dir (cd), upload, list_dir (refresh after upload)
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+    vi.mocked(open).mockResolvedValue('C:\\work\\release');
+
+    await useSftpStore.getState().cd('session-1', '/srv');
+    await useSftpStore.getState().uploadFolder('session-1');
+
+    expect(invoke).toHaveBeenCalledWith('sftp_upload_folder', {
+      sessionId: 'session-1',
+      localPath: 'C:\\work\\release',
+      remotePath: '/srv/release',
+      transferId: expect.stringMatching(/^folder-upload-\d+$/),
+    });
+    expect(useSftpStore.getState().conflictPrompt).toBeNull();
+    expect(useSftpStore.getState().isLoading).toBe(false);
+  });
+
+  it('opens the folder-upload conflict dialog when the target exists', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    vi.mocked(invoke).mockReset();
+    // call order: list_dir (cd), upload rejected as existing target
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+    vi.mocked(invoke).mockRejectedValueOnce('SFTP TARGET EXISTS: /srv/release');
+    vi.mocked(open).mockResolvedValue('C:\\work\\release');
+
+    await useSftpStore.getState().cd('session-1', '/srv');
+    await useSftpStore.getState().uploadFolder('session-1');
+
+    const prompt = useSftpStore.getState().conflictPrompt;
+    expect(prompt).toMatchObject({
+      kind: 'folder-upload',
+      sessionId: 'session-1',
+      localPath: 'C:\\work\\release',
+      destPath: '/srv/release',
+      destName: 'release',
+    });
+    expect(useSftpStore.getState().isLoading).toBe(false);
+  });
+
+  it('resolves a folder-upload conflict through sftp_upload_folder with the policy', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockResolvedValue(undefined);
+
+    useSftpStore.setState({
+      conflictPrompt: {
+        kind: 'folder-upload',
+        sessionId: 'session-1',
+        localPath: 'C:\\work\\release',
+        destPath: '/srv/release',
+        destName: 'release',
+      },
+    });
+
+    await useSftpStore.getState().resolveConflict('rename');
+
+    expect(invoke).toHaveBeenCalledWith(
+      'sftp_upload_folder',
+      expect.objectContaining({ conflictPolicy: 'rename', remotePath: '/srv/release' }),
+    );
+    expect(useSftpStore.getState().conflictPrompt).toBeNull();
   });
 });

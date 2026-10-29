@@ -38,6 +38,7 @@ import {
   LuTrash2,
   LuFolderPlus,
   LuFilePlus,
+  LuFolderInput,
 } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -161,6 +162,7 @@ const SftpSidebar: React.FC = () => {
     error,
     refresh,
     uploadFile,
+    uploadFolder,
     downloadFile,
     copyFile,
     openFile,
@@ -443,6 +445,14 @@ const SftpSidebar: React.FC = () => {
           onClick={() => {
             setContextMenu(null);
             uploadFile(activeSessionId);
+          }}
+        />
+        <ContextMenuItem
+          icon={LuFolderInput}
+          label="Upload Folder"
+          onClick={() => {
+            setContextMenu(null);
+            void uploadFolder(activeSessionId);
           }}
         />
         <ContextMenuItem
