@@ -489,9 +489,9 @@ async fn sftp_upload_file(
     let Some(target_path) = target_path else {
         return Ok(());
     };
-    let mut local_file = tokio::fs::File::open(&local_path)
-        .await
-        .map_err(|e| format!("Failed to read local file: {e:?}"))?;
+    let mut local_file = tokio::fs::File::open(&local_path).await.map_err(|e| {
+        crate::sftp_utils::local_file_error("Failed to read local file", &local_path, &e)
+    })?;
     let total = local_file
         .metadata()
         .await
@@ -513,10 +513,13 @@ async fn sftp_upload_file(
             if is_cancelled(&cancellation) {
                 return Err("Transfer cancelled".to_string());
             }
-            let count = local_file
-                .read(&mut buffer)
-                .await
-                .map_err(|e| format!("Read failed: {e:?}"))?;
+            let count = crate::sftp_utils::read_upload_chunk(
+                &local_path,
+                crate::sftp_utils::CLOUD_RETRY_DELAYS_MS,
+                &mut local_file,
+                &mut buffer,
+            )
+            .await?;
             if count == 0 {
                 break;
             }
@@ -1134,9 +1137,10 @@ async fn sftp_upload_folder(
             let remote_file_path = crate::sftp_utils::join_sftp_path(&target_root, relative);
             let local_file_path = local_root.join(relative);
             let mut local_file = tokio::fs::File::open(&local_file_path).await.map_err(|e| {
-                format!(
-                    "Failed to open local file {}: {e}",
-                    local_file_path.display()
+                crate::sftp_utils::local_file_error(
+                    "Failed to open local file",
+                    &local_file_path.display().to_string(),
+                    &e,
                 )
             })?;
             let partial_path = format!("{remote_file_path}.mobaxtauri-part");
@@ -1152,13 +1156,17 @@ async fn sftp_upload_folder(
                     file_error = Some("Transfer cancelled".to_string());
                     break;
                 }
-                let count = match local_file.read(&mut buffer).await {
+                let count = match crate::sftp_utils::read_upload_chunk(
+                    &local_file_path.display().to_string(),
+                    crate::sftp_utils::CLOUD_RETRY_DELAYS_MS,
+                    &mut local_file,
+                    &mut buffer,
+                )
+                .await
+                {
                     Ok(count) => count,
-                    Err(e) => {
-                        file_error = Some(format!(
-                            "Read failed for {}: {e}",
-                            local_file_path.display()
-                        ));
+                    Err(message) => {
+                        file_error = Some(message);
                         break;
                     }
                 };

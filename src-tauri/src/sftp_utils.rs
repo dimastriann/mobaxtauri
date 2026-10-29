@@ -1,4 +1,6 @@
 /// SFTP Path Utility for consistent across-platform path joining
+use tokio::io::AsyncReadExt;
+
 pub fn join_sftp_path(base: &str, name: &str) -> String {
     if base.is_empty() || base == "/" {
         format!("/{}", name)
@@ -184,7 +186,7 @@ pub async fn classify_local_paths(paths: Vec<String>) -> Result<Vec<LocalEntry>,
     for path in paths {
         let metadata = tokio::fs::metadata(&path)
             .await
-            .map_err(|e| format!("Failed to inspect {path}: {e}"))?;
+            .map_err(|e| local_file_error("Failed to inspect", &path, &e))?;
         let name = std::path::Path::new(&path)
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
@@ -196,6 +198,59 @@ pub async fn classify_local_paths(paths: Vec<String>) -> Result<Vec<LocalEntry>,
         });
     }
     Ok(entries)
+}
+
+/// Windows error for an online-only cloud placeholder whose provider
+/// (OneDrive and similar) is not running — common right after a drag &
+/// drop while hydration of the placeholder is still starting.
+const CLOUD_FILE_PROVIDER_NOT_RUNNING: i32 = 362;
+
+/// Retry budget for uploads racing cloud-placeholder hydration: ~3.75 s
+/// total before the actionable hint is surfaced.
+pub const CLOUD_RETRY_DELAYS_MS: &[u64] = &[250, 500, 1000, 2000];
+
+/// User-facing message for a local file operation failure, adding an
+/// actionable hint when the failure is a cloud placeholder file.
+pub fn local_file_error(prefix: &str, path: &str, error: &std::io::Error) -> String {
+    if error.raw_os_error() == Some(CLOUD_FILE_PROVIDER_NOT_RUNNING) {
+        format!(
+            "{prefix} {path}: this is an online-only cloud file and its provider is not running. \
+             Wait for the cloud app (e.g. OneDrive) to finish downloading it, or right-click the \
+             file in Explorer and choose 'Always keep on this device', then try again."
+        )
+    } else {
+        format!("{prefix} {path}: {error}")
+    }
+}
+
+/// One buffered read for local upload sources, retrying briefly when a
+/// cloud placeholder is not hydrated yet: the drop can beat OneDrive's
+/// hydration, and the first reads fail with
+/// ERROR_CLOUD_FILE_PROVIDER_NOT_RUNNING while the provider spins up.
+/// `delays` paces the retries (pass `CLOUD_RETRY_DELAYS_MS` in production).
+pub async fn read_upload_chunk<R: tokio::io::AsyncRead + Unpin>(
+    path: &str,
+    delays: &[u64],
+    file: &mut R,
+    buffer: &mut [u8],
+) -> Result<usize, String> {
+    let mut attempt = 0_usize;
+    loop {
+        match file.read(buffer).await {
+            Ok(count) => return Ok(count),
+            Err(error) => {
+                if error.raw_os_error() != Some(CLOUD_FILE_PROVIDER_NOT_RUNNING) {
+                    return Err(local_file_error("Read failed for", path, &error));
+                }
+                let Some(delay_ms) = delays.get(attempt) else {
+                    return Err(local_file_error("Read failed for", path, &error));
+                };
+                attempt += 1;
+                log::warn!("Cloud placeholder {path} not hydrated yet; retrying in {delay_ms} ms");
+                tokio::time::sleep(std::time::Duration::from_millis(*delay_ms)).await;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -397,5 +452,100 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn retries_cloud_placeholder_reads_until_hydrated() {
+        let mut reader = ScriptedReader::new(vec![
+            Err(std::io::Error::from_raw_os_error(362)),
+            Err(std::io::Error::from_raw_os_error(362)),
+            Ok(7),
+        ]);
+        let mut buffer = [0_u8; 16];
+
+        let count = read_upload_chunk("C:/placeholder.xlsx", &[1, 1], &mut reader, &mut buffer)
+            .await
+            .expect("hydration completes within the retry budget");
+
+        assert_eq!(count, 7);
+        assert_eq!(reader.reads, 3);
+    }
+
+    #[tokio::test]
+    async fn cloud_placeholder_failure_gets_actionable_hint() {
+        let mut reader = ScriptedReader::new(vec![
+            Err(std::io::Error::from_raw_os_error(362)),
+            Err(std::io::Error::from_raw_os_error(362)),
+            Err(std::io::Error::from_raw_os_error(362)),
+        ]);
+        let mut buffer = [0_u8; 16];
+
+        let result = read_upload_chunk("C:/report.xlsx", &[1, 1], &mut reader, &mut buffer)
+            .await
+            .expect_err("provider never starts");
+
+        assert!(result.contains("online-only cloud file"), "{result}");
+        assert!(result.contains("Always keep on this device"), "{result}");
+        assert!(result.contains("C:/report.xlsx"), "{result}");
+        assert_eq!(reader.reads, 3, "retries stop once the budget is spent");
+    }
+
+    #[tokio::test]
+    async fn other_read_errors_fail_without_retry() {
+        let mut reader = ScriptedReader::new(vec![Err(std::io::Error::from_raw_os_error(13))]);
+        let mut buffer = [0_u8; 16];
+
+        let result = read_upload_chunk("C:/secret.txt", &[1, 1], &mut reader, &mut buffer)
+            .await
+            .expect_err("permission errors are not retried");
+
+        assert!(result.contains("Read failed for C:/secret.txt"), "{result}");
+        assert!(result.contains("os error 13"), "{result}");
+        assert_eq!(reader.reads, 1);
+    }
+
+    #[test]
+    fn local_file_error_maps_cloud_provider_failures() {
+        let cloud = std::io::Error::from_raw_os_error(362);
+        let message = local_file_error("Failed to read local file", "C:/a.png", &cloud);
+        assert!(message.contains("online-only cloud file"), "{message}");
+
+        let other = std::io::Error::from_raw_os_error(2);
+        let message = local_file_error("Failed to read local file", "C:/a.png", &other);
+        assert!(message.contains("os error 2"), "{message}");
+    }
+
+    /// Minimal reader returning scripted results, so upload reads can be
+    /// tested without a filesystem or a live cloud provider.
+    struct ScriptedReader {
+        steps: std::collections::VecDeque<std::io::Result<usize>>,
+        reads: usize,
+    }
+
+    impl ScriptedReader {
+        fn new(steps: Vec<std::io::Result<usize>>) -> Self {
+            Self {
+                steps: std::collections::VecDeque::from(steps),
+                reads: 0,
+            }
+        }
+    }
+
+    impl tokio::io::AsyncRead for ScriptedReader {
+        fn poll_read(
+            mut self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            self.reads += 1;
+            match self.steps.pop_front() {
+                Some(Ok(count)) => {
+                    buf.put_slice(&vec![0x41; count]);
+                    std::task::Poll::Ready(Ok(()))
+                }
+                Some(Err(error)) => std::task::Poll::Ready(Err(error)),
+                None => std::task::Poll::Ready(Ok(())),
+            }
+        }
     }
 }
