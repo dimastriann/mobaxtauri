@@ -24,6 +24,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: check claude skill copies are in sync
+        run: node scripts/sync-skills.mjs --check
       - run: npm run test -- --run
       - run: npm run build
       - run: npm run lint
