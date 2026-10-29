@@ -4,7 +4,7 @@
 // directly; Claude Code needs its own .claude/skills copy.
 // Usage: node scripts/sync-skills.mjs [--check]
 //   --check: verify copies match the source; exit 1 on drift (CI mode).
-import { cpSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const SOURCE = join(import.meta.dirname, '..', '.agents', 'skills');
