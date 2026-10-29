@@ -69,3 +69,4 @@ Then:
 - Contributing expectations and detailed check commands: `CONTRIBUTING.md`
 - Roadmap and localization of future work: `ROADMAP.md`
 - Roadmap items and plan docs live under `planning-project/` (gitignored, local only)
+- Agent skills: source of truth is `.agents/skills/` (read natively by Codex and opencode); Claude Code reads synced copies in `.claude/skills/` — edit the source and run `npm run sync:skills`, which CI keeps honest via `--check`
