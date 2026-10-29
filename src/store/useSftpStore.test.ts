@@ -193,4 +193,71 @@ describe('useSftpStore', () => {
     );
     expect(useSftpStore.getState().conflictPrompt).toBeNull();
   });
+
+  it('dispatches dropped files and folders to the matching upload commands', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockReset();
+    // call order: classify, list_dir (after each successful upload), upload x3
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === 'sftp_local_entries') {
+        return [
+          { path: 'C:\\work\\notes.txt', name: 'notes.txt', isDir: false },
+          { path: 'C:\\work\\release', name: 'release', isDir: true },
+          { path: 'C:\\work\\img.png', name: 'img.png', isDir: false },
+        ];
+      }
+      return [];
+    });
+
+    await useSftpStore.getState().cd('session-1', '/srv');
+    await useSftpStore
+      .getState()
+      .uploadPaths('session-1', ['C:\\work\\notes.txt', 'C:\\work\\release', 'C:\\work\\img.png']);
+
+    const uploads = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd !== 'sftp_list_dir');
+    expect(uploads.map(([cmd]) => cmd)).toEqual([
+      'sftp_local_entries',
+      'sftp_upload_file',
+      'sftp_upload_folder',
+      'sftp_upload_file',
+    ]);
+    expect(uploads[1][1]).toMatchObject({
+      localPath: 'C:\\work\\notes.txt',
+      remotePath: '/srv/notes.txt',
+    });
+    expect(uploads[2][1]).toMatchObject({
+      localPath: 'C:\\work\\release',
+      remotePath: '/srv/release',
+    });
+    expect(useSftpStore.getState().error).toBeNull();
+  });
+
+  it('stops dispatching dropped entries while a conflict dialog is open', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockReset();
+    let firstUpload = true;
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === 'sftp_local_entries') {
+        return [
+          { path: 'C:\\work\\a.txt', name: 'a.txt', isDir: false },
+          { path: 'C:\\work\\b.txt', name: 'b.txt', isDir: false },
+        ];
+      }
+      if (cmd === 'sftp_upload_file' && firstUpload) {
+        firstUpload = false;
+        throw 'SFTP TARGET EXISTS: /srv/a.txt';
+      }
+      return [];
+    });
+
+    await useSftpStore.getState().cd('session-1', '/srv');
+    await useSftpStore.getState().uploadPaths('session-1', ['C:\\work\\a.txt', 'C:\\work\\b.txt']);
+
+    const uploadCalls = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === 'sftp_upload_file');
+    expect(uploadCalls).toHaveLength(1);
+    expect(useSftpStore.getState().conflictPrompt).toMatchObject({
+      kind: 'upload',
+      destName: 'a.txt',
+    });
+  });
 });

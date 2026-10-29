@@ -32,3 +32,10 @@ export interface SftpPathVariantsPayload {
   relativeToHome: string;
   name: string;
 }
+
+/** One entry of sftp_local_entries (mirrors Rust sftp_utils::LocalEntry). */
+export interface SftpLocalEntryPayload {
+  path: string;
+  name: string;
+  isDir: boolean;
+}

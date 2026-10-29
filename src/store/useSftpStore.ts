@@ -4,6 +4,7 @@ import { save, open } from '@tauri-apps/plugin-dialog';
 import {
   SFTP_TARGET_EXISTS_MARKER,
   type SftpConflictPolicy,
+  type SftpLocalEntryPayload,
   type SftpTransferEvent,
 } from '../types/sftp';
 
@@ -45,6 +46,7 @@ interface SftpState {
   downloadFolder: (sessionId: string, folderName: string) => Promise<void>;
   uploadFile: (sessionId: string) => Promise<void>;
   uploadFolder: (sessionId: string) => Promise<void>;
+  uploadPaths: (sessionId: string, paths: string[]) => Promise<void>;
   copyFile: (sessionId: string, sourceName: string, destName: string) => Promise<void>;
   openFile: (sessionId: string, fileName: string) => Promise<void>;
   renameFile: (sessionId: string, oldName: string, newName: string) => Promise<void>;
@@ -57,264 +59,17 @@ interface SftpState {
   dismissConflict: () => void;
 }
 
-export const useSftpStore = create<SftpState>((set, get) => ({
-  currentPath: '/',
-  files: [],
-  isLoading: false,
-  error: null,
-  history: [],
-  transfer: null,
-  conflictPrompt: null,
-
-  updateTransfer: (transfer) => {
-    if (transfer.status === 'running') {
-      set({ transfer, isLoading: true });
-      return;
-    }
-    set({
-      transfer: null,
-      isLoading: false,
-      error: transfer.status === 'failed' ? transfer.message || 'Transfer failed' : null,
-    });
-  },
-
-  resolveConflict: async (policy) => {
-    const prompt = get().conflictPrompt;
-    if (!prompt) return;
-    set({ conflictPrompt: null });
+export const useSftpStore = create<SftpState>((set, get) => {
+  // Shared bodies for the dialog flows and the drag & drop dispatcher:
+  // destination paths derive from the remote directory being viewed.
+  const uploadOneFile = async (sessionId: string, localPath: string): Promise<void> => {
+    const destName = localPath.split(/[/\\]/).filter(Boolean).pop() ?? null;
+    if (!destName) return;
+    const currentPath = get().currentPath;
+    const destPath = currentPath.endsWith('/')
+      ? `${currentPath}${destName}`
+      : `${currentPath}/${destName}`;
     try {
-      set({ isLoading: true, error: null });
-      if (policy === 'skip') {
-        await get().fetchDirectory(prompt.sessionId);
-        return;
-      }
-      if (prompt.kind === 'upload') {
-        const transferId = `upload-${Date.now()}`;
-        await invoke('sftp_upload_file', {
-          sessionId: prompt.sessionId,
-          localPath: prompt.localPath,
-          remotePath: prompt.destPath,
-          transferId,
-          conflictPolicy: policy,
-        });
-      } else if (prompt.kind === 'copy') {
-        const transferId = `copy-${Date.now()}`;
-        await invoke('sftp_copy_file', {
-          sessionId: prompt.sessionId,
-          sourcePath: prompt.sourcePath,
-          destPath: prompt.destPath,
-          transferId,
-          conflictPolicy: policy,
-        });
-      } else if (prompt.kind === 'create-file') {
-        await invoke('sftp_create_file', {
-          sessionId: prompt.sessionId,
-          path: prompt.destPath,
-          conflictPolicy: policy,
-        });
-      } else if (prompt.kind === 'folder-upload') {
-        const transferId = `folder-upload-${Date.now()}`;
-        await invoke('sftp_upload_folder', {
-          sessionId: prompt.sessionId,
-          localPath: prompt.localPath,
-          remotePath: prompt.destPath,
-          transferId,
-          conflictPolicy: policy,
-        });
-      } else {
-        const transferId = `folder-${Date.now()}`;
-        await invoke('sftp_download_folder', {
-          sessionId: prompt.sessionId,
-          remotePath: prompt.destPath,
-          localPath: prompt.localPath,
-          transferId,
-          conflictPolicy: policy,
-        });
-      }
-      await get().fetchDirectory(prompt.sessionId);
-    } catch (err) {
-      console.error(err);
-      const message = String(err);
-      set({
-        error: message.includes('Transfer cancelled') ? null : message,
-        isLoading: false,
-        transfer: null,
-      });
-    }
-  },
-
-  dismissConflict: () => {
-    set({ conflictPrompt: null });
-  },
-
-  cancelTransfer: async () => {
-    const transfer = get().transfer;
-    if (!transfer) return;
-    await invoke('sftp_cancel_transfer', { transferId: transfer.transferId });
-  },
-
-  fetchDirectory: async (sessionId, path) => {
-    const targetPath = path !== undefined ? path : get().currentPath;
-    set({ isLoading: true, error: null });
-    try {
-      const files =
-        (await invoke<SftpFile[]>('sftp_list_dir', {
-          sessionId,
-          path: targetPath,
-        })) || [];
-
-      // Sort: Directories first, then alphabetically
-      const sortedFiles = files.sort((a, b) => {
-        if (a.is_dir === b.is_dir) {
-          return a.name.localeCompare(b.name);
-        }
-        return a.is_dir ? -1 : 1;
-      });
-
-      set({
-        files: sortedFiles,
-        currentPath: targetPath,
-        isLoading: false,
-      });
-    } catch (err) {
-      console.error('SFTP fetch error:', err);
-      set({ error: String(err), isLoading: false });
-    }
-  },
-
-  cd: async (sessionId, subPath) => {
-    const state = get();
-    let newPath = '';
-
-    if (subPath === '..') {
-      const parts = state.currentPath.split('/').filter((p) => p !== '');
-      if (parts.length > 0) {
-        parts.pop();
-        newPath = parts.length === 0 ? '/' : '/' + parts.join('/');
-      } else {
-        newPath = '/';
-      }
-    } else if (subPath.startsWith('/')) {
-      newPath = subPath; // absolute
-    } else {
-      // relative
-      const base = state.currentPath.endsWith('/') ? state.currentPath : state.currentPath + '/';
-      newPath = base + subPath;
-    }
-
-    await get().fetchDirectory(sessionId, newPath);
-  },
-
-  cdUp: async (sessionId) => {
-    await get().cd(sessionId, '..');
-  },
-
-  refresh: async (sessionId) => {
-    await get().fetchDirectory(sessionId);
-  },
-
-  reset: () => {
-    set({
-      currentPath: '/',
-      files: [],
-      error: null,
-      isLoading: false,
-      history: [],
-      transfer: null,
-      conflictPrompt: null,
-    });
-  },
-
-  downloadFile: async (sessionId, fileName) => {
-    const state = get();
-    const sourcePath = state.currentPath.endsWith('/')
-      ? `${state.currentPath}${fileName}`
-      : `${state.currentPath}/${fileName}`;
-    try {
-      const localPath = await save({ defaultPath: fileName });
-      if (!localPath) return;
-
-      set({ isLoading: true, error: null });
-      const transferId = `download-${Date.now()}`;
-      await invoke('sftp_download_file', {
-        sessionId,
-        remotePath: sourcePath,
-        localPath,
-        transferId,
-      });
-      set({ isLoading: false });
-    } catch (err) {
-      console.error(err);
-      const message = String(err);
-      set({
-        error: message.includes('Transfer cancelled') ? null : message,
-        isLoading: false,
-        transfer: null,
-      });
-    }
-  },
-
-  downloadFolder: async (sessionId, folderName) => {
-    const state = get();
-    const remotePath = state.currentPath.endsWith('/')
-      ? `${state.currentPath}${folderName}`
-      : `${state.currentPath}/${folderName}`;
-    let localPath: string | null = null;
-    try {
-      localPath = await save({ defaultPath: folderName });
-      if (!localPath) return;
-
-      set({ isLoading: true, error: null });
-      const transferId = `folder-${Date.now()}`;
-      await invoke('sftp_download_folder', {
-        sessionId,
-        remotePath,
-        localPath,
-        transferId,
-      });
-      set({ isLoading: false });
-    } catch (err) {
-      console.error(err);
-      const message = String(err);
-      if (message.includes(SFTP_TARGET_EXISTS_MARKER) && localPath) {
-        set({
-          isLoading: false,
-          transfer: null,
-          conflictPrompt: {
-            kind: 'folder-download',
-            sessionId,
-            destPath: remotePath,
-            destName: folderName,
-            localPath,
-          },
-        });
-        return;
-      }
-      set({
-        error: message.includes('Transfer cancelled') ? null : message,
-        isLoading: false,
-        transfer: null,
-      });
-    }
-  },
-
-  uploadFile: async (sessionId) => {
-    const state = get();
-    let localPath: string | null = null;
-    let destPath: string | null = null;
-    let destName: string | null = null;
-    try {
-      const picked = await open({ multiple: false, directory: false });
-      if (!picked || Array.isArray(picked)) return;
-
-      localPath = picked as string;
-      destName = localPath.split(/[/\\]/).pop() ?? null;
-      if (!destName) return;
-
-      destPath = state.currentPath.endsWith('/')
-        ? `${state.currentPath}${destName}`
-        : `${state.currentPath}/${destName}`;
-
       set({ isLoading: true, error: null });
       const transferId = `upload-${Date.now()}`;
       await invoke('sftp_upload_file', {
@@ -327,7 +82,7 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     } catch (err) {
       console.error(err);
       const message = String(err);
-      if (message.includes(SFTP_TARGET_EXISTS_MARKER) && localPath && destPath && destName) {
+      if (message.includes(SFTP_TARGET_EXISTS_MARKER)) {
         set({
           isLoading: false,
           transfer: null,
@@ -347,25 +102,16 @@ export const useSftpStore = create<SftpState>((set, get) => ({
         transfer: null,
       });
     }
-  },
+  };
 
-  uploadFolder: async (sessionId) => {
-    const state = get();
-    let localPath: string | null = null;
-    let destPath: string | null = null;
-    let destName: string | null = null;
+  const uploadOneFolder = async (sessionId: string, localPath: string): Promise<void> => {
+    const destName = localPath.split(/[/\\]/).filter(Boolean).pop() ?? null;
+    if (!destName) return;
+    const currentPath = get().currentPath;
+    const destPath = currentPath.endsWith('/')
+      ? `${currentPath}${destName}`
+      : `${currentPath}/${destName}`;
     try {
-      const picked = await open({ multiple: false, directory: true });
-      if (!picked || Array.isArray(picked)) return;
-
-      localPath = picked as string;
-      destName = localPath.split(/[/\\]/).filter(Boolean).pop() ?? null;
-      if (!destName) return;
-
-      destPath = state.currentPath.endsWith('/')
-        ? `${state.currentPath}${destName}`
-        : `${state.currentPath}/${destName}`;
-
       set({ isLoading: true, error: null });
       const transferId = `folder-upload-${Date.now()}`;
       await invoke('sftp_upload_folder', {
@@ -378,7 +124,7 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     } catch (err) {
       console.error(err);
       const message = String(err);
-      if (message.includes(SFTP_TARGET_EXISTS_MARKER) && localPath && destPath && destName) {
+      if (message.includes(SFTP_TARGET_EXISTS_MARKER)) {
         set({
           isLoading: false,
           transfer: null,
@@ -398,150 +144,424 @@ export const useSftpStore = create<SftpState>((set, get) => ({
         transfer: null,
       });
     }
-  },
+  };
 
-  copyFile: async (sessionId, sourceName, destName) => {
-    const state = get();
-    const sourcePath = state.currentPath.endsWith('/')
-      ? `${state.currentPath}${sourceName}`
-      : `${state.currentPath}/${sourceName}`;
-    const destPath = state.currentPath.endsWith('/')
-      ? `${state.currentPath}${destName}`
-      : `${state.currentPath}/${destName}`;
+  return {
+    currentPath: '/',
+    files: [],
+    isLoading: false,
+    error: null,
+    history: [],
+    transfer: null,
+    conflictPrompt: null,
 
-    try {
-      set({ isLoading: true, error: null });
-      const transferId = `copy-${Date.now()}`;
-      await invoke('sftp_copy_file', {
-        sessionId,
-        sourcePath,
-        destPath,
-        transferId,
-      });
-      await get().fetchDirectory(sessionId);
-    } catch (err) {
-      console.error(err);
-      const message = String(err);
-      if (message.includes(SFTP_TARGET_EXISTS_MARKER)) {
-        set({
-          isLoading: false,
-          transfer: null,
-          conflictPrompt: { kind: 'copy', sessionId, sourcePath, destPath, destName },
-        });
+    updateTransfer: (transfer) => {
+      if (transfer.status === 'running') {
+        set({ transfer, isLoading: true });
         return;
       }
       set({
-        error: message.includes('Transfer cancelled') ? null : message,
-        isLoading: false,
         transfer: null,
+        isLoading: false,
+        error: transfer.status === 'failed' ? transfer.message || 'Transfer failed' : null,
       });
-    }
-  },
+    },
 
-  openFile: async (sessionId, fileName) => {
-    const state = get();
-    const sourcePath = state.currentPath.endsWith('/')
-      ? `${state.currentPath}${fileName}`
-      : `${state.currentPath}/${fileName}`;
-    try {
-      set({ isLoading: true, error: null });
-      await invoke('sftp_open_file', {
-        sessionId,
-        remotePath: sourcePath,
-      });
-      set({ isLoading: false });
-    } catch (err) {
-      console.error(err);
-      set({ error: String(err), isLoading: false });
-    }
-  },
-
-  renameFile: async (sessionId, oldName, newName) => {
-    const state = get();
-    const oldPath = state.currentPath.endsWith('/')
-      ? `${state.currentPath}${oldName}`
-      : `${state.currentPath}/${oldName}`;
-    const newPath = state.currentPath.endsWith('/')
-      ? `${state.currentPath}${newName}`
-      : `${state.currentPath}/${newName}`;
-
-    try {
-      set({ isLoading: true, error: null });
-      await invoke('sftp_rename', {
-        sessionId,
-        oldPath,
-        newPath,
-      });
-      await get().fetchDirectory(sessionId);
-    } catch (err) {
-      console.error(err);
-      set({ error: String(err), isLoading: false });
-    }
-  },
-
-  deleteFile: async (sessionId, name, isDir) => {
-    const state = get();
-    const path = state.currentPath.endsWith('/')
-      ? `${state.currentPath}${name}`
-      : `${state.currentPath}/${name}`;
-
-    try {
-      set({ isLoading: true, error: null });
-      await invoke('sftp_remove', {
-        sessionId,
-        path,
-        isDir,
-      });
-      await get().fetchDirectory(sessionId);
-    } catch (err) {
-      console.error(err);
-      set({ error: String(err), isLoading: false });
-    }
-  },
-
-  createDir: async (sessionId, dirName) => {
-    const state = get();
-    const path = state.currentPath.endsWith('/')
-      ? `${state.currentPath}${dirName}`
-      : `${state.currentPath}/${dirName}`;
-
-    try {
-      set({ isLoading: true, error: null });
-      await invoke('sftp_create_dir', {
-        sessionId,
-        path,
-      });
-      await get().fetchDirectory(sessionId);
-    } catch (err) {
-      console.error(err);
-      set({ error: String(err), isLoading: false });
-    }
-  },
-
-  createFile: async (sessionId, fileName) => {
-    const state = get();
-    const path = state.currentPath.endsWith('/')
-      ? `${state.currentPath}${fileName}`
-      : `${state.currentPath}/${fileName}`;
-
-    try {
-      set({ isLoading: true, error: null });
-      await invoke('sftp_create_file', {
-        sessionId,
-        path,
-      });
-      await get().fetchDirectory(sessionId);
-    } catch (err) {
-      console.error(err);
-      const message = String(err);
-      if (message.includes(SFTP_TARGET_EXISTS_MARKER)) {
+    resolveConflict: async (policy) => {
+      const prompt = get().conflictPrompt;
+      if (!prompt) return;
+      set({ conflictPrompt: null });
+      try {
+        set({ isLoading: true, error: null });
+        if (policy === 'skip') {
+          await get().fetchDirectory(prompt.sessionId);
+          return;
+        }
+        if (prompt.kind === 'upload') {
+          const transferId = `upload-${Date.now()}`;
+          await invoke('sftp_upload_file', {
+            sessionId: prompt.sessionId,
+            localPath: prompt.localPath,
+            remotePath: prompt.destPath,
+            transferId,
+            conflictPolicy: policy,
+          });
+        } else if (prompt.kind === 'copy') {
+          const transferId = `copy-${Date.now()}`;
+          await invoke('sftp_copy_file', {
+            sessionId: prompt.sessionId,
+            sourcePath: prompt.sourcePath,
+            destPath: prompt.destPath,
+            transferId,
+            conflictPolicy: policy,
+          });
+        } else if (prompt.kind === 'create-file') {
+          await invoke('sftp_create_file', {
+            sessionId: prompt.sessionId,
+            path: prompt.destPath,
+            conflictPolicy: policy,
+          });
+        } else if (prompt.kind === 'folder-upload') {
+          const transferId = `folder-upload-${Date.now()}`;
+          await invoke('sftp_upload_folder', {
+            sessionId: prompt.sessionId,
+            localPath: prompt.localPath,
+            remotePath: prompt.destPath,
+            transferId,
+            conflictPolicy: policy,
+          });
+        } else {
+          const transferId = `folder-${Date.now()}`;
+          await invoke('sftp_download_folder', {
+            sessionId: prompt.sessionId,
+            remotePath: prompt.destPath,
+            localPath: prompt.localPath,
+            transferId,
+            conflictPolicy: policy,
+          });
+        }
+        await get().fetchDirectory(prompt.sessionId);
+      } catch (err) {
+        console.error(err);
+        const message = String(err);
         set({
+          error: message.includes('Transfer cancelled') ? null : message,
           isLoading: false,
-          conflictPrompt: { kind: 'create-file', sessionId, destPath: path, destName: fileName },
+          transfer: null,
         });
-        return;
       }
-      set({ error: message, isLoading: false });
-    }
-  },
-}));
+    },
+
+    dismissConflict: () => {
+      set({ conflictPrompt: null });
+    },
+
+    cancelTransfer: async () => {
+      const transfer = get().transfer;
+      if (!transfer) return;
+      await invoke('sftp_cancel_transfer', { transferId: transfer.transferId });
+    },
+
+    fetchDirectory: async (sessionId, path) => {
+      const targetPath = path !== undefined ? path : get().currentPath;
+      set({ isLoading: true, error: null });
+      try {
+        const files =
+          (await invoke<SftpFile[]>('sftp_list_dir', {
+            sessionId,
+            path: targetPath,
+          })) || [];
+
+        // Sort: Directories first, then alphabetically
+        const sortedFiles = files.sort((a, b) => {
+          if (a.is_dir === b.is_dir) {
+            return a.name.localeCompare(b.name);
+          }
+          return a.is_dir ? -1 : 1;
+        });
+
+        set({
+          files: sortedFiles,
+          currentPath: targetPath,
+          isLoading: false,
+        });
+      } catch (err) {
+        console.error('SFTP fetch error:', err);
+        set({ error: String(err), isLoading: false });
+      }
+    },
+
+    cd: async (sessionId, subPath) => {
+      const state = get();
+      let newPath = '';
+
+      if (subPath === '..') {
+        const parts = state.currentPath.split('/').filter((p) => p !== '');
+        if (parts.length > 0) {
+          parts.pop();
+          newPath = parts.length === 0 ? '/' : '/' + parts.join('/');
+        } else {
+          newPath = '/';
+        }
+      } else if (subPath.startsWith('/')) {
+        newPath = subPath; // absolute
+      } else {
+        // relative
+        const base = state.currentPath.endsWith('/') ? state.currentPath : state.currentPath + '/';
+        newPath = base + subPath;
+      }
+
+      await get().fetchDirectory(sessionId, newPath);
+    },
+
+    cdUp: async (sessionId) => {
+      await get().cd(sessionId, '..');
+    },
+
+    refresh: async (sessionId) => {
+      await get().fetchDirectory(sessionId);
+    },
+
+    reset: () => {
+      set({
+        currentPath: '/',
+        files: [],
+        error: null,
+        isLoading: false,
+        history: [],
+        transfer: null,
+        conflictPrompt: null,
+      });
+    },
+
+    downloadFile: async (sessionId, fileName) => {
+      const state = get();
+      const sourcePath = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${fileName}`
+        : `${state.currentPath}/${fileName}`;
+      try {
+        const localPath = await save({ defaultPath: fileName });
+        if (!localPath) return;
+
+        set({ isLoading: true, error: null });
+        const transferId = `download-${Date.now()}`;
+        await invoke('sftp_download_file', {
+          sessionId,
+          remotePath: sourcePath,
+          localPath,
+          transferId,
+        });
+        set({ isLoading: false });
+      } catch (err) {
+        console.error(err);
+        const message = String(err);
+        set({
+          error: message.includes('Transfer cancelled') ? null : message,
+          isLoading: false,
+          transfer: null,
+        });
+      }
+    },
+
+    downloadFolder: async (sessionId, folderName) => {
+      const state = get();
+      const remotePath = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${folderName}`
+        : `${state.currentPath}/${folderName}`;
+      let localPath: string | null = null;
+      try {
+        localPath = await save({ defaultPath: folderName });
+        if (!localPath) return;
+
+        set({ isLoading: true, error: null });
+        const transferId = `folder-${Date.now()}`;
+        await invoke('sftp_download_folder', {
+          sessionId,
+          remotePath,
+          localPath,
+          transferId,
+        });
+        set({ isLoading: false });
+      } catch (err) {
+        console.error(err);
+        const message = String(err);
+        if (message.includes(SFTP_TARGET_EXISTS_MARKER) && localPath) {
+          set({
+            isLoading: false,
+            transfer: null,
+            conflictPrompt: {
+              kind: 'folder-download',
+              sessionId,
+              destPath: remotePath,
+              destName: folderName,
+              localPath,
+            },
+          });
+          return;
+        }
+        set({
+          error: message.includes('Transfer cancelled') ? null : message,
+          isLoading: false,
+          transfer: null,
+        });
+      }
+    },
+
+    uploadFile: async (sessionId) => {
+      const picked = await open({ multiple: false, directory: false });
+      if (!picked || Array.isArray(picked)) return;
+      await uploadOneFile(sessionId, picked as string);
+    },
+
+    uploadFolder: async (sessionId) => {
+      const picked = await open({ multiple: false, directory: true });
+      if (!picked || Array.isArray(picked)) return;
+      await uploadOneFolder(sessionId, picked as string);
+    },
+
+    uploadPaths: async (sessionId, paths) => {
+      if (!paths.length) return;
+      try {
+        const entries = await invoke<SftpLocalEntryPayload[]>('sftp_local_entries', { paths });
+        for (const entry of entries) {
+          // A previous entry ended in the conflict dialog; remaining
+          // entries wait for a fresh drop once it is resolved.
+          if (get().conflictPrompt) break;
+          if (entry.isDir) {
+            await uploadOneFolder(sessionId, entry.path);
+          } else {
+            await uploadOneFile(sessionId, entry.path);
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        set({ error: String(err), isLoading: false });
+      }
+    },
+
+    copyFile: async (sessionId, sourceName, destName) => {
+      const state = get();
+      const sourcePath = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${sourceName}`
+        : `${state.currentPath}/${sourceName}`;
+      const destPath = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${destName}`
+        : `${state.currentPath}/${destName}`;
+
+      try {
+        set({ isLoading: true, error: null });
+        const transferId = `copy-${Date.now()}`;
+        await invoke('sftp_copy_file', {
+          sessionId,
+          sourcePath,
+          destPath,
+          transferId,
+        });
+        await get().fetchDirectory(sessionId);
+      } catch (err) {
+        console.error(err);
+        const message = String(err);
+        if (message.includes(SFTP_TARGET_EXISTS_MARKER)) {
+          set({
+            isLoading: false,
+            transfer: null,
+            conflictPrompt: { kind: 'copy', sessionId, sourcePath, destPath, destName },
+          });
+          return;
+        }
+        set({
+          error: message.includes('Transfer cancelled') ? null : message,
+          isLoading: false,
+          transfer: null,
+        });
+      }
+    },
+
+    openFile: async (sessionId, fileName) => {
+      const state = get();
+      const sourcePath = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${fileName}`
+        : `${state.currentPath}/${fileName}`;
+      try {
+        set({ isLoading: true, error: null });
+        await invoke('sftp_open_file', {
+          sessionId,
+          remotePath: sourcePath,
+        });
+        set({ isLoading: false });
+      } catch (err) {
+        console.error(err);
+        set({ error: String(err), isLoading: false });
+      }
+    },
+
+    renameFile: async (sessionId, oldName, newName) => {
+      const state = get();
+      const oldPath = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${oldName}`
+        : `${state.currentPath}/${oldName}`;
+      const newPath = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${newName}`
+        : `${state.currentPath}/${newName}`;
+
+      try {
+        set({ isLoading: true, error: null });
+        await invoke('sftp_rename', {
+          sessionId,
+          oldPath,
+          newPath,
+        });
+        await get().fetchDirectory(sessionId);
+      } catch (err) {
+        console.error(err);
+        set({ error: String(err), isLoading: false });
+      }
+    },
+
+    deleteFile: async (sessionId, name, isDir) => {
+      const state = get();
+      const path = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${name}`
+        : `${state.currentPath}/${name}`;
+
+      try {
+        set({ isLoading: true, error: null });
+        await invoke('sftp_remove', {
+          sessionId,
+          path,
+          isDir,
+        });
+        await get().fetchDirectory(sessionId);
+      } catch (err) {
+        console.error(err);
+        set({ error: String(err), isLoading: false });
+      }
+    },
+
+    createDir: async (sessionId, dirName) => {
+      const state = get();
+      const path = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${dirName}`
+        : `${state.currentPath}/${dirName}`;
+
+      try {
+        set({ isLoading: true, error: null });
+        await invoke('sftp_create_dir', {
+          sessionId,
+          path,
+        });
+        await get().fetchDirectory(sessionId);
+      } catch (err) {
+        console.error(err);
+        set({ error: String(err), isLoading: false });
+      }
+    },
+
+    createFile: async (sessionId, fileName) => {
+      const state = get();
+      const path = state.currentPath.endsWith('/')
+        ? `${state.currentPath}${fileName}`
+        : `${state.currentPath}/${fileName}`;
+
+      try {
+        set({ isLoading: true, error: null });
+        await invoke('sftp_create_file', {
+          sessionId,
+          path,
+        });
+        await get().fetchDirectory(sessionId);
+      } catch (err) {
+        console.error(err);
+        const message = String(err);
+        if (message.includes(SFTP_TARGET_EXISTS_MARKER)) {
+          set({
+            isLoading: false,
+            conflictPrompt: { kind: 'create-file', sessionId, destPath: path, destName: fileName },
+          });
+          return;
+        }
+        set({ error: message, isLoading: false });
+      }
+    },
+  };
+});

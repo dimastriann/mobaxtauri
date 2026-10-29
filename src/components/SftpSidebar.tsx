@@ -43,6 +43,8 @@ import {
 import type { IconType } from 'react-icons';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { useSftpStore } from '../store/useSftpStore';
@@ -163,6 +165,7 @@ const SftpSidebar: React.FC = () => {
     refresh,
     uploadFile,
     uploadFolder,
+    uploadPaths,
     downloadFile,
     copyFile,
     openFile,
@@ -189,6 +192,8 @@ const SftpSidebar: React.FC = () => {
   const [renameValue, setRenameValue] = useState('');
   const [editorFile, setEditorFile] = useState<{ path: string; name: string } | null>(null);
   const [createPrompt, setCreatePrompt] = useState<'folder' | 'file' | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const lastNotifiedTransferRef = useRef<{ id: string; status: string } | null>(null);
 
   const handleCreatePromptConfirm = (values: Record<string, string>) => {
@@ -315,6 +320,71 @@ const SftpSidebar: React.FC = () => {
       unlisten.then((dispose) => dispose());
     };
   }, [activeSessionId, updateTransfer]);
+
+  // OS-level drag & drop: route drops landing on this panel to uploads.
+  // The Tauri drag event position is physical pixels, so it is converted
+  // with the window scale factor before the bounding-rect hit test.
+  useEffect(() => {
+    if (!activeSessionId || activeSessionId === 'local') return;
+
+    let disposed = false;
+    let unlisten: UnlistenFn | null = null;
+
+    const isOverPanel = async (position: { x: number; y: number }): Promise<boolean> => {
+      const el = panelRef.current;
+      if (!el) return false;
+      const scaleFactor = await getCurrentWindow().scaleFactor();
+      const rect = el.getBoundingClientRect();
+      const x = position.x / scaleFactor;
+      const y = position.y / scaleFactor;
+      return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    };
+
+    const startDropUpload = (paths: string[]) => {
+      if (useSftpStore.getState().transfer || useSftpStore.getState().isLoading) {
+        toaster.create({
+          title: 'Transfer in progress',
+          description: 'Wait for the current transfer to finish before dropping files.',
+          type: 'info',
+        });
+        return;
+      }
+      void uploadPaths(activeSessionId, paths);
+    };
+
+    const setupListener = async () => {
+      try {
+        const dispose = await getCurrentWebview().onDragDropEvent((event) => {
+          const payload = event.payload;
+          if (payload.type === 'leave') {
+            setDragActive(false);
+            return;
+          }
+          void (async () => {
+            const inside = await isOverPanel(payload.position);
+            if (payload.type === 'drop') {
+              setDragActive(false);
+              if (inside && payload.paths.length) startDropUpload(payload.paths);
+            } else {
+              setDragActive(inside);
+            }
+          })();
+        });
+        if (disposed) dispose();
+        else unlisten = dispose;
+      } catch (error) {
+        // Outside a Tauri webview (tests, plain browser preview) the
+        // drag-drop API is unavailable; uploads still work from the menu.
+        console.error('Failed to set up SFTP drag & drop listener', error);
+      }
+    };
+
+    setupListener();
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, [activeSessionId, uploadPaths]);
 
   useEffect(() => {
     if (activeSessionId && activeSessionId !== 'local' && activeSession?.status === 'connected') {
@@ -577,7 +647,31 @@ const SftpSidebar: React.FC = () => {
   );
 
   return (
-    <VStack align="stretch" h="full" minH={0} overflow="hidden" gap={0}>
+    <VStack
+      align="stretch"
+      h="full"
+      minH={0}
+      overflow="hidden"
+      gap={0}
+      position="relative"
+      ref={panelRef}
+    >
+      {dragActive && (
+        <Box
+          position="absolute"
+          top={0}
+          right={0}
+          bottom={0}
+          left={0}
+          bg="blue.fg"
+          border="1px dashed"
+          borderColor="blue.fg"
+          borderRadius="md"
+          opacity={0.15}
+          pointerEvents="none"
+          zIndex={10}
+        />
+      )}
       {/* SFTP Toolbar */}
       <HStack
         p={2}
