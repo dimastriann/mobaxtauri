@@ -1402,6 +1402,14 @@ async fn sftp_create_dir(
 }
 
 #[tauri::command]
+async fn sftp_local_entries(
+    paths: Vec<String>,
+) -> Result<Vec<crate::sftp_utils::LocalEntry>, String> {
+    log::info!("Classifying {} dropped paths", paths.len());
+    crate::sftp_utils::classify_local_paths(paths).await
+}
+
+#[tauri::command]
 async fn ssh_health_check(
     state: State<'_, AppState>,
     session_id: String,
@@ -1538,6 +1546,7 @@ pub fn run() {
             sftp_path_variants,
             sftp_download_folder,
             sftp_upload_folder,
+            sftp_local_entries,
             write_text_file,
             read_text_file,
             load_app_data,

@@ -166,6 +166,38 @@ pub async fn collect_local_tree(root: &std::path::Path) -> Result<LocalTree, Str
     Ok(LocalTree { files, dirs })
 }
 
+/// One dropped filesystem path classified for upload dispatch: directories
+/// go to `sftp_upload_folder`, files to `sftp_upload_file`.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalEntry {
+    pub path: String,
+    pub name: String,
+    pub is_dir: bool,
+}
+
+/// Classify dropped paths for the SFTP upload dispatcher. A path that no
+/// longer exists (deleted between drop and dispatch) is reported as an
+/// error so the frontend can surface it instead of guessing.
+pub async fn classify_local_paths(paths: Vec<String>) -> Result<Vec<LocalEntry>, String> {
+    let mut entries = Vec::with_capacity(paths.len());
+    for path in paths {
+        let metadata = tokio::fs::metadata(&path)
+            .await
+            .map_err(|e| format!("Failed to inspect {path}: {e}"))?;
+        let name = std::path::Path::new(&path)
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.clone());
+        entries.push(LocalEntry {
+            path,
+            name,
+            is_dir: metadata.is_dir(),
+        });
+    }
+    Ok(entries)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,5 +363,39 @@ mod tests {
         assert_eq!(tree.files, vec![("real.txt".to_string(), 4)]);
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn classifies_dropped_paths() {
+        let root = temp_tree("classify");
+        std::fs::write(root.join("file.txt"), b"data").expect("write file");
+        std::fs::create_dir_all(root.join("folder")).expect("create folder");
+
+        let entries = classify_local_paths(vec![
+            root.join("file.txt").to_string_lossy().into_owned(),
+            root.join("folder").to_string_lossy().into_owned(),
+        ])
+        .await
+        .expect("classification succeeds");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].name, "file.txt");
+        assert!(!entries[0].is_dir);
+        assert_eq!(entries[1].name, "folder");
+        assert!(entries[1].is_dir);
+        assert_eq!(entries[0].path, root.join("file.txt").to_string_lossy());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn classification_fails_for_missing_paths() {
+        let missing =
+            std::env::temp_dir().join(format!("moba-classify-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&missing);
+        assert!(
+            classify_local_paths(vec![missing.to_string_lossy().into_owned()])
+                .await
+                .is_err()
+        );
     }
 }
