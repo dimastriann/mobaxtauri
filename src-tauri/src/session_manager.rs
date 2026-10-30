@@ -131,6 +131,17 @@ impl SessionManager {
         }
     }
 
+    /// Whether any live SSH session exists. Synchronous so the window-close
+    /// handler (which runs on the main thread) can check without blocking:
+    /// a contended lock means sessions are being mutated, so it reports
+    /// active to stay fail-safe.
+    pub fn has_active_sessions_now(&self) -> bool {
+        match self.sessions.try_lock() {
+            Ok(sessions) => !sessions.is_empty(),
+            Err(_) => true,
+        }
+    }
+
     pub async fn connection_handle(
         &self,
         session_id: &str,
@@ -217,6 +228,12 @@ fn spawn_shell_queue_drain(mut read_half: russh::ChannelReadHalf) -> JoinHandle<
 mod tests {
     use super::{effective_interval, SessionManager};
     use std::time::Duration;
+
+    #[test]
+    fn reports_no_active_sessions_for_a_fresh_manager() {
+        let manager = SessionManager::default();
+        assert!(!manager.has_active_sessions_now());
+    }
 
     /// Test-side twin of spawn_shell_queue_drain over a plain bounded mpsc:
     /// consume messages forever so a producer is never blocked by the cap.

@@ -256,6 +256,40 @@ function App() {
     }
   }, []);
 
+  // The backend blocks window close while SSH sessions are live and emits
+  // this event; confirm before quitting so sessions are not dropped silently.
+  useEffect(() => {
+    let dialogOpen = false;
+    let unlisten: (() => void) | null = null;
+    listen('app-close-requested', async () => {
+      if (dialogOpen) return;
+      dialogOpen = true;
+      try {
+        const confirmed = await ask(
+          'SSH sessions are still connected. Closing MobaXTauri will disconnect them. Close anyway?',
+          {
+            title: 'Active sessions',
+            kind: 'warning',
+            okLabel: 'Close',
+            cancelLabel: 'Stay',
+          },
+        );
+        if (confirmed) {
+          await invoke('quit_app');
+        }
+      } catch (error) {
+        console.error('Close confirmation failed', error);
+      } finally {
+        dialogOpen = false;
+      }
+    }).then((dispose) => {
+      unlisten = dispose;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
   useEffect(() => {
     const handleGlobalClick = () => setSidebarMenu(null);
     window.addEventListener('click', handleGlobalClick);

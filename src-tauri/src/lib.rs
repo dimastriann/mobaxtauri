@@ -28,7 +28,7 @@ use crate::transfers::TransferManager;
 use bytes::Bytes;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 
@@ -1053,6 +1053,12 @@ async fn export_terminal_recording(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[tauri::command]
+fn quit_app(app_handle: AppHandle) {
+    log::info!("Quitting at the user's request");
+    app_handle.exit(0);
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
@@ -1070,6 +1076,24 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Closing the window while SSH sessions are live would silently
+        // drop them. The backend owns that policy: block the close and let
+        // the frontend ask for confirmation, then quit through the
+        // `quit_app` command.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let active = app
+                    .state::<AppState>()
+                    .ssh_sessions
+                    .has_active_sessions_now();
+                if active {
+                    log::info!("Close requested with live SSH sessions; asking for confirmation");
+                    api.prevent_close();
+                    let _ = window.emit("app-close-requested", ());
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             ssh_connect,
             ssh_agent_list_keys,
@@ -1077,6 +1101,7 @@ pub fn run() {
             ssh_forward_add_dynamic,
             ssh_forward_list,
             ssh_forward_remove,
+            quit_app,
             set_health_interval,
             set_health_visibility,
             ssh_trust_host_key,
