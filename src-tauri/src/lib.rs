@@ -129,6 +129,7 @@ async fn ssh_connect(
         private_key_path,
         key_passphrase,
         use_saved_credential,
+        use_agent,
         connection_timeout_secs: _,
     } = request;
     log::info!("Attempting to connect to {}:{} as {}", host, port, user);
@@ -168,6 +169,7 @@ async fn ssh_connect(
         password,
         private_key_path,
         key_passphrase,
+        use_agent,
         Arc::new(known_hosts.inner().clone()),
     );
 
@@ -864,6 +866,34 @@ async fn sftp_local_entries(
 }
 
 #[tauri::command]
+async fn ssh_agent_list_keys() -> Result<Vec<SshAgentKey>, String> {
+    let mut agent = crate::ssh::connect_agent_client().await?;
+    let identities = agent
+        .request_identities()
+        .await
+        .map_err(|e| format!("Failed to query the SSH agent: {e}"))?;
+    Ok(identities
+        .into_iter()
+        .map(|identity| {
+            let key = identity.public_key().into_owned();
+            SshAgentKey {
+                fingerprint: key.fingerprint(russh::keys::HashAlg::Sha256).to_string(),
+                algorithm: key.algorithm().to_string(),
+                comment: identity.comment().to_string(),
+            }
+        })
+        .collect())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SshAgentKey {
+    fingerprint: String,
+    algorithm: String,
+    comment: String,
+}
+
+#[tauri::command]
 async fn ssh_health_check(
     state: State<'_, AppState>,
     session_id: String,
@@ -978,6 +1008,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             ssh_connect,
+            ssh_agent_list_keys,
             set_health_interval,
             set_health_visibility,
             ssh_trust_host_key,

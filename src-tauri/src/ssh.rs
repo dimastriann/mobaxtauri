@@ -4,8 +4,9 @@ use crate::session_types::{
     SshSessionStatus,
 };
 use russh::client::{AuthResult, Handler, Session};
+use russh::keys::agent::client::{AgentClient, AgentStream};
 use russh::keys::ssh_key::PrivateKey;
-use russh::keys::PrivateKeyWithHashAlg;
+use russh::keys::{HashAlg, PrivateKeyWithHashAlg};
 use russh_sftp::client::SftpSession;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Runtime};
@@ -169,6 +170,82 @@ pub struct SshSession;
 /// verbatim as part of the failure message.
 pub const KEY_PASSPHRASE_REQUIRED: &str = "KEY PASSPHRASE REQUIRED";
 
+/// Runtime-typed SSH agent client: platform streams are boxed so the
+/// connect flow and the list-keys command share one return type.
+pub type BoxedAgentClient = AgentClient<Box<dyn AgentStream + Send + Unpin>>;
+
+/// Connects to the user's SSH agent. Windows: the OpenSSH agent service
+/// pipe first, then Pageant; Unix: the SSH_AUTH_SOCK socket.
+#[cfg(windows)]
+pub async fn connect_agent_client() -> Result<BoxedAgentClient, String> {
+    if let Ok(client) = AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent").await {
+        return Ok(client.dynamic());
+    }
+    if let Ok(client) = AgentClient::connect_pageant().await {
+        return Ok(client.dynamic());
+    }
+    Err(
+        "SSH agent is not available: neither the Windows OpenSSH agent pipe \
+         (\\\\.\\pipe\\openssh-ssh-agent) nor Pageant responded. Start the agent service or \
+         Pageant, or disable the SSH agent option."
+            .to_string(),
+    )
+}
+
+/// Connects to the user's SSH agent. Windows: the OpenSSH agent service
+/// pipe first, then Pageant; Unix: the SSH_AUTH_SOCK socket.
+#[cfg(unix)]
+pub async fn connect_agent_client() -> Result<BoxedAgentClient, String> {
+    let client = AgentClient::connect_env().await.map_err(|error| {
+        format!(
+            "SSH agent is not available: {error}. Set SSH_AUTH_SOCK to a running ssh-agent or \
+             disable the SSH agent option."
+        )
+    })?;
+    Ok(client.dynamic())
+}
+
+/// Offers every key the agent holds to the server, returning true on the
+/// first acceptance. Signing is forwarded to the agent, so private key
+/// material never leaves it.
+pub async fn authenticate_with_agent<S>(
+    session: &mut russh::client::Handle<ClientHandler<impl Runtime>>,
+    user: &str,
+    agent: &mut AgentClient<S>,
+) -> bool
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+{
+    let identities = match agent.request_identities().await {
+        Ok(identities) => identities,
+        Err(error) => {
+            log::warn!("SSH agent identity query failed: {error}");
+            return false;
+        }
+    };
+    if identities.is_empty() {
+        log::info!("SSH agent has no keys loaded");
+        return false;
+    }
+    for identity in &identities {
+        let key = identity.public_key().into_owned();
+        log::info!(
+            "Trying agent key {} ({})",
+            key.fingerprint(HashAlg::Sha256),
+            identity.comment()
+        );
+        let result = session
+            .authenticate_publickey_with(user.to_string(), key, None, agent)
+            .await;
+        match result {
+            Ok(AuthResult::Success) => return true,
+            Ok(other) => log::info!("Agent key rejected: {other:?}"),
+            Err(error) => log::warn!("Agent signing failed: {error}"),
+        }
+    }
+    false
+}
+
 /// Parses and decrypts an OpenSSH private key, failing with distinct,
 /// user-actionable errors instead of the auth-failure fallthrough:
 ///
@@ -206,6 +283,7 @@ impl SshSession {
         password: Option<String>,
         private_key_path: Option<String>,
         key_passphrase: Option<String>,
+        use_agent: bool,
         known_hosts: Arc<KnownHostsService>,
     ) -> Result<
         (
@@ -245,8 +323,19 @@ impl SshSession {
         let mut authenticated = false;
         // Capture what will be attempted before the values are moved into
         // the authentication calls; the failure message names them.
+        let agent_attempted = use_agent;
         let key_attempted = private_key_path.is_some();
         let password_attempted = password.is_some();
+
+        if use_agent {
+            log::info!("Attempting SSH agent authentication...");
+            match connect_agent_client().await {
+                Ok(mut agent) => {
+                    authenticated = authenticate_with_agent(&mut session, &user, &mut agent).await;
+                }
+                Err(error) => log::warn!("{error}"),
+            }
+        }
 
         if let Some(key_path) = private_key_path.as_ref() {
             log::info!("Attempting public key authentication with {}", key_path);
@@ -289,9 +378,14 @@ impl SshSession {
         }
 
         if !authenticated {
-            return Err(
-                describe_auth_failure(key_attempted, password_attempted, &user, &host).into(),
-            );
+            return Err(describe_auth_failure(
+                agent_attempted,
+                key_attempted,
+                password_attempted,
+                &user,
+                &host,
+            )
+            .into());
         }
 
         log::info!("Opening channel...");
@@ -322,18 +416,20 @@ impl SshSession {
 
 /// Builds the final authentication failure message, distinguishing what
 /// was actually attempted. "Password" in the wording is load-bearing: the
-/// terminal uses it to decide whether a password re-prompt can help.
+/// terminal uses it to decide whether a password re-prompt can help, so
+/// the agent prefix is prepended rather than replacing the wording.
 /// Pre-authentication transport errors (DNS refused, handshake aborted,
 /// server closed the TCP stream) already surface as distinct russh errors
 /// and are not handled here.
 fn describe_auth_failure(
+    agent_attempted: bool,
     key_attempted: bool,
     password_attempted: bool,
     user: &str,
     host: &str,
 ) -> String {
     let target = format!("{user}@{host}");
-    match (key_attempted, password_attempted) {
+    let base = match (key_attempted, password_attempted) {
         (true, true) => {
             format!(
                 "Public key and password authentication were rejected by {target}; check the key and password configured for this session"
@@ -348,6 +444,13 @@ fn describe_auth_failure(
         (false, false) => format!(
             "No credential was available when connecting to {target}; configure a password, save one in the vault, or select a private key"
         ),
+    };
+    if agent_attempted {
+        let hint = "If the agent should authenticate this session, load the key into the \
+                    agent and add its public key to the server's authorized_keys.";
+        format!("The SSH agent's keys were rejected by {target}. {base} {hint}")
+    } else {
+        base
     }
 }
 
@@ -502,20 +605,20 @@ mod tests {
 
     #[test]
     fn auth_failure_names_what_was_attempted() {
-        let message = describe_auth_failure(false, true, "ops", "prod.example.com");
+        let message = describe_auth_failure(false, false, true, "ops", "prod.example.com");
         assert!(message.starts_with("Password authentication"), "{message}");
         assert!(message.contains("ops@prod.example.com"), "{message}");
     }
 
     #[test]
     fn auth_failure_combines_key_and_password() {
-        let message = describe_auth_failure(true, true, "ops", "host");
+        let message = describe_auth_failure(false, true, true, "ops", "host");
         assert!(message.starts_with("Public key and password"), "{message}");
     }
 
     #[test]
     fn auth_failure_key_only_does_not_offer_password_prompt() {
-        let message = describe_auth_failure(true, false, "ops", "host");
+        let message = describe_auth_failure(false, true, false, "ops", "host");
         assert!(
             message.starts_with("Public key authentication"),
             "{message}"
@@ -524,8 +627,25 @@ mod tests {
 
     #[test]
     fn auth_failure_without_credentials_is_a_configuration_error() {
-        let message = describe_auth_failure(false, false, "ops", "host");
+        let message = describe_auth_failure(false, false, false, "ops", "host");
         assert!(message.contains("No credential was available"), "{message}");
+    }
+
+    #[test]
+    fn auth_failure_with_agent_keeps_the_password_prompt_wording() {
+        // The agent prefix is prepended; the "Password authentication was
+        // rejected" substring the terminal re-prompt flow matches on must
+        // stay intact.
+        let message = describe_auth_failure(true, false, true, "ops", "host");
+        assert!(message.starts_with("The SSH agent's keys"), "{message}");
+        assert!(
+            message.contains("Password authentication was rejected"),
+            "{message}"
+        );
+        assert!(
+            message.contains("authorized_keys"),
+            "the agent hint must point at authorized_keys: {message}"
+        );
     }
 
     // ── Output-pipeline stress (mocked bursts) ─────────────────────

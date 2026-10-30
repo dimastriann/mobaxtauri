@@ -27,6 +27,8 @@ pub struct SshConnectRequest {
     pub key_passphrase: Option<String>,
     #[serde(default)]
     pub use_saved_credential: bool,
+    #[serde(default)]
+    pub use_agent: bool,
     #[serde(default = "default_connection_timeout_secs")]
     pub connection_timeout_secs: u64,
 }
@@ -148,6 +150,7 @@ mod tests {
             private_key_path: None,
             key_passphrase: None,
             use_saved_credential: false,
+            use_agent: false,
             connection_timeout_secs: timeout,
         }
     }
