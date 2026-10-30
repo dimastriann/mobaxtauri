@@ -6,7 +6,7 @@
 //! target. The listeners live in [`ForwardManager`] and are torn down when
 //! the forward is removed or its session disconnects.
 
-use crate::ssh::ClientHandler;
+use crate::ssh::{ClientHandler, RemoteForwardTargets};
 use russh::client::Handle;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -18,7 +18,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-/// How a forward is exposed locally.
+/// How a forward is exposed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ForwardKind {
@@ -26,6 +26,8 @@ pub enum ForwardKind {
     Local,
     /// Local SOCKS5 proxy → target chosen per connection.
     Dynamic,
+    /// Server-side listener → fixed local target.
+    Remote,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -43,16 +45,34 @@ pub struct PortForward {
 struct ActiveForward {
     info: PortForward,
     task: JoinHandle<()>,
+    /// Remote forwards stop by asking the server to cancel the listen
+    /// request; local/dynamic forwards just abort their accept loop.
+    cancel: Option<tokio::sync::mpsc::UnboundedSender<()>>,
 }
 
 /// Tauri-managed registry of running forwards.
 #[derive(Default)]
 pub struct ForwardManager {
     forwards: Mutex<HashMap<String, ActiveForward>>,
+    /// Per-session remote-forward target maps, shared with the session's
+    /// client handler so forwarded channels can find their local target.
+    remote_targets: Mutex<HashMap<String, RemoteForwardTargets>>,
     next_id: AtomicU64,
 }
 
 impl ForwardManager {
+    /// The target map for a session, created on first use and cleared on
+    /// reconnect by the caller.
+    pub async fn remote_targets(&self, session_id: &str) -> RemoteForwardTargets {
+        let mut targets = self.remote_targets.lock().await;
+        targets.entry(session_id.to_string()).or_default().clone()
+    }
+
+    /// Drops the target map for a disconnected session.
+    pub async fn clear_remote_targets(&self, session_id: &str) {
+        self.remote_targets.lock().await.remove(session_id);
+    }
+
     fn new_id(&self) -> String {
         let seq = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         format!("fwd-{seq}")
@@ -91,6 +111,7 @@ impl ForwardManager {
             ActiveForward {
                 info: info.clone(),
                 task,
+                cancel: None,
             },
         );
         log::info!(
@@ -136,6 +157,7 @@ impl ForwardManager {
             ActiveForward {
                 info: info.clone(),
                 task,
+                cancel: None,
             },
         );
         log::info!(
@@ -161,12 +183,99 @@ impl ForwardManager {
         let removed = self.forwards.lock().await.remove(id);
         match removed {
             Some(entry) => {
-                entry.task.abort();
+                match entry.cancel {
+                    Some(cancel) => {
+                        // Remote forwards: let the task cancel the server-side
+                        // listen request before it exits.
+                        let _ = cancel.send(());
+                    }
+                    None => entry.task.abort(),
+                }
                 log::info!("Stopped forward {}", entry.info.id);
                 true
             }
             None => false,
         }
+    }
+
+    /// Starts a remote forward: the server listens on `remote_host`:
+    /// `remote_port` (0 = server-assigned) and tunnels inbound connections
+    /// to the local target. The target mapping is registered in `targets`,
+    /// which the session's client handler consults.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn add_remote<R: Runtime>(
+        &self,
+        targets: RemoteForwardTargets,
+        handle: Arc<Handle<ClientHandler<R>>>,
+        session_id: String,
+        remote_host: String,
+        remote_port: u16,
+        target_host: String,
+        target_port: u16,
+    ) -> Result<PortForward, String> {
+        // Register the requested port up front so connections accepted
+        // immediately after the server replies already resolve; when the
+        // server assigns a different port (requested 0) the mapping is
+        // re-keyed below.
+        targets.lock().await.insert(
+            (remote_host.clone(), u32::from(remote_port)),
+            (target_host.clone(), target_port),
+        );
+        let assigned = handle
+            .tcpip_forward(remote_host.clone(), u32::from(remote_port))
+            .await
+            .map_err(|error| {
+                format!("The server refused to forward {remote_host}:{remote_port}: {error}")
+            })?;
+        // The protocol only carries a port back when the client asked to be
+        // assigned one; a specific request keeps the requested port.
+        let assigned = if assigned == 0 {
+            u32::from(remote_port)
+        } else {
+            assigned
+        };
+        targets.lock().await.insert(
+            (remote_host.clone(), assigned),
+            (target_host.clone(), target_port),
+        );
+        let info = PortForward {
+            id: self.new_id(),
+            session_id,
+            kind: ForwardKind::Remote,
+            bind_host: remote_host.clone(),
+            bind_port: assigned as u16,
+            target_host: target_host.clone(),
+            target_port,
+        };
+        let (cancel_tx, mut cancel_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let cancel_handle = handle;
+        let cancel_host = remote_host.clone();
+        let cancel_targets = targets;
+        let task = tokio::spawn(async move {
+            let _ = cancel_rx.recv().await;
+            let _ = cancel_handle
+                .cancel_tcpip_forward(cancel_host.clone(), assigned)
+                .await;
+            cancel_targets.lock().await.remove(&(cancel_host, assigned));
+        });
+        self.forwards.lock().await.insert(
+            info.id.clone(),
+            ActiveForward {
+                info: info.clone(),
+                task,
+                cancel: Some(cancel_tx),
+            },
+        );
+        log::info!(
+            "Remote forward {}: {}:{} -> local {}:{} (session {})",
+            info.id,
+            info.bind_host,
+            info.bind_port,
+            info.target_host,
+            info.target_port,
+            info.session_id
+        );
+        Ok(info)
     }
 
     /// Stops every forward belonging to a session (disconnect cleanup).
@@ -182,6 +291,7 @@ impl ForwardManager {
         for id in ids {
             self.remove(&id).await;
         }
+        self.clear_remote_targets(session_id).await;
     }
 }
 

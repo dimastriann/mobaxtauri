@@ -27,6 +27,7 @@ use tokio::sync::mpsc;
 const USER: &str = "testuser";
 const PASSWORD: &str = "hunter2-test-password";
 const SHELL_BANNER: &str = "test-shell-ready\n";
+const REMOTE_PROBE: &[u8] = b"remote-probe";
 const TEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 fn fixture_path(name: &str) -> PathBuf {
@@ -63,6 +64,9 @@ struct ServerConfig {
     /// every key.
     authorized_fingerprint: String,
     sftp_root: PathBuf,
+    /// Bytes echoed back through a remote-forward channel opened by
+    /// `tcpip_forward`; the test waits for this to prove the tunnel works.
+    remote_probe: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
 }
 
 /// One connected client's handler: remembers the shell channel for the
@@ -205,6 +209,63 @@ impl ServerHandler for ClientSessions {
         )
         .await;
         Ok(())
+    }
+
+    async fn tcpip_forward(
+        &mut self,
+        address: &str,
+        port: &mut u32,
+        session: &mut ServerSession,
+    ) -> Result<bool, Self::Error> {
+        // Stand-in for an inbound connection: once the client requests a
+        // remote listen, open one forwarded channel back and push the probe
+        // payload through it. The echo arrives in `data()` below.
+        let requested = *port;
+        let assigned = if requested == 0 { 22022 } else { requested };
+        if requested == 0 {
+            // Let the client register the mapping for the server-chosen port.
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        // The async handle variant registers the channel for confirmation;
+        // push the probe through it and capture the echo.
+        let server_handle = session.handle();
+        let probe = self.cfg.remote_probe.clone();
+        let connected_address = address.to_string();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            match server_handle
+                .channel_open_forwarded_tcpip(
+                    connected_address,
+                    assigned,
+                    "127.0.0.1".to_string(),
+                    12345,
+                )
+                .await
+            {
+                Ok(channel) => {
+                    let mut stream = channel.into_stream();
+                    if stream.write_all(REMOTE_PROBE).await.is_err() {
+                        return;
+                    }
+                    let mut echoed = vec![0_u8; REMOTE_PROBE.len()];
+                    if stream.read_exact(&mut echoed).await.is_ok() {
+                        *probe.lock().await = Some(echoed);
+                    }
+                }
+                Err(error) => println!("[server] forwarded-tcpip open failed: {error}"),
+            }
+        });
+        *port = assigned;
+        Ok(true)
+    }
+
+    async fn cancel_tcpip_forward(
+        &mut self,
+        _address: &str,
+        _port: u32,
+        _session: &mut ServerSession,
+    ) -> Result<bool, Self::Error> {
+        Ok(true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -464,6 +525,8 @@ struct TestContext {
     known_hosts: Arc<KnownHostsService>,
     port: u16,
     sftp_root: PathBuf,
+    remote_targets: mobaxtauri_lib::ssh::RemoteForwardTargets,
+    remote_probe: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
 }
 
 /// How the test server treats the client's public key.
@@ -497,10 +560,12 @@ impl TestContext {
             AuthorizedKey::Encrypted => fixture_fingerprint("encrypted_test_key"),
             AuthorizedKey::None => "SHA256:bogus-no-key-authorized".to_string(),
         };
+        let remote_probe = Arc::new(tokio::sync::Mutex::new(None));
         let cfg = Arc::new(ServerConfig {
             password: PASSWORD.to_string(),
             authorized_fingerprint,
             sftp_root: sftp_root.clone(),
+            remote_probe: remote_probe.clone(),
         });
         let host_fingerprint = fixture_fingerprint("plain_test_key");
 
@@ -549,6 +614,8 @@ impl TestContext {
             known_hosts,
             port,
             sftp_root,
+            remote_targets: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            remote_probe,
         }
     }
 
@@ -579,6 +646,7 @@ impl TestContext {
             key_passphrase.map(str::to_string),
             false,
             known_hosts,
+            self.remote_targets.clone(),
         )
         .await?;
         Ok(sftp)
@@ -618,6 +686,7 @@ impl TestContext {
                 None,
                 false,
                 self.trusted_known_hosts(),
+                self.remote_targets.clone(),
             ),
         )
         .await
@@ -658,6 +727,7 @@ async fn password_auth_connects_and_shell_echoes_over_the_wire() {
         shell_channel_id: shell_channel_id.clone(),
         known_hosts: ctx.trusted_known_hosts(),
         terminal_output,
+        remote_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
     let mut session = russh::client::connect(
         Arc::new(russh::client::Config::default()),
@@ -851,6 +921,7 @@ async fn connect_unauthenticated(
         shell_channel_id: Arc::new(OnceLock::new()),
         known_hosts: ctx.trusted_known_hosts(),
         terminal_output: mpsc::unbounded_channel().0,
+        remote_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
     russh::client::connect(
         Arc::new(russh::client::Config::default()),
@@ -1225,6 +1296,51 @@ async fn dynamic_forward_proxies_socks5_connect_through_the_session() {
         .expect("echo within timeout")
         .expect("echo read");
     assert_eq!(&echoed, b"socks-payload");
+
+    assert!(forwards.remove(&forward.id).await, "forward removal");
+}
+
+#[tokio::test]
+async fn remote_forward_tunnels_server_connections_to_a_local_target() {
+    let ctx = TestContext::start("forward-remote", HostTrust::Trusted, AuthorizedKey::None).await;
+    let (handle, _sftp) = ctx.connected_session().await;
+    let (echo_port, _echo) = spawn_echo_server().await;
+    let forwards = mobaxtauri_lib::port_forward::ForwardManager::default();
+
+    let forward = forwards
+        .add_remote(
+            ctx.remote_targets.clone(),
+            handle,
+            "it-forward-remote".to_string(),
+            "127.0.0.1".to_string(),
+            22022,
+            "127.0.0.1".to_string(),
+            echo_port,
+        )
+        .await
+        .expect("remote forward starts");
+    assert_eq!(
+        forward.kind,
+        mobaxtauri_lib::port_forward::ForwardKind::Remote
+    );
+    assert_eq!(forward.bind_port, 22022);
+
+    // The harness opens a forwarded channel as soon as the forward is
+    // accepted and pushes the probe payload through the tunnel.
+    let echoed = tokio::time::timeout(TEST_TIMEOUT, async {
+        loop {
+            if let Some(bytes) = ctx.remote_probe.lock().await.clone() {
+                break bytes;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("remote forward probe within timeout");
+    assert_eq!(
+        echoed, REMOTE_PROBE,
+        "probe must reach the local echo target through the tunnel"
+    );
 
     assert!(forwards.remove(&forward.id).await, "forward removal");
 }

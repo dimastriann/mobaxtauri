@@ -26,7 +26,16 @@ pub struct ClientHandler<R: Runtime> {
     pub shell_channel_id: Arc<std::sync::OnceLock<russh::ChannelId>>,
     pub known_hosts: Arc<KnownHostsService>,
     pub terminal_output: mpsc::UnboundedSender<Vec<u8>>,
+    /// Remote-forward targets: `(listen_address, listen_port)` as reported
+    /// by the server maps to the local `(host, port)` the channel is
+    /// tunneled to. Shared with the [`crate::port_forward::ForwardManager`].
+    pub remote_forwards: RemoteForwardTargets,
 }
+
+/// Map behind remote forwarding: server-side listen address/port → local
+/// target that forwarded connections are tunnelled to.
+pub type RemoteForwardTargets =
+    Arc<tokio::sync::Mutex<std::collections::HashMap<(String, u32), (String, u16)>>>;
 
 /// The production runtime binding, used by the Tauri-managed session
 /// state; tests bind [`ClientHandler`] to a mock runtime instead.
@@ -161,6 +170,52 @@ impl<R: Runtime> Handler for ClientHandler<R> {
         }
         Ok(())
     }
+
+    /// The server accepted a remote forward and is opening a tunnel for an
+    /// inbound connection: dial the registered local target and pump bytes
+    /// through the channel.
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<russh::client::Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: russh::client::ChannelOpenHandle,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        let target = self
+            .remote_forwards
+            .lock()
+            .await
+            .get(&(connected_address.to_string(), connected_port))
+            .cloned();
+        let Some((target_host, target_port)) = target else {
+            // Dropping the reply rejects the channel: no forward owns it.
+            log::warn!(
+                "Server opened a forwarded channel for {connected_address}:{connected_port} \
+                 with no registered target; rejecting"
+            );
+            return Ok(());
+        };
+        reply.accept().await;
+        let mut stream = channel.into_stream();
+        tokio::spawn(async move {
+            match tokio::net::TcpStream::connect((target_host.as_str(), target_port)).await {
+                Ok(mut socket) => {
+                    if let Err(error) =
+                        tokio::io::copy_bidirectional(&mut socket, &mut stream).await
+                    {
+                        log::warn!("Remote forward to {target_host}:{target_port} ended: {error}");
+                    }
+                }
+                Err(error) => {
+                    log::warn!("Remote forward target {target_host}:{target_port} failed: {error}");
+                }
+            }
+        });
+        Ok(())
+    }
 }
 
 pub struct SshSession;
@@ -285,6 +340,7 @@ impl SshSession {
         key_passphrase: Option<String>,
         use_agent: bool,
         known_hosts: Arc<KnownHostsService>,
+        remote_forwards: RemoteForwardTargets,
     ) -> Result<
         (
             russh::client::Handle<ClientHandler<R>>,
@@ -314,6 +370,7 @@ impl SshSession {
             shell_channel_id: shell_channel_id.clone(),
             known_hosts,
             terminal_output,
+            remote_forwards,
         };
 
         log::info!("TCP connecting to {}:{}...", host, port);

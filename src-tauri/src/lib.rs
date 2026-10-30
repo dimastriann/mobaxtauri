@@ -119,6 +119,7 @@ async fn ssh_connect(
     state: State<'_, AppState>,
     credentials: State<'_, CredentialService>,
     known_hosts: State<'_, KnownHostsService>,
+    forwards: State<'_, ForwardManager>,
     request: SshConnectRequest,
 ) -> Result<String, String> {
     let connection_timeout = request.connection_timeout()?;
@@ -162,6 +163,11 @@ async fn ssh_connect(
         password
     };
 
+    // Remote forwards registered for a previous connection would otherwise
+    // leak into the new session sharing the same id.
+    forwards.clear_remote_targets(&session_id).await;
+    let remote_forwards = forwards.remote_targets(&session_id).await;
+
     let connect_future = SshSession::connect(
         app_handle.clone(),
         session_id.clone(),
@@ -173,6 +179,7 @@ async fn ssh_connect(
         key_passphrase,
         use_agent,
         Arc::new(known_hosts.inner().clone()),
+        remote_forwards,
     );
 
     let (handle, channel_id, channel, sftp) =
@@ -938,6 +945,34 @@ async fn ssh_forward_add_dynamic(
 }
 
 #[tauri::command]
+// The argument list mirrors the forward contract the frontend sends; a
+// params struct would change the IPC payload shape.
+#[allow(clippy::too_many_arguments)]
+async fn ssh_forward_add_remote(
+    state: State<'_, AppState>,
+    forwards: State<'_, ForwardManager>,
+    session_id: String,
+    remote_host: String,
+    remote_port: u16,
+    target_host: String,
+    target_port: u16,
+) -> Result<crate::port_forward::PortForward, String> {
+    let handle = state.ssh_sessions.connection_handle(&session_id).await?;
+    let targets = forwards.remote_targets(&session_id).await;
+    forwards
+        .add_remote(
+            targets,
+            handle,
+            session_id,
+            remote_host,
+            remote_port,
+            target_host,
+            target_port,
+        )
+        .await
+}
+
+#[tauri::command]
 async fn ssh_forward_list(
     forwards: State<'_, ForwardManager>,
 ) -> Result<Vec<crate::port_forward::PortForward>, String> {
@@ -1099,6 +1134,7 @@ pub fn run() {
             ssh_agent_list_keys,
             ssh_forward_add_local,
             ssh_forward_add_dynamic,
+            ssh_forward_add_remote,
             ssh_forward_list,
             ssh_forward_remove,
             quit_app,
