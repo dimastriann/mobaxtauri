@@ -1,6 +1,6 @@
 use crate::health::collect_health;
 use crate::session_types::emit_ssh_health;
-use crate::ssh::ClientHandler;
+use crate::ssh::AppClientHandler;
 use russh::ChannelId;
 use std::{
     collections::HashMap,
@@ -17,7 +17,7 @@ const HEALTH_INTERVAL_DEFAULT_SECS: u64 = 5;
 const HEALTH_INTERVAL_HIDDEN_SECS: u64 = 15;
 
 struct ManagedSshSession {
-    handle: Arc<russh::client::Handle<ClientHandler>>,
+    handle: Arc<russh::client::Handle<AppClientHandler>>,
     channel_id: ChannelId,
     // Write half only: the read half belongs to the drain task spawned in
     // insert(), which keeps the russh connection loop unblocked.
@@ -80,7 +80,7 @@ impl SessionManager {
         &self,
         app_handle: AppHandle,
         session_id: String,
-        handle: russh::client::Handle<ClientHandler>,
+        handle: russh::client::Handle<AppClientHandler>,
         channel_id: ChannelId,
         channel: russh::Channel<russh::client::Msg>,
     ) {
@@ -134,7 +134,7 @@ impl SessionManager {
     pub async fn connection_handle(
         &self,
         session_id: &str,
-    ) -> Result<Arc<russh::client::Handle<ClientHandler>>, String> {
+    ) -> Result<Arc<russh::client::Handle<AppClientHandler>>, String> {
         self.sessions
             .lock()
             .await
@@ -148,7 +148,7 @@ impl SessionManager {
         session_id: &str,
     ) -> Result<
         (
-            Arc<russh::client::Handle<ClientHandler>>,
+            Arc<russh::client::Handle<AppClientHandler>>,
             ChannelId,
             Arc<Mutex<()>>,
         ),
@@ -189,7 +189,7 @@ impl SessionManager {
 fn spawn_health_monitor(
     app_handle: AppHandle,
     session_id: String,
-    handle: Arc<russh::client::Handle<ClientHandler>>,
+    handle: Arc<russh::client::Handle<AppClientHandler>>,
     interval_secs: Arc<AtomicU64>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {

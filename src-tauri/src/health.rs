@@ -1,4 +1,4 @@
-use crate::ssh::ClientHandler;
+use crate::ssh::AppClientHandler;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
@@ -17,7 +17,7 @@ pub struct HealthSnapshot {
 }
 
 pub async fn collect_health(
-    handle: Arc<russh::client::Handle<ClientHandler>>,
+    handle: Arc<russh::client::Handle<AppClientHandler>>,
 ) -> Result<HealthSnapshot, String> {
     let exec_channel = tokio::time::timeout(
         std::time::Duration::from_secs(5),

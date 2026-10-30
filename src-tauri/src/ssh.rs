@@ -8,7 +8,7 @@ use russh::keys::ssh_key::PrivateKey;
 use russh::keys::PrivateKeyWithHashAlg;
 use russh_sftp::client::SftpSession;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::mpsc;
 
 const TERMINAL_OUTPUT_BATCH_BYTES: usize = 256 * 1024;
@@ -17,8 +17,8 @@ const TERMINAL_OUTPUT_BATCH_BYTES: usize = 256 * 1024;
 const TERMINAL_OUTPUT_COALESCE_BYTES: usize = 64 * 1024;
 const TERMINAL_OUTPUT_COALESCE_DELAY: std::time::Duration = std::time::Duration::from_millis(4);
 
-pub struct ClientHandler {
-    pub app_handle: AppHandle,
+pub struct ClientHandler<R: Runtime> {
+    pub app_handle: AppHandle<R>,
     pub session_id: String,
     pub host: String,
     pub port: u16,
@@ -27,7 +27,11 @@ pub struct ClientHandler {
     pub terminal_output: mpsc::UnboundedSender<Vec<u8>>,
 }
 
-impl Handler for ClientHandler {
+/// The production runtime binding, used by the Tauri-managed session
+/// state; tests bind [`ClientHandler`] to a mock runtime instead.
+pub type AppClientHandler = ClientHandler<tauri::Wry>;
+
+impl<R: Runtime> Handler for ClientHandler<R> {
     type Error = russh::Error;
 
     async fn check_server_key(
@@ -193,8 +197,8 @@ impl SshSession {
     // Roadmap tracks the too_many_arguments baseline; a params struct is a
     // planned follow-up.
     #[allow(clippy::too_many_arguments)]
-    pub async fn connect(
-        app_handle: AppHandle,
+    pub async fn connect<R: Runtime>(
+        app_handle: AppHandle<R>,
         session_id: String,
         host: String,
         port: u16,
@@ -205,7 +209,7 @@ impl SshSession {
         known_hosts: Arc<KnownHostsService>,
     ) -> Result<
         (
-            russh::client::Handle<ClientHandler>,
+            russh::client::Handle<ClientHandler<R>>,
             russh::ChannelId,
             russh::Channel<russh::client::Msg>,
             SftpSession,
@@ -347,8 +351,8 @@ fn describe_auth_failure(
     }
 }
 
-fn spawn_terminal_output(
-    app_handle: AppHandle,
+fn spawn_terminal_output<R: Runtime>(
+    app_handle: AppHandle<R>,
     session_id: String,
     mut receiver: mpsc::UnboundedReceiver<Vec<u8>>,
 ) {

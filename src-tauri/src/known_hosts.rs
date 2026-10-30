@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Runtime};
 
 pub const KNOWN_HOSTS_FILE: &str = "known_hosts.json";
 
@@ -89,9 +89,20 @@ struct KnownHostsState {
 }
 
 impl KnownHostsService {
-    pub async fn resolve(
+    /// Store pre-pointed at `path` — used by integration tests so host-key
+    /// flows never depend on the mock runtime's path resolution.
+    pub fn with_path(path: std::path::PathBuf) -> Self {
+        Self {
+            state: Arc::new(tokio::sync::Mutex::new(Some(KnownHostsState {
+                path,
+                entries: Vec::new(),
+            }))),
+        }
+    }
+
+    pub async fn resolve<R: Runtime>(
         &self,
-        app_handle: &AppHandle,
+        app_handle: &AppHandle<R>,
         host: &str,
         port: u16,
         fingerprint: &str,
@@ -102,9 +113,9 @@ impl KnownHostsService {
         Ok(resolve_host_key(&loaded.entries, host, port, fingerprint))
     }
 
-    pub async fn trust(
+    pub async fn trust<R: Runtime>(
         &self,
-        app_handle: &AppHandle,
+        app_handle: &AppHandle<R>,
         host: &str,
         port: u16,
         key_type: String,
@@ -126,9 +137,9 @@ impl KnownHostsService {
         persist(loaded).await
     }
 
-    pub async fn remove(
+    pub async fn remove<R: Runtime>(
         &self,
-        app_handle: &AppHandle,
+        app_handle: &AppHandle<R>,
         host: &str,
         port: u16,
     ) -> Result<bool, String> {
@@ -142,7 +153,7 @@ impl KnownHostsService {
         Ok(removed)
     }
 
-    async fn ensure_loaded(&self, app_handle: &AppHandle) -> Result<(), String> {
+    async fn ensure_loaded<R: Runtime>(&self, app_handle: &AppHandle<R>) -> Result<(), String> {
         let mut state = self.state.lock().await;
         if state.is_some() {
             return Ok(());
@@ -177,7 +188,7 @@ async fn persist(state: &KnownHostsState) -> Result<(), String> {
         .map_err(|error| format!("Failed to write known hosts: {error}"))
 }
 
-fn known_hosts_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
+fn known_hosts_path<R: Runtime>(app_handle: &AppHandle<R>) -> Result<PathBuf, String> {
     app_handle
         .path()
         .app_data_dir()

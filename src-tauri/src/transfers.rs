@@ -6,7 +6,7 @@ use std::{
         Arc,
     },
 };
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::Mutex;
 
 pub const SFTP_TRANSFER_EVENT: &str = "sftp-transfer";
@@ -99,7 +99,7 @@ pub fn is_cancelled(cancellation: &AtomicBool) -> bool {
     cancellation.load(Ordering::Acquire)
 }
 
-pub fn emit_transfer(app_handle: &AppHandle, event: TransferEvent) {
+pub fn emit_transfer<R: Runtime>(app_handle: &AppHandle<R>, event: TransferEvent) {
     if let Err(error) = app_handle.emit(SFTP_TRANSFER_EVENT, event) {
         log::warn!("Failed to emit SFTP transfer progress: {error}");
     }

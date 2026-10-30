@@ -1,7 +1,7 @@
 use crate::health::HealthSnapshot;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime};
 
 pub const SSH_SESSION_STATE_EVENT: &str = "ssh-session-state";
 pub const SSH_HEALTH_EVENT: &str = "ssh-health";
@@ -69,8 +69,8 @@ pub enum SshDisconnectReason {
     RemoteClosed,
 }
 
-pub fn emit_ssh_health(
-    app_handle: &AppHandle,
+pub fn emit_ssh_health<R: Runtime>(
+    app_handle: &AppHandle<R>,
     session_id: impl Into<String>,
     health: Option<HealthSnapshot>,
 ) {
@@ -95,8 +95,8 @@ pub struct SshSessionStateEvent {
     pub reason: Option<SshDisconnectReason>,
 }
 
-pub fn emit_ssh_session_state(
-    app_handle: &AppHandle,
+pub fn emit_ssh_session_state<R: Runtime>(
+    app_handle: &AppHandle<R>,
     session_id: impl Into<String>,
     status: SshSessionStatus,
     message: Option<String>,
@@ -127,7 +127,7 @@ pub struct SshHostKeyEvent {
     pub mismatch: bool,
 }
 
-pub fn emit_ssh_host_key(app_handle: &AppHandle, event: SshHostKeyEvent) {
+pub fn emit_ssh_host_key<R: Runtime>(app_handle: &AppHandle<R>, event: SshHostKeyEvent) {
     if let Err(error) = app_handle.emit(SSH_HOST_KEY_EVENT, event) {
         log::warn!("Failed to emit SSH host key event: {error}");
     }
