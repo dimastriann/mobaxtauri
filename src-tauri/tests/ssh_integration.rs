@@ -553,6 +553,18 @@ impl TestContext {
         .await?;
         Ok(sftp)
     }
+
+    /// Password-authenticated session with the trusted host key, ready
+    /// for SFTP round-trip tests.
+    async fn connected_sftp(&self) -> russh_sftp::client::SftpSession {
+        tokio::time::timeout(
+            TEST_TIMEOUT,
+            self.connect_with(Some(PASSWORD), None, None, self.trusted_known_hosts()),
+        )
+        .await
+        .expect("connect within timeout")
+        .expect("trusted password session connects")
+    }
 }
 
 /// Collects echoed shell bytes until the expected payload is complete.
@@ -739,4 +751,189 @@ async fn mismatched_host_key_is_refused() {
         .connect_with(Some(PASSWORD), None, None, ctx.trusted_known_hosts())
         .await;
     assert!(result.is_err(), "mismatched host key must be refused");
+}
+
+#[tokio::test]
+async fn single_file_round_trip_is_byte_exact_including_chunking() {
+    let ctx = TestContext::start("file-roundtrip", HostTrust::Trusted, AuthorizedKey::None).await;
+    let sftp = ctx.connected_sftp().await;
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+
+    // Large enough to span several 64 KiB upload chunks; pseudo-random so
+    // a lost or duplicated chunk cannot pass byte comparison by accident.
+    let payload: Vec<u8> = (0..256 * 1024_usize).map(|i| (i % 251) as u8).collect();
+    let local = ctx
+        .sftp_root
+        .parent()
+        .expect("temp parent")
+        .join("file-roundtrip-src.bin");
+    std::fs::write(&local, &payload).expect("write local source");
+
+    mobaxtauri_lib::sftp_transfer::upload_file(
+        &ctx.handle,
+        &sftp,
+        &transfers,
+        "it-session".to_string(),
+        local.to_string_lossy().to_string(),
+        "/files/big.bin".to_string(),
+        "it-upload".to_string(),
+        None,
+    )
+    .await
+    .expect("upload succeeds");
+
+    let uploaded = std::fs::read(ctx.sftp_root.join("files").join("big.bin"))
+        .expect("uploaded file exists on the server");
+    assert_eq!(uploaded, payload, "upload must be byte-exact across chunks");
+
+    let download_target = ctx
+        .sftp_root
+        .parent()
+        .expect("temp parent")
+        .join("file-roundtrip-dst.bin");
+    mobaxtauri_lib::sftp_transfer::download_file(
+        &ctx.handle,
+        &sftp,
+        &transfers,
+        "it-session".to_string(),
+        "/files/big.bin".to_string(),
+        download_target.to_string_lossy().to_string(),
+        "it-download".to_string(),
+    )
+    .await
+    .expect("download succeeds");
+
+    let downloaded = std::fs::read(&download_target).expect("downloaded file exists");
+    assert_eq!(downloaded, payload, "round trip must be byte-exact");
+}
+
+#[tokio::test]
+async fn folder_upload_creates_the_whole_tree_including_empty_dirs() {
+    let ctx = TestContext::start("folder-upload", HostTrust::Trusted, AuthorizedKey::None).await;
+    let sftp = ctx.connected_sftp().await;
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+
+    let source = temp_dir("folder-upload-src");
+    std::fs::create_dir_all(source.join("nested").join("deeper")).expect("create nested dirs");
+    std::fs::create_dir_all(source.join("empty")).expect("create empty dir");
+    std::fs::write(source.join("top.txt"), b"top-level").expect("write top file");
+    std::fs::write(source.join("nested").join("mid.txt"), b"mid-level").expect("write mid file");
+    std::fs::write(
+        source.join("nested").join("deeper").join("leaf.txt"),
+        b"leaf payload",
+    )
+    .expect("write leaf file");
+
+    mobaxtauri_lib::sftp_transfer::upload_folder(
+        &ctx.handle,
+        &sftp,
+        &transfers,
+        "it-session".to_string(),
+        source.to_string_lossy().to_string(),
+        "/upload".to_string(),
+        "it-folder-upload".to_string(),
+        None,
+    )
+    .await
+    .expect("folder upload succeeds");
+
+    let root = ctx.sftp_root.join("upload");
+    assert_eq!(
+        std::fs::read(root.join("top.txt")).expect("top file"),
+        b"top-level"
+    );
+    assert_eq!(
+        std::fs::read(root.join("nested").join("mid.txt")).expect("mid file"),
+        b"mid-level"
+    );
+    assert_eq!(
+        std::fs::read(root.join("nested").join("deeper").join("leaf.txt")).expect("leaf file"),
+        b"leaf payload"
+    );
+    let empty = root.join("empty");
+    assert!(empty.is_dir(), "empty directories must be created remotely");
+}
+
+#[tokio::test]
+async fn folder_download_preserves_the_remote_tree() {
+    let ctx = TestContext::start("folder-download", HostTrust::Trusted, AuthorizedKey::None).await;
+    let sftp = ctx.connected_sftp().await;
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+
+    // Seed the remote side of the chroot: files, nesting, and an empty dir.
+    let remote = ctx.sftp_root.join("seeded");
+    std::fs::create_dir_all(remote.join("sub").join("empty-inside")).expect("seed nested dirs");
+    std::fs::create_dir_all(remote.join("void")).expect("seed empty dir");
+    std::fs::write(remote.join("a.txt"), b"alpha").expect("seed a.txt");
+    std::fs::write(remote.join("sub").join("b.bin"), b"\x00\x01\x02\xfe\xff").expect("seed b.bin");
+
+    let target = temp_dir("folder-download-dst").join("out");
+    mobaxtauri_lib::sftp_transfer::download_folder(
+        &ctx.handle,
+        &sftp,
+        &transfers,
+        "it-session".to_string(),
+        "/seeded".to_string(),
+        target.to_string_lossy().to_string(),
+        "it-folder-download".to_string(),
+        None,
+    )
+    .await
+    .expect("folder download succeeds");
+
+    assert_eq!(
+        std::fs::read(target.join("a.txt")).expect("a.txt"),
+        b"alpha"
+    );
+    assert_eq!(
+        std::fs::read(target.join("sub").join("b.bin")).expect("b.bin"),
+        b"\x00\x01\x02\xfe\xff"
+    );
+    assert!(
+        target.join("void").is_dir(),
+        "empty remote dirs must appear locally"
+    );
+    assert!(
+        target.join("sub").join("empty-inside").is_dir(),
+        "nested dirs must be preserved"
+    );
+}
+
+#[tokio::test]
+async fn folder_upload_conflict_policy_renames_the_target() {
+    let ctx = TestContext::start("folder-conflict", HostTrust::Trusted, AuthorizedKey::None).await;
+    let sftp = ctx.connected_sftp().await;
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+
+    std::fs::create_dir_all(ctx.sftp_root.join("existing")).expect("seed existing remote folder");
+
+    let source = temp_dir("folder-conflict-src");
+    std::fs::write(source.join("data.txt"), b"new-contents").expect("write source file");
+
+    mobaxtauri_lib::sftp_transfer::upload_folder(
+        &ctx.handle,
+        &sftp,
+        &transfers,
+        "it-session".to_string(),
+        source.to_string_lossy().to_string(),
+        "/existing".to_string(),
+        "it-conflict-upload".to_string(),
+        Some("rename".to_string()),
+    )
+    .await
+    .expect("conflict resolution with rename succeeds");
+
+    let renamed = ctx.sftp_root.join("existing (2)");
+    assert!(
+        renamed.is_dir(),
+        "rename policy must upload under a suffixed target"
+    );
+    assert_eq!(
+        std::fs::read(renamed.join("data.txt")).expect("suffixed file"),
+        b"new-contents"
+    );
+    assert!(
+        ctx.sftp_root.join("existing").is_dir(),
+        "the original remote folder must stay untouched"
+    );
 }
