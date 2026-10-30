@@ -5,11 +5,16 @@ interface CredentialState {
   isUnlocked: boolean;
   isLoading: boolean;
   error: string | null;
+  /** True when the backend needs the vault master password. */
+  requiresMasterPassword: boolean;
 
-  unlock: () => Promise<boolean>;
-  saveCredential: (sessionId: string, secret: string) => Promise<void>;
-  deleteCredential: (sessionId: string) => Promise<void>;
+  unlock: (masterPassword?: string) => Promise<boolean>;
+  saveCredential: (sessionId: string, secret: string, masterPassword?: string) => Promise<void>;
+  deleteCredential: (sessionId: string, masterPassword?: string) => Promise<void>;
 }
+
+/** Backend sentinel: the vault needs a master password to derive its key. */
+export const VAULT_MASTER_PASSWORD_REQUIRED = 'VAULT MASTER PASSWORD REQUIRED';
 
 const UNLOCK_TIMEOUT_MS = 120000;
 let unlockPromise: Promise<boolean> | null = null;
@@ -18,20 +23,31 @@ export const useCredentialStore = create<CredentialState>((set, get) => ({
   isUnlocked: false,
   isLoading: false,
   error: null,
+  requiresMasterPassword: false,
 
-  unlock: async () => {
+  unlock: async (masterPassword) => {
     if (get().isUnlocked) return true;
 
     if (!unlockPromise) {
       set({ isLoading: true, error: null });
-      unlockPromise = invoke('credential_unlock')
+      unlockPromise = invoke('credential_unlock', { masterPassword: masterPassword ?? null })
         .then(() => {
-          set({ isUnlocked: true, isLoading: false, error: null });
+          set({
+            isUnlocked: true,
+            isLoading: false,
+            error: null,
+            requiresMasterPassword: false,
+          });
           return true;
         })
         .catch((error: unknown) => {
           const message = String(error);
-          set({ isUnlocked: false, isLoading: false, error: message });
+          set({
+            isUnlocked: false,
+            isLoading: false,
+            error: message,
+            requiresMasterPassword: message.includes(VAULT_MASTER_PASSWORD_REQUIRED),
+          });
           return false;
         })
         .finally(() => {
@@ -56,15 +72,15 @@ export const useCredentialStore = create<CredentialState>((set, get) => ({
     return result;
   },
 
-  saveCredential: async (sessionId, secret) => {
-    if (!(await get().unlock())) {
+  saveCredential: async (sessionId, secret, masterPassword) => {
+    if (!(await get().unlock(masterPassword))) {
       throw new Error(get().error || 'Credential store is locked.');
     }
     await invoke('credential_save', { sessionId, secret });
   },
 
-  deleteCredential: async (sessionId) => {
-    if (!(await get().unlock())) {
+  deleteCredential: async (sessionId, masterPassword) => {
+    if (!(await get().unlock(masterPassword))) {
       throw new Error(get().error || 'Credential store is locked.');
     }
     await invoke('credential_delete', { sessionId });

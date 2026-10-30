@@ -73,8 +73,11 @@ async fn ssh_trust_host_key(
 async fn credential_unlock(
     app_handle: AppHandle,
     credentials: State<'_, CredentialService>,
+    master_password: Option<String>,
 ) -> Result<(), String> {
-    credentials.unlock(&app_handle).await
+    credentials
+        .unlock(&app_handle, master_password.as_deref())
+        .await
 }
 
 #[tauri::command]

@@ -21,27 +21,42 @@ struct CredentialVault {
 }
 
 impl CredentialService {
-    pub async fn unlock(&self, app_handle: &AppHandle) -> Result<(), String> {
+    pub async fn unlock(
+        &self,
+        app_handle: &AppHandle,
+        master_password: Option<&str>,
+    ) -> Result<(), String> {
         let mut vault = self.vault.lock().await;
         if vault.is_some() {
             return Ok(());
         }
 
-        // Get the encryption key from the keychain (or generate and store it).
-        let key_bytes = self.vault_key.get_key(app_handle).await?;
-
         let path = vault_path(app_handle)?;
+        let vault_exists = path.exists();
+
+        // Get the encryption key from the keychain, or derive it from the
+        // master password when no keychain is available.
+        let key_bytes = self
+            .vault_key
+            .get_key(app_handle, master_password, vault_exists)
+            .await?;
+
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|error| format!("Failed to create app data directory: {error}"))?;
         }
 
         let loaded = tokio::task::spawn_blocking(move || {
-            // Create a Stronghold instance using the key from the keychain.
             let stronghold = Stronghold::new(path, key_bytes)
                 .map_err(|error| format!("Failed to open credential vault: {error}"))?;
             let client = match stronghold.load_client(CLIENT_NAME) {
                 Ok(client) => client,
+                // An existing vault that cannot load its client was opened
+                // with the wrong key: never create a client (and later save)
+                // over it, or the stored credentials are lost.
+                Err(error) if vault_exists => {
+                    return Err(format!("Failed to open credential vault: {error}"))
+                }
                 Err(_) => stronghold
                     .create_client(CLIENT_NAME)
                     .map_err(|error| format!("Failed to create credential client: {error}"))?,
@@ -49,7 +64,15 @@ impl CredentialService {
             Ok::<CredentialVault, String>(CredentialVault { stronghold, client })
         })
         .await
-        .map_err(|error| format!("Credential vault task failed: {error}"))??;
+        .map_err(|error| format!("Credential vault task failed: {error}"))?;
+
+        let loaded = match loaded {
+            Ok(loaded) => loaded,
+            Err(error) if master_password.is_some() => {
+                return Err(format!("Vault master password is incorrect. {error}"))
+            }
+            Err(error) => return Err(error),
+        };
 
         *vault = Some(loaded);
         Ok(())
@@ -61,7 +84,7 @@ impl CredentialService {
         session_id: &str,
         secret: String,
     ) -> Result<(), String> {
-        self.unlock(app_handle).await?;
+        self.unlock(app_handle, None).await?;
         let vault = self.vault.lock().await;
         let loaded = vault.as_ref().ok_or("Credential vault is locked")?;
         loaded
@@ -80,7 +103,7 @@ impl CredentialService {
         app_handle: &AppHandle,
         session_id: &str,
     ) -> Result<Option<String>, String> {
-        self.unlock(app_handle).await?;
+        self.unlock(app_handle, None).await?;
         let vault = self.vault.lock().await;
         let loaded = vault.as_ref().ok_or("Credential vault is locked")?;
         let secret = loaded
@@ -98,7 +121,7 @@ impl CredentialService {
     }
 
     pub async fn delete(&self, app_handle: &AppHandle, session_id: &str) -> Result<(), String> {
-        self.unlock(app_handle).await?;
+        self.unlock(app_handle, None).await?;
         let vault = self.vault.lock().await;
         let loaded = vault.as_ref().ok_or("Credential vault is locked")?;
         loaded

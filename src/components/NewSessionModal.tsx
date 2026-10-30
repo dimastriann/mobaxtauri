@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Stack, Input, Button, HStack, Text } from '@chakra-ui/react';
 import { Session, useSessionStore } from '../store/useSessionStore';
-import { useCredentialStore } from '../store/useCredentialStore';
+import { useCredentialStore, VAULT_MASTER_PASSWORD_REQUIRED } from '../store/useCredentialStore';
 import {
   DialogRoot,
   DialogContent,
@@ -13,6 +13,11 @@ import {
   DialogCloseTrigger,
 } from './ui/dialog';
 import { Field } from './ui/field';
+import PromptModal from './PromptModal';
+
+/** The backend needs the vault master password (no OS keychain). */
+const isMasterPasswordRequired = (error: unknown): boolean =>
+  String(error).includes(VAULT_MASTER_PASSWORD_REQUIRED);
 
 interface NewSessionModalProps {
   isOpen: boolean;
@@ -45,6 +50,10 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const [savePassword, setSavePassword] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [masterPasswordPrompt, setMasterPasswordPrompt] = useState<{
+    sessionId: string;
+    secret: string;
+  } | null>(null);
 
   const folders = useSessionStore((state) => state.folders);
   const addSession = useSessionStore((state) => state.addSession);
@@ -88,11 +97,10 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsConnecting(true);
-    setSaveError(null);
-
+  // Saves the password and finishes the form. `masterPassword` is set when
+  // the OS keychain is unavailable and the vault needs its master password;
+  // `sessionIdOverride` keeps the generated id stable across the retry.
+  const submitForm = async (masterPassword?: string, sessionIdOverride?: string) => {
     // Duplicates always take the create path below, even though the form
     // was pre-filled from the source session.
     if (editingSession && !duplicateSource) {
@@ -100,11 +108,18 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
       const shouldSavePassword = savePassword && Boolean(password || editingSession.savePassword);
       try {
         if (savePassword && password) {
-          await useCredentialStore.getState().saveCredential(editingSession.id, password);
+          await useCredentialStore
+            .getState()
+            .saveCredential(editingSession.id, password, masterPassword);
         } else if (!savePassword) {
-          await useCredentialStore.getState().deleteCredential(editingSession.id);
+          await useCredentialStore.getState().deleteCredential(editingSession.id, masterPassword);
         }
       } catch (error) {
+        if (!masterPassword && isMasterPasswordRequired(error)) {
+          setMasterPasswordPrompt({ sessionId: editingSession.id, secret: password });
+          setIsConnecting(false);
+          return;
+        }
         credentialError = String(error);
       }
 
@@ -129,13 +144,18 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
       return;
     }
 
-    const sessionId = `ssh-${Date.now()}`;
+    const sessionId = sessionIdOverride ?? `ssh-${Date.now()}`;
     const shouldSavePassword = savePassword && Boolean(password);
 
     if (shouldSavePassword) {
       try {
-        await useCredentialStore.getState().saveCredential(sessionId, password);
+        await useCredentialStore.getState().saveCredential(sessionId, password, masterPassword);
       } catch (error) {
+        if (!masterPassword && isMasterPasswordRequired(error)) {
+          setMasterPasswordPrompt({ sessionId, secret: password });
+          setIsConnecting(false);
+          return;
+        }
         setSaveError(
           `Password was not saved: ${String(error)}. Retry or disable vault password saving.`,
         );
@@ -168,6 +188,22 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
     // double-connect and lose first-connect host-key prompts).
     setIsConnecting(false);
     onClose();
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsConnecting(true);
+    setSaveError(null);
+    void submitForm();
+  };
+
+  const handleMasterPasswordConfirm = (values: Record<string, string>) => {
+    const pending = masterPasswordPrompt;
+    if (!pending) return;
+    setMasterPasswordPrompt(null);
+    setIsConnecting(true);
+    setSaveError(null);
+    void submitForm(values.password, pending.sessionId);
   };
 
   return (
@@ -440,6 +476,21 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         </DialogFooter>
         <DialogCloseTrigger />
       </DialogContent>
+
+      <PromptModal
+        isOpen={masterPasswordPrompt !== null}
+        title="Unlock credential vault"
+        fields={[
+          {
+            key: 'password',
+            label: 'Vault master password',
+            type: 'password',
+            placeholder: 'Master password',
+          },
+        ]}
+        onConfirm={handleMasterPasswordConfirm}
+        onClose={() => setMasterPasswordPrompt(null)}
+      />
     </DialogRoot>
   );
 };

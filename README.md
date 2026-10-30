@@ -42,7 +42,7 @@ In particular, upgrading from a 0.3.x release prompts once for saved credentials
 | Productivity | Command snippets, command palette, configurable shortcuts, terminal search, and recording export |
 | Import and export | Application backup/restore, OpenSSH config import, and MobaXterm bookmark import |
 | Host information | Linux-focused OS detection and CPU, memory, swap, and disk health display |
-| Security | SSH host-key verification with trust prompt (TOFU), and saved passwords stored in a local Stronghold vault keyed by a per-install OS keychain key |
+| Security | SSH host-key verification with trust prompt (TOFU), and saved passwords stored in a local Stronghold vault keyed by a per-install OS keychain key ? with an Argon2id master-password fallback on systems without a Secret Service |
 | Interface | Responsive dashboard, dark/light themes, and persistent background terminal views |
 
 ## Architecture

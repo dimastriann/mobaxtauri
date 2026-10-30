@@ -14,6 +14,8 @@ interface PromptField {
   key: string;
   label: string;
   placeholder?: string;
+  /** Render as a masked input (passwords, secrets). */
+  type?: 'text' | 'password';
 }
 
 interface PromptModalProps {
@@ -80,6 +82,7 @@ const PromptModal: React.FC<PromptModalProps> = ({ isOpen, title, fields, onConf
                   </Text>
                   <Input
                     ref={i === 0 ? firstInputRef : undefined}
+                    type={field.type ?? 'text'}
                     size="sm"
                     value={values[field.key] ?? ''}
                     placeholder={field.placeholder ?? field.label}
