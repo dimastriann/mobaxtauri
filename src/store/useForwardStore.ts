@@ -14,6 +14,13 @@ interface ForwardState {
     bindPort: number,
   ) => Promise<void>;
   addDynamic: (sessionId: string, bindPort: number) => Promise<void>;
+  addRemote: (
+    sessionId: string,
+    remoteHost: string,
+    remotePort: number,
+    targetHost: string,
+    targetPort: number,
+  ) => Promise<void>;
   removeForward: (forwardId: string) => Promise<void>;
   reset: () => void;
 }
@@ -56,6 +63,23 @@ export const useForwardStore = create<ForwardState>((set, get) => ({
         sessionId,
         bindHost: '127.0.0.1',
         bindPort,
+      });
+      await get().fetchForwards();
+    } catch (err) {
+      set({ error: String(err) });
+    }
+    set({ isLoading: false });
+  },
+
+  addRemote: async (sessionId, remoteHost, remotePort, targetHost, targetPort) => {
+    set({ isLoading: true, error: null });
+    try {
+      await invoke('ssh_forward_add_remote', {
+        sessionId,
+        remoteHost,
+        remotePort,
+        targetHost,
+        targetPort,
       });
       await get().fetchForwards();
     } catch (err) {

@@ -16,9 +16,11 @@ const ForwardSidebar: React.FC = () => {
   const fetchForwards = useForwardStore((state) => state.fetchForwards);
   const addLocal = useForwardStore((state) => state.addLocal);
   const addDynamic = useForwardStore((state) => state.addDynamic);
+  const addRemote = useForwardStore((state) => state.addRemote);
   const removeForward = useForwardStore((state) => state.removeForward);
 
-  const [kind, setKind] = useState<'local' | 'dynamic'>('local');
+  const [kind, setKind] = useState<'local' | 'dynamic' | 'remote'>('local');
+  const [remoteHost, setRemoteHost] = useState('127.0.0.1');
   const [targetHost, setTargetHost] = useState('127.0.0.1');
   const [targetPort, setTargetPort] = useState('');
   const [bindPort, setBindPort] = useState('');
@@ -38,20 +40,32 @@ const ForwardSidebar: React.FC = () => {
 
   const handleAdd = async () => {
     if (!activeSessionId) return;
-    const localPort = bindPort.trim() ? Number(bindPort) : 0;
-    if (!Number.isInteger(localPort) || localPort < 0 || localPort > 65535) {
-      toaster.create({ title: 'Invalid local port', type: 'error' });
+    const portValue = bindPort.trim() ? Number(bindPort) : 0;
+    if (!Number.isInteger(portValue) || portValue < 0 || portValue > 65535) {
+      toaster.create({ title: 'Invalid port', type: 'error' });
       return;
     }
-    if (kind === 'local') {
+    if (kind === 'remote') {
+      const localPort = Number(targetPort);
+      if (
+        !remoteHost.trim() ||
+        !targetHost.trim() ||
+        !Number.isInteger(localPort) ||
+        localPort <= 0
+      ) {
+        toaster.create({ title: 'Enter a local target host and port', type: 'error' });
+        return;
+      }
+      await addRemote(activeSessionId, remoteHost.trim(), portValue, targetHost.trim(), localPort);
+    } else if (kind === 'local') {
       const remotePort = Number(targetPort);
       if (!targetHost.trim() || !Number.isInteger(remotePort) || remotePort <= 0) {
         toaster.create({ title: 'Enter a target host and port', type: 'error' });
         return;
       }
-      await addLocal(activeSessionId, targetHost.trim(), remotePort, localPort);
+      await addLocal(activeSessionId, targetHost.trim(), remotePort, portValue);
     } else {
-      await addDynamic(activeSessionId, localPort);
+      await addDynamic(activeSessionId, portValue);
     }
     setTargetPort('');
     setBindPort('');
@@ -83,7 +97,7 @@ const ForwardSidebar: React.FC = () => {
           <select
             aria-label="Tunnel kind"
             value={kind}
-            onChange={(event) => setKind(event.target.value as 'local' | 'dynamic')}
+            onChange={(event) => setKind(event.target.value as 'local' | 'dynamic' | 'remote')}
             style={{
               height: '26px',
               flex: 1,
@@ -101,23 +115,35 @@ const ForwardSidebar: React.FC = () => {
             <option value="dynamic" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
               Dynamic (SOCKS5)
             </option>
+            <option value="remote" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
+              Remote
+            </option>
           </select>
           <Input
-            aria-label="Local port"
+            aria-label="Port"
             value={bindPort}
             onChange={(event) => setBindPort(event.target.value)}
-            placeholder="Local port (auto)"
+            placeholder={kind === 'remote' ? 'Server port (auto)' : 'Local port (auto)'}
             size="xs"
-            w="120px"
+            w="140px"
           />
         </HStack>
-        {kind === 'local' && (
+        {kind === 'remote' && (
+          <Input
+            aria-label="Server listen host"
+            value={remoteHost}
+            onChange={(event) => setRemoteHost(event.target.value)}
+            placeholder="Server listen host"
+            size="xs"
+          />
+        )}
+        {kind !== 'dynamic' && (
           <HStack gap={2}>
             <Input
               aria-label="Target host"
               value={targetHost}
               onChange={(event) => setTargetHost(event.target.value)}
-              placeholder="Target host"
+              placeholder={kind === 'remote' ? 'Local target host' : 'Target host (remote)'}
               size="xs"
               flex={1}
             />
@@ -125,15 +151,19 @@ const ForwardSidebar: React.FC = () => {
               aria-label="Target port"
               value={targetPort}
               onChange={(event) => setTargetPort(event.target.value)}
-              placeholder="Port"
+              placeholder={kind === 'remote' ? 'Local port' : 'Port'}
               size="xs"
-              w="70px"
+              w="80px"
             />
           </HStack>
         )}
         <Button size="xs" colorPalette="blue" onClick={() => void handleAdd()} loading={isLoading}>
           <Icon as={LuPlus} boxSize="12px" />
-          {kind === 'local' ? 'Add Local Forward' : 'Add SOCKS5 Proxy'}
+          {kind === 'local'
+            ? 'Add Local Forward'
+            : kind === 'dynamic'
+              ? 'Add SOCKS5 Proxy'
+              : 'Add Remote Forward'}
         </Button>
         {error && (
           <Text fontSize="11px" color="red.fg" wordBreak="break-word">
@@ -164,10 +194,16 @@ const ForwardSidebar: React.FC = () => {
                 <Text fontSize="11px" fontWeight="600" truncate>
                   {forward.kind === 'dynamic'
                     ? `socks5://${forward.bindHost}:${forward.bindPort}`
-                    : `${forward.bindHost}:${forward.bindPort} → ${forward.targetHost}:${forward.targetPort}`}
+                    : forward.kind === 'remote'
+                      ? `${forward.bindHost}:${forward.bindPort} → local ${forward.targetHost}:${forward.targetPort}`
+                      : `${forward.bindHost}:${forward.bindPort} → ${forward.targetHost}:${forward.targetPort}`}
                 </Text>
                 <Text fontSize="10px" color="fg.subtle">
-                  {forward.kind === 'dynamic' ? 'SOCKS5 proxy' : 'Local forward'}
+                  {forward.kind === 'dynamic'
+                    ? 'SOCKS5 proxy'
+                    : forward.kind === 'remote'
+                      ? 'Remote forward'
+                      : 'Local forward'}
                 </Text>
               </Box>
               <Button

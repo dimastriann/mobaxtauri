@@ -63,6 +63,26 @@ describe('useForwardStore', () => {
     expect(useForwardStore.getState().forwards[0].kind).toBe('dynamic');
   });
 
+  it('adds a remote forward through the remote command', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockImplementation(async (command: string) => {
+      if (command === 'ssh_forward_add_remote') return { ...sampleForward, kind: 'remote' };
+      if (command === 'ssh_forward_list') return [{ ...sampleForward, kind: 'remote' }];
+      return undefined;
+    });
+
+    await useForwardStore.getState().addRemote('session-1', '127.0.0.1', 22022, '127.0.0.1', 5432);
+
+    expect(invoke).toHaveBeenCalledWith('ssh_forward_add_remote', {
+      sessionId: 'session-1',
+      remoteHost: '127.0.0.1',
+      remotePort: 22022,
+      targetHost: '127.0.0.1',
+      targetPort: 5432,
+    });
+    expect(useForwardStore.getState().forwards[0].kind).toBe('remote');
+  });
+
   it('surfaces backend errors and stops loading', async () => {
     const { invoke } = await import('@tauri-apps/api/core');
     vi.mocked(invoke).mockRejectedValueOnce('Failed to bind 127.0.0.1:80: access denied');
