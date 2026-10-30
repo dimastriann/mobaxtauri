@@ -148,7 +148,18 @@ async fn ssh_connect(
     );
 
     let password = if password.is_none() && use_saved_credential {
-        match credentials.get(&app_handle, &session_id).await? {
+        // A vault that needs its master password is treated like a missing
+        // credential: the terminal prompts for the password so the user can
+        // still connect manually.
+        let stored = match credentials.get(&app_handle, &session_id).await {
+            Ok(stored) => stored,
+            Err(error) if error.contains(crate::vault_key::MASTER_PASSWORD_REQUIRED) => {
+                log::info!("Vault needs its master password; prompting for a manual password");
+                None
+            }
+            Err(error) => return Err(error),
+        };
+        match stored {
             Some(secret) => Some(secret),
             None => {
                 let message = "Saved credential is unavailable".to_string();
