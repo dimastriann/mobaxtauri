@@ -21,6 +21,7 @@ use russh_sftp::protocol::{
     Attrs, Data, File, FileAttributes, Handle, Name, OpenFlags, Status, StatusCode,
 };
 use russh_sftp::server::{Handler as SftpHandler, StatusReply};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 
 const USER: &str = "testuser";
@@ -203,6 +204,33 @@ impl ServerHandler for ClientSessions {
             SftpTestHandler::new(self.cfg.sftp_root.clone()),
         )
         .await;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        channel: russh::Channel<russh::server::Msg>,
+        host_to_connect: &str,
+        port_to_connect: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: ChannelOpenHandle,
+        _session: &mut ServerSession,
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        let target = format!("{host_to_connect}:{port_to_connect}");
+        let mut stream = channel.into_stream();
+        // The test server behaves like `sshd`: dial the requested target and
+        // pump bytes both ways through the channel.
+        tokio::spawn(async move {
+            match tokio::net::TcpStream::connect(&target).await {
+                Ok(mut socket) => {
+                    let _ = tokio::io::copy_bidirectional(&mut socket, &mut stream).await;
+                }
+                Err(error) => println!("[server] direct-tcpip target {target} failed: {error}"),
+            }
+        });
         Ok(())
     }
 }
@@ -566,6 +594,36 @@ impl TestContext {
         .await
         .expect("connect within timeout")
         .expect("trusted password session connects")
+    }
+
+    /// Password-authenticated session returning the SSH handle (needed by
+    /// forwarding) alongside the SFTP session.
+    #[allow(clippy::type_complexity)]
+    async fn connected_session(
+        &self,
+    ) -> (
+        Arc<russh::client::Handle<ClientHandler<tauri::test::MockRuntime>>>,
+        russh_sftp::client::SftpSession,
+    ) {
+        let (handle, _channel_id, _channel, sftp) = tokio::time::timeout(
+            TEST_TIMEOUT,
+            SshSession::connect(
+                self.handle.clone(),
+                format!("it-fwd-{}", self.port),
+                "127.0.0.1".to_string(),
+                self.port,
+                USER.to_string(),
+                Some(PASSWORD.to_string()),
+                None,
+                None,
+                false,
+                self.trusted_known_hosts(),
+            ),
+        )
+        .await
+        .expect("connect within timeout")
+        .expect("trusted password session connects");
+        (Arc::new(handle), sftp)
     }
 }
 
@@ -1028,4 +1086,145 @@ async fn folder_upload_conflict_policy_renames_the_target() {
         ctx.sftp_root.join("existing").is_dir(),
         "the original remote folder must stay untouched"
     );
+}
+
+/// Loopback echo service: every accepted connection is echoed back.
+async fn spawn_echo_server() -> (u16, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind echo listener");
+    let port = listener.local_addr().expect("echo local addr").port();
+    let task = tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _peer)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let mut buffer = [0_u8; 4096];
+                loop {
+                    match socket.read(&mut buffer).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(count) => {
+                            if socket.write_all(&buffer[..count]).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+    (port, task)
+}
+
+async fn echo_round_trip(port: u16, payload: &[u8]) -> Vec<u8> {
+    let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("connect to the forward");
+    client.write_all(payload).await.expect("write payload");
+    let mut received = vec![0_u8; payload.len()];
+    tokio::time::timeout(TEST_TIMEOUT, client.read_exact(&mut received))
+        .await
+        .expect("echo within timeout")
+        .expect("echo read");
+    received
+}
+
+#[tokio::test]
+async fn local_forward_tunnels_tcp_through_the_session() {
+    let ctx = TestContext::start("forward-local", HostTrust::Trusted, AuthorizedKey::None).await;
+    let (handle, _sftp) = ctx.connected_session().await;
+    let (echo_port, _echo) = spawn_echo_server().await;
+    let forwards = mobaxtauri_lib::port_forward::ForwardManager::default();
+
+    let forward = forwards
+        .add_local(
+            handle,
+            "it-forward-local".to_string(),
+            "127.0.0.1".to_string(),
+            0,
+            "127.0.0.1".to_string(),
+            echo_port,
+        )
+        .await
+        .expect("local forward starts");
+    assert_eq!(
+        forward.kind,
+        mobaxtauri_lib::port_forward::ForwardKind::Local
+    );
+    assert!(forward.bind_port > 0, "an ephemeral port must be assigned");
+
+    let received = echo_round_trip(forward.bind_port, b"ping-through-the-tunnel").await;
+    assert_eq!(received, b"ping-through-the-tunnel");
+
+    let listed = forwards.list().await;
+    assert_eq!(listed.len(), 1, "the forward must be listed");
+
+    assert!(forwards.remove(&forward.id).await, "forward removal");
+    // Give the aborted accept loop a moment to drop the listener.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        tokio::net::TcpStream::connect(("127.0.0.1", forward.bind_port))
+            .await
+            .is_err(),
+        "the local port must be released after removal"
+    );
+}
+
+#[tokio::test]
+async fn dynamic_forward_proxies_socks5_connect_through_the_session() {
+    let ctx = TestContext::start("forward-dynamic", HostTrust::Trusted, AuthorizedKey::None).await;
+    let (handle, _sftp) = ctx.connected_session().await;
+    let (echo_port, _echo) = spawn_echo_server().await;
+    let forwards = mobaxtauri_lib::port_forward::ForwardManager::default();
+
+    let forward = forwards
+        .add_dynamic(
+            handle,
+            "it-forward-dynamic".to_string(),
+            "127.0.0.1".to_string(),
+            0,
+        )
+        .await
+        .expect("dynamic forward starts");
+
+    // Minimal SOCKS5 client: no-auth greeting, CONNECT to the echo service.
+    let mut client = tokio::net::TcpStream::connect(("127.0.0.1", forward.bind_port))
+        .await
+        .expect("connect to the socks5 forward");
+    client
+        .write_all(&[0x05, 0x01, 0x00])
+        .await
+        .expect("socks5 greeting");
+    let mut greeting_reply = [0_u8; 2];
+    client
+        .read_exact(&mut greeting_reply)
+        .await
+        .expect("socks5 greeting reply");
+    assert_eq!(greeting_reply, [0x05, 0x00], "no-auth method accepted");
+
+    let mut request = vec![0x05, 0x01, 0x00, 0x03, 9];
+    request.extend_from_slice(b"127.0.0.1");
+    request.extend_from_slice(&echo_port.to_be_bytes());
+    client.write_all(&request).await.expect("socks5 connect");
+    let mut reply = [0_u8; 10];
+    client
+        .read_exact(&mut reply)
+        .await
+        .expect("socks5 connect reply");
+    assert_eq!(reply[0], 0x05, "socks5 version in reply");
+    assert_eq!(reply[1], 0x00, "socks5 connect must succeed");
+
+    client
+        .write_all(b"socks-payload")
+        .await
+        .expect("write payload");
+    let mut echoed = [0_u8; 13];
+    tokio::time::timeout(TEST_TIMEOUT, client.read_exact(&mut echoed))
+        .await
+        .expect("echo within timeout")
+        .expect("echo read");
+    assert_eq!(&echoed, b"socks-payload");
+
+    assert!(forwards.remove(&forward.id).await, "forward removal");
 }

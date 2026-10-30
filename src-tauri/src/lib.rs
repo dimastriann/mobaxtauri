@@ -2,6 +2,7 @@ mod credentials;
 mod health;
 pub mod known_hosts;
 mod persistence;
+pub mod port_forward;
 mod recording;
 mod session_manager;
 mod session_types;
@@ -16,6 +17,7 @@ use crate::credentials::CredentialService;
 use crate::health::{collect_health, HealthSnapshot};
 use crate::known_hosts::KnownHostsService;
 use crate::persistence::{AppDataDocument, PersistenceService};
+use crate::port_forward::ForwardManager;
 use crate::session_manager::SessionManager;
 use crate::session_types::{
     emit_ssh_health, emit_ssh_session_state, SshConnectRequest, SshDisconnectReason,
@@ -260,10 +262,12 @@ async fn ssh_disconnect(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     transfers: State<'_, TransferManager>,
+    forwards: State<'_, ForwardManager>,
     session_id: String,
 ) -> Result<(), String> {
     state.ssh_sessions.remove(&session_id).await;
     transfers.cancel_session(&session_id).await;
+    forwards.remove_session(&session_id).await;
     state.sftp_sessions.lock().await.remove(&session_id);
     state.sftp_homes.lock().await.remove(&session_id);
 
@@ -894,6 +898,65 @@ struct SshAgentKey {
 }
 
 #[tauri::command]
+// The argument list mirrors the forward contract the frontend sends; a
+// params struct would change the IPC payload shape.
+#[allow(clippy::too_many_arguments)]
+async fn ssh_forward_add_local(
+    state: State<'_, AppState>,
+    forwards: State<'_, ForwardManager>,
+    session_id: String,
+    bind_host: String,
+    bind_port: u16,
+    target_host: String,
+    target_port: u16,
+) -> Result<crate::port_forward::PortForward, String> {
+    let handle = state.ssh_sessions.connection_handle(&session_id).await?;
+    forwards
+        .add_local(
+            handle,
+            session_id,
+            bind_host,
+            bind_port,
+            target_host,
+            target_port,
+        )
+        .await
+}
+
+#[tauri::command]
+async fn ssh_forward_add_dynamic(
+    state: State<'_, AppState>,
+    forwards: State<'_, ForwardManager>,
+    session_id: String,
+    bind_host: String,
+    bind_port: u16,
+) -> Result<crate::port_forward::PortForward, String> {
+    let handle = state.ssh_sessions.connection_handle(&session_id).await?;
+    forwards
+        .add_dynamic(handle, session_id, bind_host, bind_port)
+        .await
+}
+
+#[tauri::command]
+async fn ssh_forward_list(
+    forwards: State<'_, ForwardManager>,
+) -> Result<Vec<crate::port_forward::PortForward>, String> {
+    Ok(forwards.list().await)
+}
+
+#[tauri::command]
+async fn ssh_forward_remove(
+    forwards: State<'_, ForwardManager>,
+    forward_id: String,
+) -> Result<(), String> {
+    if forwards.remove(&forward_id).await {
+        Ok(())
+    } else {
+        Err("Forward not found".to_string())
+    }
+}
+
+#[tauri::command]
 async fn ssh_health_check(
     state: State<'_, AppState>,
     session_id: String,
@@ -1001,6 +1064,7 @@ pub fn run() {
         .manage(CredentialService::default())
         .manage(KnownHostsService::default())
         .manage(TransferManager::default())
+        .manage(ForwardManager::default())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -1009,6 +1073,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ssh_connect,
             ssh_agent_list_keys,
+            ssh_forward_add_local,
+            ssh_forward_add_dynamic,
+            ssh_forward_list,
+            ssh_forward_remove,
             set_health_interval,
             set_health_visibility,
             ssh_trust_host_key,
