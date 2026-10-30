@@ -3497,6 +3497,7 @@ dependencies = [
  "argon2 0.5.3",
  "async-trait",
  "bytes",
+ "futures",
  "getrandom 0.4.2",
  "iota_stronghold",
  "keyring",

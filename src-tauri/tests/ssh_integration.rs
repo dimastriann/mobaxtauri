@@ -10,7 +10,8 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use mobaxtauri_lib::known_hosts::KnownHostsService;
-use mobaxtauri_lib::ssh::{ClientHandler, SshSession};
+use mobaxtauri_lib::ssh::{authenticate_with_agent, ClientHandler, SshSession};
+use russh::keys::agent::client::AgentClient;
 use russh::keys::ssh_key::{self, HashAlg, PrivateKey};
 use russh::server::{
     Auth, ChannelOpenHandle, Handler as ServerHandler, Server as _, Session as ServerSession,
@@ -548,6 +549,7 @@ impl TestContext {
             password.map(str::to_string),
             private_key_path.map(|p| fixture_path(p).to_string_lossy().to_string()),
             key_passphrase.map(str::to_string),
+            false,
             known_hosts,
         )
         .await?;
@@ -751,6 +753,96 @@ async fn mismatched_host_key_is_refused() {
         .connect_with(Some(PASSWORD), None, None, ctx.trusted_known_hosts())
         .await;
     assert!(result.is_err(), "mismatched host key must be refused");
+}
+
+/// An in-process SSH agent holding the fixture key, reachable through a
+/// duplex channel — no OS agent service involved. Encrypted fixtures are
+/// decrypted first, like a user would with their agent.
+async fn spawn_agent_with_key(
+    fixture: &str,
+    passphrase: Option<&str>,
+) -> AgentClient<tokio::io::DuplexStream> {
+    let key = load_fixture_key(fixture);
+    let key = match passphrase {
+        Some(passphrase) => key.decrypt(passphrase).expect("fixture key must decrypt"),
+        None => key,
+    };
+    let (client_side, agent_side) = tokio::io::duplex(64 * 1024);
+    tokio::spawn(russh::keys::agent::server::serve(
+        futures::stream::iter(vec![Ok(agent_side)]),
+        (),
+    ));
+    let mut agent = AgentClient::connect(client_side);
+    agent
+        .add_identity(&key, &[])
+        .await
+        .expect("fixture key must load into the in-process agent");
+    agent
+}
+
+/// Opens an unauthenticated client session against the test server.
+async fn connect_unauthenticated(
+    ctx: &TestContext,
+    session_id: &str,
+) -> russh::client::Handle<ClientHandler<tauri::test::MockRuntime>> {
+    let handler = ClientHandler {
+        app_handle: ctx.handle.clone(),
+        session_id: session_id.to_string(),
+        host: "127.0.0.1".to_string(),
+        port: ctx.port,
+        shell_channel_id: Arc::new(OnceLock::new()),
+        known_hosts: ctx.trusted_known_hosts(),
+        terminal_output: mpsc::unbounded_channel().0,
+    };
+    russh::client::connect(
+        Arc::new(russh::client::Config::default()),
+        ("127.0.0.1", ctx.port),
+        handler,
+    )
+    .await
+    .expect("client connects")
+}
+
+#[tokio::test]
+async fn agent_auth_authenticates_with_the_loaded_key() {
+    let ctx = TestContext::start("agent-auth", HostTrust::Trusted, AuthorizedKey::Plain).await;
+    let mut agent = spawn_agent_with_key("plain_test_key", None).await;
+    let mut session = connect_unauthenticated(&ctx, "it-agent-auth").await;
+
+    let authenticated = authenticate_with_agent(&mut session, USER, &mut agent).await;
+    assert!(
+        authenticated,
+        "the agent's authorized key must authenticate"
+    );
+}
+
+#[tokio::test]
+async fn agent_auth_rejects_unauthorized_keys() {
+    // The server only authorizes the plain fixture; the agent holds the
+    // independent encrypted-fixture key, so every identity is rejected.
+    let ctx = TestContext::start("agent-reject", HostTrust::Trusted, AuthorizedKey::Plain).await;
+    let mut agent =
+        spawn_agent_with_key("encrypted_test_key", Some("mobaxtauri-test-passphrase")).await;
+    let mut session = connect_unauthenticated(&ctx, "it-agent-reject").await;
+
+    let authenticated = authenticate_with_agent(&mut session, USER, &mut agent).await;
+    assert!(!authenticated, "unauthorized agent keys must be rejected");
+}
+
+#[tokio::test]
+async fn agent_list_keys_reports_loaded_identities() {
+    let mut agent = spawn_agent_with_key("plain_test_key", None).await;
+    let identities = agent
+        .request_identities()
+        .await
+        .expect("list agent identities");
+    assert_eq!(identities.len(), 1);
+    let key = identities[0].public_key();
+    assert_eq!(
+        key.fingerprint(HashAlg::Sha256).to_string(),
+        fixture_fingerprint("plain_test_key"),
+        "the agent must report the loaded fixture key"
+    );
 }
 
 #[tokio::test]
