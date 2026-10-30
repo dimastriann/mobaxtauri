@@ -30,6 +30,7 @@ import {
 import { Session, Folder, Snippet, useSessionStore } from '../store/useSessionStore';
 import { useExportImport } from '../hooks/useExportImport';
 import SftpSidebar from './SftpSidebar';
+import ForwardSidebar from './ForwardSidebar';
 import OSIcon from './OSIcon';
 
 type SidebarMenuType = 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
@@ -492,8 +493,8 @@ const SnippetsTab: React.FC<SnippetsTabProps> = ({
 interface SidebarProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
-  sidebarTab: 'sessions' | 'sftp' | 'snippets';
-  setSidebarTab: (tab: 'sessions' | 'sftp' | 'snippets') => void;
+  sidebarTab: 'sessions' | 'sftp' | 'snippets' | 'tunnels';
+  setSidebarTab: (tab: 'sessions' | 'sftp' | 'snippets' | 'tunnels') => void;
   onNewSession: () => void;
   onAddFolder: () => void;
   onSaveWorkspace: () => void;
@@ -675,6 +676,23 @@ const Sidebar: React.FC<SidebarProps> = ({
               SNIPPETS
             </Text>
           </Box>
+          <Box
+            flex={1}
+            py="6px"
+            cursor="pointer"
+            textAlign="center"
+            borderBottom="2px solid"
+            borderColor={sidebarTab === 'tunnels' ? 'blue.fg' : 'transparent'}
+            onClick={() => setSidebarTab('tunnels')}
+          >
+            <Text
+              fontSize="11px"
+              fontWeight="bold"
+              color={sidebarTab === 'tunnels' ? 'fg' : 'fg.muted'}
+            >
+              TUNNELS
+            </Text>
+          </Box>
           <Box py="6px" px={1} display="flex" alignItems="center">
             <IconButton
               aria-label="Collapse sidebar"
@@ -711,6 +729,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           />
         )}
         {sidebarTab === 'sftp' && <SftpSidebar />}
+        {sidebarTab === 'tunnels' && <ForwardSidebar />}
         {sidebarTab === 'snippets' && (
           <SnippetsTab
             snippets={snippets}

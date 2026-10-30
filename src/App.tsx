@@ -79,7 +79,9 @@ function App() {
   const addWorkspace = useSessionStore((state) => state.addWorkspace);
   const restoreWorkspace = useSessionStore((state) => state.restoreWorkspace);
 
-  const [sidebarTab, setSidebarTab] = useState<'sessions' | 'sftp' | 'snippets'>('sessions');
+  const [sidebarTab, setSidebarTab] = useState<'sessions' | 'sftp' | 'snippets' | 'tunnels'>(
+    'sessions',
+  );
   const [mainView, setMainView] = useState<'dashboard' | 'terminals'>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
