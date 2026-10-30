@@ -5,9 +5,10 @@ generated with `ssh-keygen` at development time. They are committed so the
 `decode_private_key` unit tests in `src/ssh.rs` run offline on any machine.
 
 - `plain_test_key` — unencrypted ed25519 key, no passphrase
-- `encrypted_test_key` — the same key encrypted with the passphrase
-  `mobaxtauri-test-passphrase`, which is intentionally visible in the test
-  source (`FIXTURE_PASSPHRASE`) because the tests must decrypt it
+- `encrypted_test_key` — an independent keypair encrypted with the
+  passphrase `mobaxtauri-test-passphrase`, which is intentionally visible in
+  the test source (`FIXTURE_PASSPHRASE`) because the tests must decrypt it;
+  its public key differs from `plain_test_key.pub`
 
 Neither key can ever open a real account: it has never been registered with
 an authorized_keys entry anywhere, and you cannot derive sensitive material

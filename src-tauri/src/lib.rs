@@ -1,15 +1,15 @@
 mod credentials;
 mod health;
-mod known_hosts;
+pub mod known_hosts;
 mod persistence;
 mod recording;
 mod session_manager;
 mod session_types;
 mod sftp_conflict;
-mod sftp_transfer;
+pub mod sftp_transfer;
 mod sftp_utils;
-mod ssh;
-mod transfers;
+pub mod ssh;
+pub mod transfers;
 mod vault_key;
 
 use crate::credentials::CredentialService;

@@ -39,3 +39,7 @@ log = "0.4.29"
 tauri-plugin-dialog = "2.7.0"
 tauri-plugin-clipboard-manager = "2"
 argon2 = "0.5"
+
+[dev-dependencies]
+# Mock Tauri runtime for integration tests against the in-process SSH server.
+tauri = { version = "2", features = ["test"] }
