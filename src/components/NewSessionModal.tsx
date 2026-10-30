@@ -34,6 +34,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const [password, setPassword] = useState('');
   const [usePrivateKey, setUsePrivateKey] = useState(false);
   const [privateKeyPath, setPrivateKeyPath] = useState('');
+  const [useAgent, setUseAgent] = useState(false);
   const [port, setPort] = useState(() => {
     const saved = localStorage.getItem('ssh-default-port');
     return saved ? parseInt(saved, 10) : 22;
@@ -66,6 +67,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         setName(duplicateSource ? `${source.name} (copy)` : source.name);
         setFolderId(source.folderId || null);
         setTag(source.tag);
+        setUseAgent(source.useAgent ?? false);
         setUsePrivateKey(!!source.privateKeyPath);
         setPrivateKeyPath(source.privateKeyPath || '');
         setSavePassword(duplicateSource ? false : (source.savePassword ?? true));
@@ -78,6 +80,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         setName('');
         setFolderId(null);
         setTag(undefined);
+        setUseAgent(false);
         setUsePrivateKey(false);
         setPrivateKeyPath('');
         setSavePassword(true);
@@ -113,7 +116,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         status: 'disconnected',
         folderId,
         tag,
-        privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
+        useAgent,
+        privateKeyPath: !useAgent && usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
         savePassword: shouldSavePassword,
       });
       setIsConnecting(false);
@@ -150,7 +154,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
       status: 'connecting',
       folderId,
       tag,
-      privateKeyPath: usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
+      useAgent,
+      privateKeyPath: !useAgent && usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
       savePassword: shouldSavePassword,
       // Memory-only when the user declined vault saving (persisted stores
       // strip the password field); lets the terminal's own connect use it.
@@ -316,79 +321,104 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
               <HStack gap={2} mt={2}>
                 <input
                   type="checkbox"
-                  id="use-private-key"
-                  checked={usePrivateKey}
-                  onChange={(e) => setUsePrivateKey(e.target.checked)}
+                  id="use-ssh-agent"
+                  checked={useAgent}
+                  onChange={(e) => setUseAgent(e.target.checked)}
                 />
-                <label htmlFor="use-private-key" style={{ fontSize: '14px', cursor: 'pointer' }}>
-                  Use SSH Private Key
+                <label htmlFor="use-ssh-agent" style={{ fontSize: '14px', cursor: 'pointer' }}>
+                  Use SSH Agent
                 </label>
               </HStack>
 
-              {usePrivateKey ? (
-                <Field label="Private Key Path" required>
-                  <HStack w="full">
-                    <Input
-                      value={privateKeyPath}
-                      onChange={(e) => setPrivateKeyPath(e.target.value)}
-                      placeholder="/path/to/id_rsa"
-                      size="sm"
-                      flex={1}
-                      required
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={async () => {
-                        const selected = await open({
-                          multiple: false,
-                          directory: false,
-                        });
-                        if (selected && typeof selected === 'string') {
-                          setPrivateKeyPath(selected);
-                        }
-                      }}
-                    >
-                      Browse
-                    </Button>
-                  </HStack>
-                </Field>
+              {useAgent ? (
+                <Text fontSize="12px" color="fg.muted" pl={6}>
+                  Authentication uses the keys offered by your SSH agent (Windows OpenSSH agent
+                  service or Pageant; SSH_AUTH_SOCK on Linux/macOS). Manage keys with ssh-add or in
+                  Pageant — they never leave the agent.
+                </Text>
               ) : (
-                <Stack gap={2}>
-                  <Field
-                    label="Password (Optional)"
-                    helperText={
-                      editingSession?.savePassword
-                        ? 'Leave empty to keep the saved password'
-                        : 'Leave empty for keys'
-                    }
-                  >
-                    <Input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      size="sm"
-                    />
-                  </Field>
-                  <HStack gap={2} mt={1}>
+                <>
+                  <HStack gap={2} mt={2}>
                     <input
                       type="checkbox"
-                      id="save-password"
-                      checked={savePassword}
-                      onChange={(e) => setSavePassword(e.target.checked)}
+                      id="use-private-key"
+                      checked={usePrivateKey}
+                      onChange={(e) => setUsePrivateKey(e.target.checked)}
                     />
                     <label
-                      htmlFor="save-password"
-                      style={{
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        color: 'var(--chakra-colors-fg-muted)',
-                      }}
+                      htmlFor="use-private-key"
+                      style={{ fontSize: '14px', cursor: 'pointer' }}
                     >
-                      Save Password Securely in Vault
+                      Use SSH Private Key
                     </label>
                   </HStack>
-                </Stack>
+
+                  {usePrivateKey ? (
+                    <Field label="Private Key Path" required>
+                      <HStack w="full">
+                        <Input
+                          value={privateKeyPath}
+                          onChange={(e) => setPrivateKeyPath(e.target.value)}
+                          placeholder="/path/to/id_rsa"
+                          size="sm"
+                          flex={1}
+                          required
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            const selected = await open({
+                              multiple: false,
+                              directory: false,
+                            });
+                            if (selected && typeof selected === 'string') {
+                              setPrivateKeyPath(selected);
+                            }
+                          }}
+                        >
+                          Browse
+                        </Button>
+                      </HStack>
+                    </Field>
+                  ) : (
+                    <Stack gap={2}>
+                      <Field
+                        label="Password (Optional)"
+                        helperText={
+                          editingSession?.savePassword
+                            ? 'Leave empty to keep the saved password'
+                            : 'Leave empty for keys'
+                        }
+                      >
+                        <Input
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          size="sm"
+                        />
+                      </Field>
+                      <HStack gap={2} mt={1}>
+                        <input
+                          type="checkbox"
+                          id="save-password"
+                          checked={savePassword}
+                          onChange={(e) => setSavePassword(e.target.checked)}
+                        />
+                        <label
+                          htmlFor="save-password"
+                          style={{
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            color: 'var(--chakra-colors-fg-muted)',
+                          }}
+                        >
+                          Save Password Securely in Vault
+                        </label>
+                      </HStack>
+                    </Stack>
+                  )}
+                </>
               )}
             </Stack>
           </form>

@@ -21,6 +21,10 @@ describe('canConnectDirectly', () => {
     expect(canConnectDirectly({ ...base, savePassword: true })).toBe(true);
   });
 
+  it('is true when the ssh agent is used', () => {
+    expect(canConnectDirectly({ ...base, useAgent: true })).toBe(true);
+  });
+
   it('is false when an empty password is the only field', () => {
     expect(canConnectDirectly({ ...base, password: '' })).toBe(false);
   });

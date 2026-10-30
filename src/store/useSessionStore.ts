@@ -15,6 +15,7 @@ export interface Session {
   port?: number;
   password?: string;
   privateKeyPath?: string;
+  useAgent?: boolean;
   status: SessionStatus;
   error?: string;
   lastActivity?: number;

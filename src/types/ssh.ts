@@ -21,6 +21,7 @@ export interface SshConnectRequest {
   privateKeyPath: string | null;
   keyPassphrase?: string | null;
   useSavedCredential: boolean;
+  useAgent?: boolean;
   connectionTimeoutSecs: number;
 }
 
