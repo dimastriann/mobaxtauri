@@ -30,6 +30,7 @@ import CommandPalette from './components/CommandPalette';
 import { useExportImport } from './hooks/useExportImport';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './components/ContextMenu';
 import { Session, useSessionStore } from './store/useSessionStore';
+import { useTerminalAppearanceStore } from './store/useTerminalAppearanceStore';
 import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { emit, listen } from '@tauri-apps/api/event';
@@ -249,6 +250,12 @@ function App() {
   // ── Effects ────────────────────────────────────────────────
   // Re-apply the user's saved health polling interval on startup; the
   // backend only keeps it in memory between runs.
+  // Load the terminal theme catalogue once so terminals paint with the
+  // selected scheme as soon as they mount.
+  useEffect(() => {
+    void useTerminalAppearanceStore.getState().fetchThemes();
+  }, []);
+
   useEffect(() => {
     const seconds = Number(localStorage.getItem('health-interval') ?? '5');
     if (Number.isFinite(seconds) && seconds > 0) {

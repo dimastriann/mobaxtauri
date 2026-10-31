@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Stack,
@@ -35,6 +35,7 @@ import {
   LuTrash2,
 } from 'react-icons/lu';
 import { useSessionStore } from '../store/useSessionStore';
+import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore';
 import {
   DEFAULT_SHORTCUTS,
   KeyboardShortcuts,
@@ -372,28 +373,33 @@ const AppearanceSettings: React.FC = () => {
 };
 
 // ── Terminal Settings ────────────────────────────────────────
+const settingsSelectStyle: React.CSSProperties = {
+  width: '100%',
+  height: '32px',
+  backgroundColor: 'transparent',
+  border: '1px solid',
+  borderColor: 'var(--chakra-colors-border-subtle)',
+  borderRadius: '4px',
+  padding: '0 8px',
+  fontSize: '13px',
+  color: 'inherit',
+};
+
 const TerminalSettings: React.FC = () => {
-  const [fontSize, setFontSize] = useState(
-    () => localStorage.getItem('terminal-font-size') || '14',
-  );
-  const [fontFamily, setFontFamily] = useState(
-    () =>
-      localStorage.getItem('terminal-font-family') ||
-      '"Cascadia Code", Menlo, "Courier New", monospace',
-  );
+  const themes = useTerminalAppearanceStore((state) => state.themes);
+  const isLoadingThemes = useTerminalAppearanceStore((state) => state.isLoadingThemes);
+  const selectedThemeId = useTerminalAppearanceStore((state) => state.selectedThemeId);
+  const fetchThemes = useTerminalAppearanceStore((state) => state.fetchThemes);
+  const selectTheme = useTerminalAppearanceStore((state) => state.selectTheme);
+  const fontPreferences = useTerminalAppearanceStore((state) => state.fontPreferences);
+  const updateFontPreferences = useTerminalAppearanceStore((state) => state.updateFontPreferences);
   const [scrollback, setScrollback] = useState(
     () => localStorage.getItem('terminal-scrollback') || '10000',
   );
 
-  const saveFontSize = (val: string) => {
-    setFontSize(val);
-    localStorage.setItem('terminal-font-size', val);
-  };
-
-  const saveFontFamily = (val: string) => {
-    setFontFamily(val);
-    localStorage.setItem('terminal-font-family', val);
-  };
+  useEffect(() => {
+    void fetchThemes();
+  }, [fetchThemes]);
 
   const saveScrollback = (val: string) => {
     setScrollback(val);
@@ -407,32 +413,97 @@ const TerminalSettings: React.FC = () => {
       </Text>
       <Box>
         <Text fontSize="13px" color="fg" mb={1}>
-          Font Size
+          Color Theme
         </Text>
-        <HStack gap={2}>
+        <select
+          aria-label="Terminal color theme"
+          value={selectedThemeId ?? ''}
+          onChange={(event) => selectTheme(event.target.value || null)}
+          style={settingsSelectStyle}
+          disabled={isLoadingThemes && themes.length === 0}
+        >
+          <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
+            Match app appearance
+          </option>
+          {themes.map((theme) => (
+            <option
+              key={theme.id}
+              value={theme.id}
+              style={{ background: 'var(--chakra-colors-bg-panel)' }}
+            >
+              {theme.name}
+            </option>
+          ))}
+        </select>
+      </Box>
+      <HStack gap={4} align="flex-end">
+        <Box>
+          <Text fontSize="13px" color="fg" mb={1}>
+            Font Size
+          </Text>
+          <HStack gap={2}>
+            <Input
+              size="sm"
+              w="80px"
+              type="number"
+              min={8}
+              max={32}
+              value={fontPreferences.size}
+              onChange={(event) => updateFontPreferences({ size: Number(event.target.value) })}
+              variant="subtle"
+            />
+            <Text fontSize="12px" color="fg.muted">
+              px
+            </Text>
+          </HStack>
+        </Box>
+        <Box>
+          <Text fontSize="13px" color="fg" mb={1}>
+            Line Height
+          </Text>
           <Input
             size="sm"
             w="80px"
             type="number"
-            min={10}
-            max={32}
-            value={fontSize}
-            onChange={(e) => saveFontSize(e.target.value)}
+            min={1}
+            max={2}
+            step={0.1}
+            value={fontPreferences.lineHeight}
+            onChange={(event) => updateFontPreferences({ lineHeight: Number(event.target.value) })}
             variant="subtle"
           />
-          <Text fontSize="12px" color="fg.muted">
-            px
+        </Box>
+        <Box w="120px">
+          <Text fontSize="13px" color="fg" mb={1}>
+            Weight
           </Text>
-        </HStack>
-      </Box>
+          <select
+            aria-label="Terminal font weight"
+            value={fontPreferences.weight}
+            onChange={(event) =>
+              updateFontPreferences({
+                weight: event.target.value === 'bold' ? 'bold' : 'normal',
+              })
+            }
+            style={settingsSelectStyle}
+          >
+            <option value="normal" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
+              Normal
+            </option>
+            <option value="bold" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
+              Bold
+            </option>
+          </select>
+        </Box>
+      </HStack>
       <Box>
         <Text fontSize="13px" color="fg" mb={1}>
           Font Family
         </Text>
         <Input
           size="sm"
-          value={fontFamily}
-          onChange={(e) => saveFontFamily(e.target.value)}
+          value={fontPreferences.family}
+          onChange={(event) => updateFontPreferences({ family: event.target.value })}
           variant="subtle"
           placeholder="e.g. Cascadia Code, monospace"
         />
@@ -459,7 +530,7 @@ const TerminalSettings: React.FC = () => {
         </HStack>
       </Box>
       <Text fontSize="11px" color="fg.muted" fontStyle="italic">
-        Changes apply to new terminal sessions. Restart the app to see changes.
+        Theme and font changes apply immediately. Scrollback applies to new terminal sessions.
       </Text>
     </Stack>
   );

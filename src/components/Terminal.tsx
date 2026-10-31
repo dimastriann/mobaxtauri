@@ -20,6 +20,8 @@ import {
 import HostKeyModal from './HostKeyModal';
 import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
+import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore';
+import { resolveTerminalTheme, toXtermTheme } from '../utils/terminalAppearance';
 import { toaster } from './ui/toaster';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
 import '@xterm/xterm/css/xterm.css';
@@ -113,6 +115,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const recordingRef = useRef(false);
   const recordingStartLineRef = useRef(0);
   const { colorMode } = useColorMode();
+  const themes = useTerminalAppearanceStore((state) => state.themes);
+  const selectedThemeId = useTerminalAppearanceStore((state) => state.selectedThemeId);
+  const fontPreferences = useTerminalAppearanceStore((state) => state.fontPreferences);
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -441,19 +446,28 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     if (!terminalRef.current) return;
 
     const isLight = colorMode === 'light';
-    const savedFontSize = parseInt(localStorage.getItem('terminal-font-size') || '14', 10);
-    const savedFontFamily =
-      localStorage.getItem('terminal-font-family') ||
-      '"Cascadia Code", Menlo, "Courier New", monospace';
+    const appearance = useTerminalAppearanceStore.getState();
+    const initialTheme = resolveTerminalTheme(
+      appearance.themes,
+      appearance.selectedThemeId,
+      colorMode,
+    );
+    const fontPreferences = appearance.fontPreferences;
     const savedScrollback = Math.min(
       Math.max(parseInt(localStorage.getItem('terminal-scrollback') || '10000', 10), 1000),
       200000,
     );
     const term = new XTerm({
       cursorBlink: true,
-      fontSize: savedFontSize,
-      fontFamily: savedFontFamily,
-      theme: isLight ? XTERM_THEME_LIGHT : XTERM_THEME_DARK,
+      fontSize: fontPreferences.size,
+      fontFamily: fontPreferences.family,
+      lineHeight: fontPreferences.lineHeight,
+      fontWeight: fontPreferences.weight,
+      theme: initialTheme
+        ? toXtermTheme(initialTheme)
+        : isLight
+          ? XTERM_THEME_LIGHT
+          : XTERM_THEME_DARK,
       allowProposedApi: true,
       scrollback: savedScrollback,
     });
@@ -868,12 +882,24 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     };
   }, [isVisible]);
 
-  // Update xterm theme when colorMode changes
+  // Apply theme and font preferences immediately, including when the
+  // catalogue finishes loading or the settings change while open.
   useEffect(() => {
-    if (!xtermRef.current) return;
-    const isLight = colorMode === 'light';
-    xtermRef.current.options.theme = isLight ? XTERM_THEME_LIGHT : XTERM_THEME_DARK;
-  }, [colorMode]);
+    const term = xtermRef.current;
+    if (!term) return;
+    const theme = resolveTerminalTheme(themes, selectedThemeId, colorMode);
+    term.options.theme = theme
+      ? toXtermTheme(theme)
+      : colorMode === 'light'
+        ? XTERM_THEME_LIGHT
+        : XTERM_THEME_DARK;
+    term.options.fontFamily = fontPreferences.family;
+    term.options.fontSize = fontPreferences.size;
+    term.options.lineHeight = fontPreferences.lineHeight;
+    term.options.fontWeight = fontPreferences.weight;
+    // Font metrics changed: refit, which also resizes the PTY.
+    fitRef.current?.fit();
+  }, [colorMode, themes, selectedThemeId, fontPreferences]);
 
   return (
     <Box
