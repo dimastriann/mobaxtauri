@@ -10,6 +10,7 @@ mod sftp_conflict;
 pub mod sftp_transfer;
 mod sftp_utils;
 pub mod ssh;
+pub mod terminal_theme;
 pub mod transfers;
 mod vault_key;
 
@@ -891,6 +892,11 @@ async fn sftp_local_entries(
 }
 
 #[tauri::command]
+fn terminal_themes() -> Vec<crate::terminal_theme::TerminalTheme> {
+    crate::terminal_theme::builtin_themes()
+}
+
+#[tauri::command]
 async fn ssh_agent_list_keys() -> Result<Vec<SshAgentKey>, String> {
     let mut agent = crate::ssh::connect_agent_client().await?;
     let identities = agent
@@ -1145,6 +1151,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ssh_connect,
+            terminal_themes,
             ssh_agent_list_keys,
             ssh_forward_add_local,
             ssh_forward_add_dynamic,
