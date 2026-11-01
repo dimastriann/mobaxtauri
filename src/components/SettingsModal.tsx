@@ -36,6 +36,8 @@ import {
 } from 'react-icons/lu';
 import { useSessionStore } from '../store/useSessionStore';
 import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore';
+import { useTranslation } from '../store/useLocaleStore';
+import { LOCALES, type Locale } from '../i18n';
 import {
   DEFAULT_SHORTCUTS,
   KeyboardShortcuts,
@@ -62,15 +64,16 @@ type SettingsTab =
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
+  const { t } = useTranslation();
 
   const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
-    { id: 'appearance', label: 'Appearance', icon: LuPalette },
-    { id: 'terminal', label: 'Terminal', icon: LuTerminal },
-    { id: 'ssh', label: 'SSH', icon: LuServer },
-    { id: 'shortcuts', label: 'Shortcuts', icon: LuKeyboard },
-    { id: 'snippets', label: 'Commands', icon: LuCode },
-    { id: 'history', label: 'History', icon: LuHistory },
-    { id: 'about', label: 'About', icon: LuMonitor },
+    { id: 'appearance', label: t('settings.tab.appearance'), icon: LuPalette },
+    { id: 'terminal', label: t('settings.tab.terminal'), icon: LuTerminal },
+    { id: 'ssh', label: t('settings.tab.ssh'), icon: LuServer },
+    { id: 'shortcuts', label: t('settings.tab.shortcuts'), icon: LuKeyboard },
+    { id: 'snippets', label: t('settings.tab.snippets'), icon: LuCode },
+    { id: 'history', label: t('settings.tab.history'), icon: LuHistory },
+    { id: 'about', label: t('settings.tab.about'), icon: LuMonitor },
   ];
 
   return (
@@ -337,24 +340,25 @@ const ShortcutSettings: React.FC = () => {
 // ── Appearance Settings ──────────────────────────────────────
 const AppearanceSettings: React.FC = () => {
   const { colorMode, toggleColorMode } = useColorMode();
+  const { t, locale, setLocale } = useTranslation();
 
   return (
     <Stack gap={4}>
       <Text fontSize="14px" fontWeight="bold" color="fg">
-        Appearance
+        {t('appearance.heading')}
       </Text>
       <Flex justify="space-between" align="center">
         <Box>
           <Text fontSize="13px" color="fg">
-            Theme
+            {t('appearance.theme.label')}
           </Text>
           <Text fontSize="11px" color="fg.muted">
-            Switch between light and dark mode
+            {t('appearance.theme.helper')}
           </Text>
         </Box>
         <HStack gap={2}>
           <Text fontSize="12px" color="fg.muted">
-            {colorMode === 'dark' ? 'Dark' : 'Light'}
+            {colorMode === 'dark' ? t('appearance.theme.dark') : t('appearance.theme.light')}
           </Text>
           <Switch.Root
             checked={colorMode === 'light'}
@@ -367,6 +371,42 @@ const AppearanceSettings: React.FC = () => {
             </Switch.Control>
           </Switch.Root>
         </HStack>
+      </Flex>
+      <Flex justify="space-between" align="center">
+        <Box>
+          <Text fontSize="13px" color="fg">
+            {t('appearance.language.label')}
+          </Text>
+          <Text fontSize="11px" color="fg.muted">
+            {t('appearance.language.helper')}
+          </Text>
+        </Box>
+        <select
+          aria-label={t('appearance.language.label')}
+          value={locale}
+          onChange={(event) => setLocale(event.target.value as Locale)}
+          style={{
+            width: '180px',
+            height: '32px',
+            backgroundColor: 'transparent',
+            border: '1px solid',
+            borderColor: 'var(--chakra-colors-border-subtle)',
+            borderRadius: '4px',
+            padding: '0 8px',
+            fontSize: '13px',
+            color: 'inherit',
+          }}
+        >
+          {LOCALES.map((option) => (
+            <option
+              key={option.id}
+              value={option.id}
+              style={{ background: 'var(--chakra-colors-bg-panel)' }}
+            >
+              {option.label}
+            </option>
+          ))}
+        </select>
       </Flex>
     </Stack>
   );
@@ -386,6 +426,7 @@ const settingsSelectStyle: React.CSSProperties = {
 };
 
 const TerminalSettings: React.FC = () => {
+  const { t } = useTranslation();
   const themes = useTerminalAppearanceStore((state) => state.themes);
   const isLoadingThemes = useTerminalAppearanceStore((state) => state.isLoadingThemes);
   const selectedThemeId = useTerminalAppearanceStore((state) => state.selectedThemeId);
@@ -409,11 +450,11 @@ const TerminalSettings: React.FC = () => {
   return (
     <Stack gap={4}>
       <Text fontSize="14px" fontWeight="bold" color="fg">
-        Terminal
+        {t('terminal.heading')}
       </Text>
       <Box>
         <Text fontSize="13px" color="fg" mb={1}>
-          Color Theme
+          {t('terminal.theme.label')}
         </Text>
         <select
           aria-label="Terminal color theme"
@@ -423,7 +464,7 @@ const TerminalSettings: React.FC = () => {
           disabled={isLoadingThemes && themes.length === 0}
         >
           <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
-            Match app appearance
+            {t('terminal.theme.matchApp')}
           </option>
           {themes.map((theme) => (
             <option
@@ -439,7 +480,7 @@ const TerminalSettings: React.FC = () => {
       <HStack gap={4} align="flex-end">
         <Box>
           <Text fontSize="13px" color="fg" mb={1}>
-            Font Size
+            {t('terminal.fontSize')}
           </Text>
           <HStack gap={2}>
             <Input
@@ -459,7 +500,7 @@ const TerminalSettings: React.FC = () => {
         </Box>
         <Box>
           <Text fontSize="13px" color="fg" mb={1}>
-            Line Height
+            {t('terminal.lineHeight')}
           </Text>
           <Input
             size="sm"
@@ -475,7 +516,7 @@ const TerminalSettings: React.FC = () => {
         </Box>
         <Box w="120px">
           <Text fontSize="13px" color="fg" mb={1}>
-            Weight
+            {t('terminal.weight')}
           </Text>
           <select
             aria-label="Terminal font weight"
@@ -488,17 +529,17 @@ const TerminalSettings: React.FC = () => {
             style={settingsSelectStyle}
           >
             <option value="normal" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
-              Normal
+              {t('terminal.weight.normal')}
             </option>
             <option value="bold" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
-              Bold
+              {t('terminal.weight.bold')}
             </option>
           </select>
         </Box>
       </HStack>
       <Box>
         <Text fontSize="13px" color="fg" mb={1}>
-          Font Family
+          {t('terminal.fontFamily')}
         </Text>
         <Input
           size="sm"
@@ -510,7 +551,7 @@ const TerminalSettings: React.FC = () => {
       </Box>
       <Box>
         <Text fontSize="13px" color="fg" mb={1}>
-          Scrollback Lines
+          {t('terminal.scrollback')}
         </Text>
         <HStack gap={2}>
           <Input
@@ -530,7 +571,7 @@ const TerminalSettings: React.FC = () => {
         </HStack>
       </Box>
       <Text fontSize="11px" color="fg.muted" fontStyle="italic">
-        Theme and font changes apply immediately. Scrollback applies to new terminal sessions.
+        {t('terminal.applyNote')}
       </Text>
     </Stack>
   );
