@@ -29,6 +29,9 @@ pub struct SshConnectRequest {
     pub use_saved_credential: bool,
     #[serde(default)]
     pub use_agent: bool,
+    /// Session id of a connected bastion to tunnel through (ProxyJump).
+    #[serde(default)]
+    pub jump_session_id: Option<String>,
     #[serde(default = "default_connection_timeout_secs")]
     pub connection_timeout_secs: u64,
 }
@@ -151,6 +154,7 @@ mod tests {
             key_passphrase: None,
             use_saved_credential: false,
             use_agent: false,
+            jump_session_id: None,
             connection_timeout_secs: timeout,
         }
     }

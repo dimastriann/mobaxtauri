@@ -22,6 +22,7 @@ export interface SshConnectRequest {
   keyPassphrase?: string | null;
   useSavedCredential: boolean;
   useAgent?: boolean;
+  jumpSessionId?: string | null;
   connectionTimeoutSecs: number;
 }
 

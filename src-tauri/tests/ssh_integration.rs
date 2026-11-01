@@ -645,6 +645,7 @@ impl TestContext {
             private_key_path.map(|p| fixture_path(p).to_string_lossy().to_string()),
             key_passphrase.map(str::to_string),
             false,
+            None,
             known_hosts,
             self.remote_targets.clone(),
         )
@@ -685,6 +686,7 @@ impl TestContext {
                 None,
                 None,
                 false,
+                None,
                 self.trusted_known_hosts(),
                 self.remote_targets.clone(),
             ),
@@ -1343,4 +1345,41 @@ async fn remote_forward_tunnels_server_connections_to_a_local_target() {
     );
 
     assert!(forwards.remove(&forward.id).await, "forward removal");
+}
+
+#[tokio::test]
+async fn connects_through_a_bastion_session() {
+    let bastion = TestContext::start("jump-bastion", HostTrust::Trusted, AuthorizedKey::None).await;
+    let target = TestContext::start("jump-target", HostTrust::Trusted, AuthorizedKey::None).await;
+    std::fs::write(target.sftp_root.join("behind-bastion.txt"), b"hello")
+        .expect("seed target file");
+
+    // Connect to the bastion, then open a transport channel to the target
+    // through it ? the same path the app's ProxyJump flow takes.
+    let (bastion_handle, _sftp) = bastion.connected_session().await;
+    let channel = bastion_handle
+        .channel_open_direct_tcpip("127.0.0.1", u32::from(target.port), "127.0.0.1", 0)
+        .await
+        .expect("bastion can reach the target");
+
+    let (_handle, _channel_id, _channel, sftp) = SshSession::connect(
+        target.handle.clone(),
+        "it-jump".to_string(),
+        "127.0.0.1".to_string(),
+        target.port,
+        USER.to_string(),
+        Some(PASSWORD.to_string()),
+        None,
+        None,
+        false,
+        Some(channel.into_stream()),
+        target.trusted_known_hosts(),
+        target.remote_targets.clone(),
+    )
+    .await
+    .expect("connects through the bastion");
+
+    let entries = sftp.read_dir("/").await.expect("sftp behind the bastion");
+    let names: Vec<String> = entries.into_iter().map(|entry| entry.file_name()).collect();
+    assert_eq!(names, vec!["behind-bastion.txt".to_string()]);
 }

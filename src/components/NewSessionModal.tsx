@@ -40,6 +40,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const [usePrivateKey, setUsePrivateKey] = useState(false);
   const [privateKeyPath, setPrivateKeyPath] = useState('');
   const [useAgent, setUseAgent] = useState(false);
+  const [jumpSessionId, setJumpSessionId] = useState<string | null>(null);
   const [port, setPort] = useState(() => {
     const saved = localStorage.getItem('ssh-default-port');
     return saved ? parseInt(saved, 10) : 22;
@@ -56,6 +57,10 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   } | null>(null);
 
   const folders = useSessionStore((state) => state.folders);
+  const sessions = useSessionStore((state) => state.sessions);
+  const jumpCandidates = sessions.filter(
+    (session) => session.type === 'ssh' && session.id !== editingSession?.id,
+  );
   const addSession = useSessionStore((state) => state.addSession);
   const updateSession = useSessionStore((state) => state.updateSession);
 
@@ -132,6 +137,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         folderId,
         tag,
         useAgent,
+        jumpSessionId: jumpSessionId ?? undefined,
         privateKeyPath: !useAgent && usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
         savePassword: shouldSavePassword,
       });
@@ -175,6 +181,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
       folderId,
       tag,
       useAgent,
+      jumpSessionId: jumpSessionId ?? undefined,
       privateKeyPath: !useAgent && usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
       savePassword: shouldSavePassword,
       // Memory-only when the user declined vault saving (persisted stores
@@ -353,6 +360,42 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                   />
                 </Field>
               </HStack>
+
+              <Field label="Jump Host (ProxyJump)">
+                <select
+                  aria-label="Jump host session"
+                  value={jumpSessionId ?? ''}
+                  onChange={(event) => setJumpSessionId(event.target.value || null)}
+                  style={{
+                    width: '100%',
+                    height: '32px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid',
+                    borderColor: 'var(--chakra-colors-border-subtle)',
+                    borderRadius: '4px',
+                    padding: '0 8px',
+                    fontSize: '14px',
+                    color: 'inherit',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
+                    Direct connection
+                  </option>
+                  {jumpCandidates.map((candidate) => (
+                    <option
+                      key={candidate.id}
+                      value={candidate.id}
+                      style={{ background: 'var(--chakra-colors-bg-panel)' }}
+                    >
+                      {candidate.name} ({candidate.user}@{candidate.host})
+                    </option>
+                  ))}
+                </select>
+                <Text fontSize="11px" color="fg.muted" mt={1}>
+                  Connect the jump host session first; this host is then reached through it.
+                </Text>
+              </Field>
 
               <HStack gap={2} mt={2}>
                 <input

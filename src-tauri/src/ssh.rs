@@ -339,6 +339,8 @@ impl SshSession {
         private_key_path: Option<String>,
         key_passphrase: Option<String>,
         use_agent: bool,
+        // Pre-connected transport through a bastion session (ProxyJump).
+        jump_stream: Option<russh::ChannelStream<russh::client::Msg>>,
         known_hosts: Arc<KnownHostsService>,
         remote_forwards: RemoteForwardTargets,
     ) -> Result<
@@ -373,8 +375,16 @@ impl SshSession {
             remote_forwards,
         };
 
-        log::info!("TCP connecting to {}:{}...", host, port);
-        let mut session = russh::client::connect(config, (host.as_str(), port), sh).await?;
+        let mut session = match jump_stream {
+            Some(stream) => {
+                log::info!("Connecting to {}:{} through the jump host...", host, port);
+                russh::client::connect_stream(config, stream, sh).await?
+            }
+            None => {
+                log::info!("TCP connecting to {}:{}...", host, port);
+                russh::client::connect(config, (host.as_str(), port), sh).await?
+            }
+        };
         log::info!("TCP connected. Authenticating...");
 
         let mut authenticated = false;

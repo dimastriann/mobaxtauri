@@ -16,6 +16,8 @@ export interface Session {
   password?: string;
   privateKeyPath?: string;
   useAgent?: boolean;
+  /** Connected bastion session used as a ProxyJump transport. */
+  jumpSessionId?: string;
   status: SessionStatus;
   error?: string;
   lastActivity?: number;

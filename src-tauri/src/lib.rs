@@ -137,6 +137,7 @@ async fn ssh_connect(
         key_passphrase,
         use_saved_credential,
         use_agent,
+        jump_session_id,
         connection_timeout_secs: _,
     } = request;
     log::info!("Attempting to connect to {}:{} as {}", host, port, user);
@@ -178,6 +179,27 @@ async fn ssh_connect(
         password
     };
 
+    // ProxyJump: open a direct-tcpip channel through the bastion session
+    // and run the target's SSH handshake over it.
+    let jump_stream = match jump_session_id.as_deref() {
+        Some(jump_session_id) => {
+            let jump_handle = state
+                .ssh_sessions
+                .connection_handle(jump_session_id)
+                .await
+                .map_err(|_| {
+                    "Jump host session is not connected. Connect it before connecting through it."
+                        .to_string()
+                })?;
+            let channel = jump_handle
+                .channel_open_direct_tcpip(host.clone(), u32::from(port), "127.0.0.1", 0)
+                .await
+                .map_err(|error| format!("Jump host could not reach {host}:{port}: {error}"))?;
+            Some(channel.into_stream())
+        }
+        None => None,
+    };
+
     // Remote forwards registered for a previous connection would otherwise
     // leak into the new session sharing the same id.
     forwards.clear_remote_targets(&session_id).await;
@@ -193,6 +215,7 @@ async fn ssh_connect(
         private_key_path,
         key_passphrase,
         use_agent,
+        jump_stream,
         Arc::new(known_hosts.inner().clone()),
         remote_forwards,
     );
