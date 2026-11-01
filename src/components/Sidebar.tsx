@@ -9,6 +9,7 @@ import {
   Spinner,
   Flex,
   Input,
+  Button,
 } from '@chakra-ui/react';
 import {
   LuPlus,
@@ -26,14 +27,28 @@ import {
   LuLayers,
   LuSave,
   LuTrash2,
+  LuListTree,
+  LuFolderTree,
+  LuNetwork,
 } from 'react-icons/lu';
+import type { IconType } from 'react-icons';
 import { Session, Folder, Snippet, useSessionStore } from '../store/useSessionStore';
 import { useExportImport } from '../hooks/useExportImport';
 import SftpSidebar from './SftpSidebar';
 import ForwardSidebar from './ForwardSidebar';
 import OSIcon from './OSIcon';
+import { Tooltip } from './ui/tooltip';
 
 type SidebarMenuType = 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
+
+export type SidebarTabId = 'sessions' | 'sftp' | 'snippets' | 'tunnels';
+
+const SIDEBAR_TABS: { id: SidebarTabId; label: string; icon: IconType }[] = [
+  { id: 'sessions', label: 'Sessions', icon: LuListTree },
+  { id: 'sftp', label: 'SFTP', icon: LuFolderTree },
+  { id: 'snippets', label: 'Snippets', icon: LuCode },
+  { id: 'tunnels', label: 'Tunnels', icon: LuNetwork },
+];
 
 // ── Sub-component: SessionItem ──────────────────────────────────────
 interface SessionItemProps {
@@ -493,8 +508,8 @@ const SnippetsTab: React.FC<SnippetsTabProps> = ({
 interface SidebarProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
-  sidebarTab: 'sessions' | 'sftp' | 'snippets' | 'tunnels';
-  setSidebarTab: (tab: 'sessions' | 'sftp' | 'snippets' | 'tunnels') => void;
+  sidebarTab: SidebarTabId;
+  setSidebarTab: (tab: SidebarTabId) => void;
   onNewSession: () => void;
   onAddFolder: () => void;
   onSaveWorkspace: () => void;
@@ -512,6 +527,75 @@ interface SidebarProps {
 
 const SIDEBAR_MIN_WIDTH = 100;
 const SIDEBAR_MAX_WIDTH = 500;
+const SIDEBAR_WIDTH_KEY = 'sidebar-width';
+/** Show the tab labels once the sidebar is wide enough for them. */
+const TAB_LABEL_MIN_WIDTH = 360;
+
+const clampSidebarWidth = (value: number): number =>
+  Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value));
+
+interface SidebarPanelTabsProps {
+  active: SidebarTabId;
+  onSelect: (tab: SidebarTabId) => void;
+  showLabels: boolean;
+}
+
+export const SidebarPanelTabs: React.FC<SidebarPanelTabsProps> = ({
+  active,
+  onSelect,
+  showLabels,
+}) => (
+  <HStack role="tablist" aria-label="Sidebar panels" gap={0} flex={1} minW={0}>
+    {SIDEBAR_TABS.map((tab) => {
+      const isActive = active === tab.id;
+      return (
+        <Tooltip
+          key={tab.id}
+          content={tab.label}
+          positioning={{ placement: 'bottom' }}
+          openDelay={300}
+        >
+          <Button
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            aria-label={tab.label}
+            title={tab.label}
+            variant="ghost"
+            flex={1}
+            minW={0}
+            h="auto"
+            py="7px"
+            borderRadius={0}
+            borderBottom="2px solid"
+            borderColor={isActive ? 'blue.fg' : 'transparent'}
+            _hover={{ bg: isActive ? 'transparent' : 'bg.muted' }}
+            onClick={() => onSelect(tab.id)}
+          >
+            <HStack justify="center" gap={showLabels ? 1.5 : 0} minW={0}>
+              <Icon
+                as={tab.icon}
+                boxSize="14px"
+                color={isActive ? 'blue.fg' : 'fg.muted'}
+                flexShrink={0}
+              />
+              {showLabels && (
+                <Text
+                  fontSize="11px"
+                  fontWeight="bold"
+                  color={isActive ? 'fg' : 'fg.muted'}
+                  whiteSpace="nowrap"
+                >
+                  {tab.label}
+                </Text>
+              )}
+            </HStack>
+          </Button>
+        </Tooltip>
+      );
+    })}
+  </HStack>
+);
 
 const Sidebar: React.FC<SidebarProps> = ({
   collapsed,
@@ -537,7 +621,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   const { handleExport } = useExportImport();
 
   // ── Resize logic ────────────────────────────────────────────
-  const [width, setWidth] = useState(240);
+  const [width, setWidth] = useState(() => {
+    const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    return Number.isFinite(stored) && stored > 0 ? clampSidebarWidth(stored) : 240;
+  });
+  const widthRef = useRef(width);
   const resizing = useRef(false);
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -550,7 +638,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!resizing.current) return;
-      const newWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, e.clientX - 60));
+      const newWidth = clampSidebarWidth(e.clientX - 60);
+      widthRef.current = newWidth;
       setWidth(newWidth);
     };
 
@@ -559,6 +648,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         resizing.current = false;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(widthRef.current));
       }
     };
 
@@ -594,7 +684,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         borderColor="border.subtle"
         align="center"
         py={2}
-        gap={2}
+        gap={1}
       >
         <IconButton
           aria-label="Expand sidebar"
@@ -606,6 +696,28 @@ const Sidebar: React.FC<SidebarProps> = ({
         >
           <LuPanelLeftOpen size={16} />
         </IconButton>
+        {SIDEBAR_TABS.map((tab) => (
+          <Tooltip
+            key={tab.id}
+            content={tab.label}
+            positioning={{ placement: 'right' }}
+            openDelay={300}
+          >
+            <IconButton
+              aria-label={tab.label}
+              size="xs"
+              variant="ghost"
+              onClick={() => {
+                setSidebarTab(tab.id);
+                onToggleCollapse();
+              }}
+              color={sidebarTab === tab.id ? 'blue.fg' : 'fg.muted'}
+              _hover={{ color: 'fg' }}
+            >
+              <Icon as={tab.icon} boxSize="16px" />
+            </IconButton>
+          </Tooltip>
+        ))}
         <Box flex={1} />
       </Flex>
     );
@@ -624,75 +736,18 @@ const Sidebar: React.FC<SidebarProps> = ({
         gap={0}
       >
         {/* Tab switcher with collapse button */}
-        <HStack w="full" gap={0} borderBottom="1px solid" borderColor="border.subtle">
-          <Box
-            flex={1}
-            py="6px"
-            cursor="pointer"
-            textAlign="center"
-            borderBottom="2px solid"
-            borderColor={sidebarTab === 'sessions' ? 'blue.fg' : 'transparent'}
-            onClick={() => setSidebarTab('sessions')}
-          >
-            <Text
-              fontSize="11px"
-              fontWeight="bold"
-              color={sidebarTab === 'sessions' ? 'fg' : 'fg.muted'}
-            >
-              SESSIONS
-            </Text>
-          </Box>
-          <Box
-            flex={1}
-            py="6px"
-            cursor="pointer"
-            textAlign="center"
-            borderBottom="2px solid"
-            borderColor={sidebarTab === 'sftp' ? 'blue.fg' : 'transparent'}
-            onClick={() => setSidebarTab('sftp')}
-          >
-            <Text
-              fontSize="11px"
-              fontWeight="bold"
-              color={sidebarTab === 'sftp' ? 'fg' : 'fg.muted'}
-            >
-              SFTP
-            </Text>
-          </Box>
-          <Box
-            flex={1}
-            py="6px"
-            cursor="pointer"
-            textAlign="center"
-            borderBottom="2px solid"
-            borderColor={sidebarTab === 'snippets' ? 'blue.fg' : 'transparent'}
-            onClick={() => setSidebarTab('snippets')}
-          >
-            <Text
-              fontSize="11px"
-              fontWeight="bold"
-              color={sidebarTab === 'snippets' ? 'fg' : 'fg.muted'}
-            >
-              SNIPPETS
-            </Text>
-          </Box>
-          <Box
-            flex={1}
-            py="6px"
-            cursor="pointer"
-            textAlign="center"
-            borderBottom="2px solid"
-            borderColor={sidebarTab === 'tunnels' ? 'blue.fg' : 'transparent'}
-            onClick={() => setSidebarTab('tunnels')}
-          >
-            <Text
-              fontSize="11px"
-              fontWeight="bold"
-              color={sidebarTab === 'tunnels' ? 'fg' : 'fg.muted'}
-            >
-              TUNNELS
-            </Text>
-          </Box>
+        <HStack
+          w="full"
+          gap={0}
+          borderBottom="1px solid"
+          borderColor="border.subtle"
+          align="stretch"
+        >
+          <SidebarPanelTabs
+            active={sidebarTab}
+            onSelect={setSidebarTab}
+            showLabels={width >= TAB_LABEL_MIN_WIDTH}
+          />
           <Box py="6px" px={1} display="flex" alignItems="center">
             <IconButton
               aria-label="Collapse sidebar"
