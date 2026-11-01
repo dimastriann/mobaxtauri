@@ -90,38 +90,61 @@ describe('useSftpStore', () => {
     expect(state.isLoading).toBe(false);
   });
 
-  it('tracks progress and delegates cancellation to Rust', async () => {
+  it('queues concurrent transfers and delegates cancellation per id', async () => {
     const { invoke } = await import('@tauri-apps/api/core');
     vi.mocked(invoke).mockResolvedValueOnce(undefined);
     useSftpStore.getState().updateTransfer({
       transferId: 'transfer-1',
       sessionId: 'session-1',
+      kind: 'upload',
+      label: 'first.bin',
       status: 'running',
       transferred: 64,
       total: 128,
       message: null,
     });
+    useSftpStore.getState().updateTransfer({
+      transferId: 'transfer-2',
+      sessionId: 'session-1',
+      kind: 'download',
+      label: 'second.bin',
+      status: 'running',
+      transferred: 10,
+      total: 20,
+      message: null,
+    });
 
-    expect(useSftpStore.getState().transfer?.transferred).toBe(64);
-    await useSftpStore.getState().cancelTransfer();
+    const transfers = useSftpStore.getState().transfers;
+    expect(transfers).toHaveLength(2);
+    expect(transfers.find((entry) => entry.transferId === 'transfer-1')?.transferred).toBe(64);
+
+    await useSftpStore.getState().cancelTransfer('transfer-1');
 
     expect(invoke).toHaveBeenCalledWith('sftp_cancel_transfer', {
       transferId: 'transfer-1',
     });
   });
 
-  it('clears progress when a transfer completes', () => {
+  it('keeps finished transfers briefly and then drops them', async () => {
+    vi.useFakeTimers();
     useSftpStore.getState().updateTransfer({
       transferId: 'transfer-1',
       sessionId: 'session-1',
+      kind: 'upload',
+      label: 'first.bin',
       status: 'completed',
       transferred: 128,
       total: 128,
       message: null,
     });
 
-    expect(useSftpStore.getState().transfer).toBeNull();
+    expect(useSftpStore.getState().transfers).toHaveLength(1);
+    expect(useSftpStore.getState().transfers[0].status).toBe('completed');
+
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(useSftpStore.getState().transfers).toHaveLength(0);
     expect(useSftpStore.getState().isLoading).toBe(false);
+    vi.useRealTimers();
   });
 
   it('uploads a picked folder into the current remote path', async () => {

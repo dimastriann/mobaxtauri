@@ -20,11 +20,25 @@ pub enum TransferStatus {
     Failed,
 }
 
+/// What a transfer is doing, so a queue view can label and group rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransferKind {
+    Upload,
+    Download,
+    Copy,
+    FolderUpload,
+    FolderDownload,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransferEvent {
     pub transfer_id: String,
     pub session_id: String,
+    pub kind: TransferKind,
+    /// Human-readable subject (file or folder name).
+    pub label: String,
     pub status: TransferStatus,
     pub transferred: u64,
     pub total: Option<u64>,
@@ -56,11 +70,8 @@ impl TransferManager {
     pub async fn begin(&self, transfer_id: String, session_id: String) -> Arc<AtomicBool> {
         let cancellation = Arc::new(AtomicBool::new(false));
         let mut transfers = self.transfers.lock().await;
-        for transfer in transfers.values() {
-            if transfer.session_id == session_id {
-                transfer.cancellation.store(true, Ordering::Release);
-            }
-        }
+        // Transfers queue up independently: starting one must not cancel
+        // the session's other in-flight transfers.
         if let Some(previous) = transfers.insert(
             transfer_id,
             ActiveTransfer {
@@ -121,12 +132,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn starting_another_transfer_cancels_the_same_session() {
+    async fn transfers_in_the_same_session_run_independently() {
         let manager = TransferManager::default();
         let first = manager.begin("transfer-1".into(), "session-1".into()).await;
 
         manager.begin("transfer-2".into(), "session-1".into()).await;
 
+        assert!(
+            !is_cancelled(&first),
+            "a queued transfer must not cancel its session peers"
+        );
+        assert!(
+            manager.cancel("transfer-1").await,
+            "each transfer stays individually cancellable"
+        );
         assert!(is_cancelled(&first));
     }
 

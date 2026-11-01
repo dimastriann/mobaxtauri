@@ -175,7 +175,7 @@ const SftpSidebar: React.FC = () => {
     createFile,
     downloadFolder,
     reset,
-    transfer,
+    transfers,
     updateTransfer,
     cancelTransfer,
     conflictPrompt,
@@ -287,7 +287,7 @@ const SftpSidebar: React.FC = () => {
 
   useEffect(() => {
     const unlisten = listen<SftpTransferEvent>(SFTP_TRANSFER_EVENT, ({ payload }) => {
-      if (payload.sessionId === activeSessionId) {
+      {
         updateTransfer(payload);
 
         if (
@@ -319,7 +319,7 @@ const SftpSidebar: React.FC = () => {
     return () => {
       unlisten.then((dispose) => dispose());
     };
-  }, [activeSessionId, updateTransfer]);
+  }, [updateTransfer]);
 
   // OS-level drag & drop: route drops landing on this panel to uploads.
   // The Tauri drag event position is physical pixels, so it is converted
@@ -341,14 +341,6 @@ const SftpSidebar: React.FC = () => {
     };
 
     const startDropUpload = (paths: string[]) => {
-      if (useSftpStore.getState().transfer || useSftpStore.getState().isLoading) {
-        toaster.create({
-          title: 'Transfer in progress',
-          description: 'Wait for the current transfer to finish before dropping files.',
-          type: 'info',
-        });
-        return;
-      }
       void uploadPaths(activeSessionId, paths);
     };
 
@@ -741,35 +733,68 @@ const SftpSidebar: React.FC = () => {
         {renderBreadcrumbs()}
       </Box>
 
-      {transfer && (
-        <Box px={2} py={2} borderBottom="1px solid" borderColor="border.subtle" bg="bg.muted">
-          <HStack justify="space-between" mb={1}>
-            <Text fontSize="10px" color="fg.muted">
-              Transferring {formatFileSize(transfer.transferred)}
-              {transfer.total ? ` / ${formatFileSize(transfer.total)}` : ''}
-              {transfer.percent !== undefined && transfer.percent !== null
-                ? ` (${transfer.percent}%)`
-                : ''}
-            </Text>
-            <Button size="xs" variant="ghost" onClick={() => void cancelTransfer()}>
-              Cancel
-            </Button>
-          </HStack>
-          <Box h="3px" bg="bg.emphasized" borderRadius="full" overflow="hidden">
-            <Box
-              h="full"
-              bg="blue.fg"
-              width={
-                transfer.percent !== undefined && transfer.percent !== null
-                  ? `${Math.min(100, transfer.percent)}%`
-                  : transfer.total
-                    ? `${Math.min(100, (transfer.transferred / transfer.total) * 100)}%`
-                    : '25%'
-              }
-              transition="width 120ms linear"
-            />
-          </Box>
-        </Box>
+      {transfers.length > 0 && (
+        <VStack
+          align="stretch"
+          gap={0}
+          px={2}
+          py={1}
+          borderBottom="1px solid"
+          borderColor="border.subtle"
+          bg="bg.muted"
+          maxH="160px"
+          overflowY="auto"
+          className="custom-scrollbar"
+        >
+          <Text fontSize="10px" color="fg.subtle" fontWeight="bold" pt={1}>
+            TRANSFERS ({transfers.filter((entry) => entry.status === 'running').length} active)
+          </Text>
+          {transfers.map((entry) => {
+            const percent =
+              entry.percent !== undefined && entry.percent !== null
+                ? Math.min(100, entry.percent)
+                : entry.total
+                  ? Math.min(100, (entry.transferred / entry.total) * 100)
+                  : 25;
+            const failed = entry.status === 'failed';
+            const done = entry.status === 'completed';
+            return (
+              <Box key={entry.transferId} py={1}>
+                <HStack justify="space-between" gap={2}>
+                  <Text fontSize="10px" color={failed ? 'red.fg' : 'fg.muted'} truncate flex={1}>
+                    {entry.kind.replace(/_/g, ' ')} ? {entry.label}{' '}
+                    {formatFileSize(entry.transferred)}
+                    {entry.total ? ` / ${formatFileSize(entry.total)}` : ''}
+                    {entry.percent !== undefined && entry.percent !== null
+                      ? ` (${entry.percent}%)`
+                      : ''}
+                  </Text>
+                  {entry.status === 'running' ? (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => void cancelTransfer(entry.transferId)}
+                    >
+                      Cancel
+                    </Button>
+                  ) : (
+                    <Text fontSize="10px" color={failed ? 'red.fg' : 'green.fg'}>
+                      {entry.status}
+                    </Text>
+                  )}
+                </HStack>
+                <Box h="2px" bg="bg.emphasized" borderRadius="full" overflow="hidden" mt={1}>
+                  <Box
+                    h="full"
+                    bg={failed ? 'red.fg' : done ? 'green.fg' : 'blue.fg'}
+                    width={`${percent}%`}
+                    transition="width 120ms linear"
+                  />
+                </Box>
+              </Box>
+            );
+          })}
+        </VStack>
       )}
 
       {/* File List */}

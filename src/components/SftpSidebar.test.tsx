@@ -25,6 +25,7 @@ describe('SftpSidebar', () => {
       files: [],
       isLoading: false,
       error: null,
+      transfers: [],
       fetchDirectory: vi.fn(),
       cd: vi.fn(),
     });
@@ -48,6 +49,7 @@ describe('SftpSidebar', () => {
       ],
       isLoading: false,
       error: null,
+      transfers: [],
       fetchDirectory: vi.fn(),
       cd: vi.fn(),
     });

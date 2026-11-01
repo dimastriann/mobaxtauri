@@ -22,6 +22,8 @@ pub async fn download_file<R: Runtime>(
     transfer_id: String,
 ) -> Result<(), String> {
     log::info!("Downloading {} to {}", remote_path, local_path);
+    let kind = crate::transfers::TransferKind::Download;
+    let label = sftp_utils::final_segment(&remote_path);
     let mut remote_file = sftp
         .open(&remote_path)
         .await
@@ -46,6 +48,8 @@ pub async fn download_file<R: Runtime>(
         TransferEvent {
             transfer_id: transfer_id.clone(),
             session_id: session_id.clone(),
+            kind,
+            label: label.clone(),
             status: TransferStatus::Running,
             transferred,
             total,
@@ -76,6 +80,8 @@ pub async fn download_file<R: Runtime>(
                 TransferEvent {
                     transfer_id: transfer_id.clone(),
                     session_id: session_id.clone(),
+                    kind,
+                    label: label.clone(),
                     status: TransferStatus::Running,
                     transferred,
                     total,
@@ -108,6 +114,8 @@ pub async fn download_file<R: Runtime>(
         TransferEvent {
             transfer_id,
             session_id,
+            kind,
+            label: label.clone(),
             status: match &result {
                 Ok(()) => TransferStatus::Completed,
                 Err(error) if error == "Transfer cancelled" => TransferStatus::Cancelled,
@@ -137,6 +145,8 @@ pub async fn upload_file<R: Runtime>(
     conflict_policy: Option<String>,
 ) -> Result<(), String> {
     log::info!("Uploading {} to {}", local_path, remote_path);
+    let kind = crate::transfers::TransferKind::Upload;
+    let label = sftp_utils::final_segment(&remote_path);
     let target_path = crate::sftp_conflict::resolve_destination(
         sftp,
         &remote_path,
@@ -190,6 +200,8 @@ pub async fn upload_file<R: Runtime>(
                 TransferEvent {
                     transfer_id: transfer_id.clone(),
                     session_id: session_id.clone(),
+                    kind,
+                    label: label.clone(),
                     status: TransferStatus::Running,
                     transferred,
                     total,
@@ -218,6 +230,8 @@ pub async fn upload_file<R: Runtime>(
         TransferEvent {
             transfer_id,
             session_id,
+            kind,
+            label: label.clone(),
             status: match &result {
                 Ok(()) => TransferStatus::Completed,
                 Err(error) if error == "Transfer cancelled" => TransferStatus::Cancelled,
@@ -247,6 +261,8 @@ pub async fn copy_file<R: Runtime>(
     conflict_policy: Option<String>,
 ) -> Result<(), String> {
     log::info!("Copying {} to {}", source_path, dest_path);
+    let kind = crate::transfers::TransferKind::Copy;
+    let label = sftp_utils::final_segment(&source_path);
     let mut source_file = sftp
         .open(&source_path)
         .await
@@ -298,6 +314,8 @@ pub async fn copy_file<R: Runtime>(
                 TransferEvent {
                     transfer_id: transfer_id.clone(),
                     session_id: session_id.clone(),
+                    kind,
+                    label: label.clone(),
                     status: TransferStatus::Running,
                     transferred,
                     total,
@@ -326,6 +344,8 @@ pub async fn copy_file<R: Runtime>(
         TransferEvent {
             transfer_id,
             session_id,
+            kind,
+            label: label.clone(),
             status: match &result {
                 Ok(()) => TransferStatus::Completed,
                 Err(error) if error == "Transfer cancelled" => TransferStatus::Cancelled,
@@ -355,6 +375,8 @@ pub async fn download_folder<R: Runtime>(
     conflict_policy: Option<String>,
 ) -> Result<(), String> {
     log::info!("Downloading folder {} to {}", remote_path, local_path);
+    let kind = crate::transfers::TransferKind::FolderDownload;
+    let label = sftp_utils::final_segment(&remote_path);
     let target_root = crate::sftp_conflict::resolve_destination_local(
         std::path::Path::new(&local_path),
         crate::sftp_conflict::parse_conflict_policy(conflict_policy.as_deref()),
@@ -471,6 +493,8 @@ pub async fn download_folder<R: Runtime>(
                     TransferEvent {
                         transfer_id: transfer_id.clone(),
                         session_id: session_id.clone(),
+                        kind,
+                        label: label.clone(),
                         status: TransferStatus::Running,
                         transferred,
                         total: Some(total),
@@ -508,6 +532,8 @@ pub async fn download_folder<R: Runtime>(
         TransferEvent {
             transfer_id,
             session_id,
+            kind,
+            label: label.clone(),
             status: match &result {
                 Ok(()) => TransferStatus::Completed,
                 Err(error) if error == "Transfer cancelled" => TransferStatus::Cancelled,
@@ -537,6 +563,8 @@ pub async fn upload_folder<R: Runtime>(
     conflict_policy: Option<String>,
 ) -> Result<(), String> {
     log::info!("Uploading folder {} to {}", local_path, remote_path);
+    let kind = crate::transfers::TransferKind::FolderUpload;
+    let label = sftp_utils::final_segment(&remote_path);
     let target_root = crate::sftp_conflict::resolve_destination(
         sftp,
         &remote_path,
@@ -574,6 +602,8 @@ pub async fn upload_folder<R: Runtime>(
         TransferEvent {
             transfer_id: transfer_id.clone(),
             session_id: session_id.clone(),
+            kind,
+            label: label.clone(),
             status: TransferStatus::Running,
             transferred,
             total: Some(total),
@@ -660,6 +690,8 @@ pub async fn upload_folder<R: Runtime>(
                     TransferEvent {
                         transfer_id: transfer_id.clone(),
                         session_id: session_id.clone(),
+                        kind,
+                        label: label.clone(),
                         status: TransferStatus::Running,
                         transferred,
                         total: Some(total),
@@ -693,6 +725,8 @@ pub async fn upload_folder<R: Runtime>(
         TransferEvent {
             transfer_id,
             session_id,
+            kind,
+            label: label.clone(),
             status: match &result {
                 Ok(()) => TransferStatus::Completed,
                 Err(error) if error == "Transfer cancelled" => TransferStatus::Cancelled,

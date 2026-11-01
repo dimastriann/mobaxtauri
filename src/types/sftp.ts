@@ -10,9 +10,13 @@ export type SftpConflictPolicy = 'overwrite' | 'rename' | 'skip';
 
 export type SftpTransferStatus = 'running' | 'completed' | 'cancelled' | 'failed';
 
+export type SftpTransferKind = 'upload' | 'download' | 'copy' | 'folder_upload' | 'folder_download';
+
 export interface SftpTransferEvent {
   transferId: string;
   sessionId: string;
+  kind: SftpTransferKind;
+  label: string;
   status: SftpTransferStatus;
   transferred: number;
   total: number | null;

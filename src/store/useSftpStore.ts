@@ -19,6 +19,9 @@ export interface SftpFile {
   permissions: string;
 }
 
+/** How long finished transfers stay in the queue view. */
+const FINISHED_TRANSFER_LINGER_MS = 4000;
+
 export interface SftpConflictPrompt {
   kind: 'upload' | 'copy' | 'create-file' | 'folder-download' | 'folder-upload';
   sessionId: string;
@@ -34,7 +37,8 @@ interface SftpState {
   isLoading: boolean;
   error: string | null;
   history: string[]; // For going back
-  transfer: SftpTransferEvent | null;
+  /** Every transfer seen in this session, in arrival order. */
+  transfers: SftpTransferEvent[];
   conflictPrompt: SftpConflictPrompt | null;
 
   fetchDirectory: (sessionId: string, path?: string) => Promise<void>;
@@ -54,7 +58,7 @@ interface SftpState {
   createDir: (sessionId: string, dirName: string) => Promise<void>;
   createFile: (sessionId: string, fileName: string) => Promise<void>;
   updateTransfer: (transfer: SftpTransferEvent) => void;
-  cancelTransfer: () => Promise<void>;
+  cancelTransfer: (transferId: string) => Promise<void>;
   resolveConflict: (policy: SftpConflictPolicy) => Promise<void>;
   dismissConflict: () => void;
 }
@@ -85,7 +89,6 @@ export const useSftpStore = create<SftpState>((set, get) => {
       if (message.includes(SFTP_TARGET_EXISTS_MARKER)) {
         set({
           isLoading: false,
-          transfer: null,
           conflictPrompt: {
             kind: 'upload',
             sessionId,
@@ -99,7 +102,6 @@ export const useSftpStore = create<SftpState>((set, get) => {
       set({
         error: message.includes('Transfer cancelled') ? null : message,
         isLoading: false,
-        transfer: null,
       });
     }
   };
@@ -127,7 +129,6 @@ export const useSftpStore = create<SftpState>((set, get) => {
       if (message.includes(SFTP_TARGET_EXISTS_MARKER)) {
         set({
           isLoading: false,
-          transfer: null,
           conflictPrompt: {
             kind: 'folder-upload',
             sessionId,
@@ -141,7 +142,6 @@ export const useSftpStore = create<SftpState>((set, get) => {
       set({
         error: message.includes('Transfer cancelled') ? null : message,
         isLoading: false,
-        transfer: null,
       });
     }
   };
@@ -152,19 +152,28 @@ export const useSftpStore = create<SftpState>((set, get) => {
     isLoading: false,
     error: null,
     history: [],
-    transfer: null,
+    transfers: [],
     conflictPrompt: null,
 
     updateTransfer: (transfer) => {
+      const withoutEntry = get().transfers.filter(
+        (entry) => entry.transferId !== transfer.transferId,
+      );
+      set({ transfers: [...withoutEntry, transfer] });
       if (transfer.status === 'running') {
-        set({ transfer, isLoading: true });
+        set({ isLoading: true });
         return;
       }
       set({
-        transfer: null,
         isLoading: false,
         error: transfer.status === 'failed' ? transfer.message || 'Transfer failed' : null,
       });
+      // Keep the finished row visible briefly, then drop it from the queue.
+      setTimeout(() => {
+        set({
+          transfers: get().transfers.filter((entry) => entry.transferId !== transfer.transferId),
+        });
+      }, FINISHED_TRANSFER_LINGER_MS);
     },
 
     resolveConflict: async (policy) => {
@@ -227,7 +236,6 @@ export const useSftpStore = create<SftpState>((set, get) => {
         set({
           error: message.includes('Transfer cancelled') ? null : message,
           isLoading: false,
-          transfer: null,
         });
       }
     },
@@ -236,10 +244,8 @@ export const useSftpStore = create<SftpState>((set, get) => {
       set({ conflictPrompt: null });
     },
 
-    cancelTransfer: async () => {
-      const transfer = get().transfer;
-      if (!transfer) return;
-      await invoke('sftp_cancel_transfer', { transferId: transfer.transferId });
+    cancelTransfer: async (transferId) => {
+      await invoke('sftp_cancel_transfer', { transferId });
     },
 
     fetchDirectory: async (sessionId, path) => {
@@ -309,7 +315,7 @@ export const useSftpStore = create<SftpState>((set, get) => {
         error: null,
         isLoading: false,
         history: [],
-        transfer: null,
+        transfers: [],
         conflictPrompt: null,
       });
     },
@@ -338,7 +344,6 @@ export const useSftpStore = create<SftpState>((set, get) => {
         set({
           error: message.includes('Transfer cancelled') ? null : message,
           isLoading: false,
-          transfer: null,
         });
       }
     },
@@ -368,7 +373,6 @@ export const useSftpStore = create<SftpState>((set, get) => {
         if (message.includes(SFTP_TARGET_EXISTS_MARKER) && localPath) {
           set({
             isLoading: false,
-            transfer: null,
             conflictPrompt: {
               kind: 'folder-download',
               sessionId,
@@ -382,7 +386,6 @@ export const useSftpStore = create<SftpState>((set, get) => {
         set({
           error: message.includes('Transfer cancelled') ? null : message,
           isLoading: false,
-          transfer: null,
         });
       }
     },
@@ -444,7 +447,6 @@ export const useSftpStore = create<SftpState>((set, get) => {
         if (message.includes(SFTP_TARGET_EXISTS_MARKER)) {
           set({
             isLoading: false,
-            transfer: null,
             conflictPrompt: { kind: 'copy', sessionId, sourcePath, destPath, destName },
           });
           return;
@@ -452,7 +454,6 @@ export const useSftpStore = create<SftpState>((set, get) => {
         set({
           error: message.includes('Transfer cancelled') ? null : message,
           isLoading: false,
-          transfer: null,
         });
       }
     },
