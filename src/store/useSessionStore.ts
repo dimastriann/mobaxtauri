@@ -18,6 +18,8 @@ export interface Session {
   useAgent?: boolean;
   /** Connected bastion session used as a ProxyJump transport. */
   jumpSessionId?: string;
+  /** Optional command sent to the shell immediately after connecting. */
+  startupCommand?: string;
   status: SessionStatus;
   error?: string;
   lastActivity?: number;

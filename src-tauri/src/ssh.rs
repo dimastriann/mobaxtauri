@@ -325,6 +325,18 @@ fn decode_private_key(key_data: &str, passphrase: Option<&str>) -> Result<Privat
     }
 }
 
+/// Payload typed into a fresh shell for a per-session startup command.
+/// Blank commands are ignored and a trailing newline is appended once.
+pub fn startup_command_payload(command: &str) -> Option<Vec<u8>> {
+    let command = command.trim();
+    if command.is_empty() {
+        return None;
+    }
+    let mut payload = command.as_bytes().to_vec();
+    payload.push(b'\n');
+    Some(payload)
+}
+
 impl SshSession {
     // Roadmap tracks the too_many_arguments baseline; a params struct is a
     // planned follow-up.
@@ -339,6 +351,8 @@ impl SshSession {
         private_key_path: Option<String>,
         key_passphrase: Option<String>,
         use_agent: bool,
+        // Optional command typed into the shell after it opens.
+        startup_command: Option<String>,
         // Pre-connected transport through a bastion session (ProxyJump).
         jump_stream: Option<russh::ChannelStream<russh::client::Msg>>,
         known_hosts: Arc<KnownHostsService>,
@@ -471,6 +485,11 @@ impl SshSession {
         channel.request_shell(true).await?;
         log::info!("Shell session established.");
 
+        if let Some(payload) = startup_command.as_deref().and_then(startup_command_payload) {
+            log::info!("Sending the session startup command");
+            channel.data(&payload[..]).await?;
+        }
+
         log::info!("Opening SFTP channel...");
         let sftp_channel = session.channel_open_session().await?;
         sftp_channel.request_subsystem(true, "sftp").await?;
@@ -602,7 +621,8 @@ fn complete_utf8_len(data: &[u8]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_utf8_len, decode_private_key, describe_auth_failure, KEY_PASSPHRASE_REQUIRED,
+        complete_utf8_len, decode_private_key, describe_auth_failure, startup_command_payload,
+        KEY_PASSPHRASE_REQUIRED,
     };
 
     const FIXTURE_PASSPHRASE: &str = "mobaxtauri-test-passphrase";
@@ -825,5 +845,18 @@ mod tests {
     #[test]
     fn invalid_bytes_before_incomplete_tail() {
         assert_eq!(complete_utf8_len(&[0xFF, 0xE6, 0x97]), 1);
+    }
+
+    #[test]
+    fn startup_command_is_trimmed_and_newline_terminated() {
+        assert_eq!(
+            startup_command_payload("  tmux attach  "),
+            Some(b"tmux attach\n".to_vec())
+        );
+        assert_eq!(
+            startup_command_payload("cd /srv\n"),
+            Some(b"cd /srv\n".to_vec())
+        );
+        assert_eq!(startup_command_payload("   \n "), None);
     }
 }

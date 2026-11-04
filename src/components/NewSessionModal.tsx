@@ -41,6 +41,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const [privateKeyPath, setPrivateKeyPath] = useState('');
   const [useAgent, setUseAgent] = useState(false);
   const [jumpSessionId, setJumpSessionId] = useState<string | null>(null);
+  const [startupCommand, setStartupCommand] = useState('');
   const [port, setPort] = useState(() => {
     const saved = localStorage.getItem('ssh-default-port');
     return saved ? parseInt(saved, 10) : 22;
@@ -84,6 +85,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         setUseAgent(source.useAgent ?? false);
         setUsePrivateKey(!!source.privateKeyPath);
         setPrivateKeyPath(source.privateKeyPath || '');
+        setStartupCommand(source.startupCommand || '');
         setSavePassword(duplicateSource ? false : (source.savePassword ?? true));
         setPassword('');
       } else {
@@ -97,6 +99,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         setUseAgent(false);
         setUsePrivateKey(false);
         setPrivateKeyPath('');
+        setStartupCommand('');
         setSavePassword(true);
       }
     }
@@ -139,6 +142,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         useAgent,
         jumpSessionId: jumpSessionId ?? undefined,
         privateKeyPath: !useAgent && usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
+        startupCommand: startupCommand.trim() || undefined,
         savePassword: shouldSavePassword,
       });
       setIsConnecting(false);
@@ -183,6 +187,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
       useAgent,
       jumpSessionId: jumpSessionId ?? undefined,
       privateKeyPath: !useAgent && usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
+      startupCommand: startupCommand.trim() || undefined,
       savePassword: shouldSavePassword,
       // Memory-only when the user declined vault saving (persisted stores
       // strip the password field); lets the terminal's own connect use it.
@@ -499,6 +504,19 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                   )}
                 </>
               )}
+
+              <Field
+                label="Startup Command (Optional)"
+                helperText="Runs in the shell after connecting; useful for tmux, cd, or environment setup."
+              >
+                <Input
+                  value={startupCommand}
+                  onChange={(e) => setStartupCommand(e.target.value)}
+                  placeholder="tmux attach || tmux new"
+                  size="sm"
+                  fontFamily="monospace"
+                />
+              </Field>
             </Stack>
           </form>
         </DialogBody>

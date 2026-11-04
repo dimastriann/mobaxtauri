@@ -23,6 +23,7 @@ export interface SshConnectRequest {
   useSavedCredential: boolean;
   useAgent?: boolean;
   jumpSessionId?: string | null;
+  startupCommand?: string | null;
   connectionTimeoutSecs: number;
 }
 

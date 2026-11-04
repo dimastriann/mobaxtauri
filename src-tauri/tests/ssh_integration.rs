@@ -677,6 +677,7 @@ impl TestContext {
             key_passphrase.map(str::to_string),
             false,
             None,
+            None,
             known_hosts,
             self.remote_targets.clone(),
         )
@@ -717,6 +718,7 @@ impl TestContext {
                 None,
                 None,
                 false,
+                None,
                 None,
                 self.trusted_known_hosts(),
                 self.remote_targets.clone(),
@@ -1466,6 +1468,7 @@ async fn connects_through_a_bastion_session() {
         None,
         None,
         false,
+        None,
         Some(channel.into_stream()),
         target.trusted_known_hosts(),
         target.remote_targets.clone(),

@@ -32,6 +32,9 @@ pub struct SshConnectRequest {
     /// Session id of a connected bastion to tunnel through (ProxyJump).
     #[serde(default)]
     pub jump_session_id: Option<String>,
+    /// Optional command typed into the shell immediately after connecting.
+    #[serde(default)]
+    pub startup_command: Option<String>,
     #[serde(default = "default_connection_timeout_secs")]
     pub connection_timeout_secs: u64,
 }
@@ -155,6 +158,7 @@ mod tests {
             use_saved_credential: false,
             use_agent: false,
             jump_session_id: None,
+            startup_command: None,
             connection_timeout_secs: timeout,
         }
     }
@@ -183,6 +187,7 @@ mod tests {
         .expect("request should deserialize");
 
         assert_eq!(request.connection_timeout(), Ok(Duration::from_secs(15)));
+        assert_eq!(request.startup_command, None);
     }
 
     #[test]

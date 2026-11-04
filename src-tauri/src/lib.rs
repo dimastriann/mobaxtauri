@@ -140,6 +140,7 @@ async fn ssh_connect(
         use_saved_credential,
         use_agent,
         jump_session_id,
+        startup_command,
         connection_timeout_secs: _,
     } = request;
     log::info!("Attempting to connect to {}:{} as {}", host, port, user);
@@ -217,6 +218,7 @@ async fn ssh_connect(
         private_key_path,
         key_passphrase,
         use_agent,
+        startup_command,
         jump_stream,
         Arc::new(known_hosts.inner().clone()),
         remote_forwards,
