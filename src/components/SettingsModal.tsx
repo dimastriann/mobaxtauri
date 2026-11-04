@@ -788,7 +788,7 @@ const AboutSettings: React.FC = () => {
         MobaXTauri
       </Text>
       <Text fontSize="13px" color="fg.muted">
-        v0.7.0
+        v0.8.0
       </Text>
       <Text fontSize="12px" color="fg.muted" textAlign="center" maxW="250px">
         A modern SSH client and terminal emulator built with Tauri and React.
