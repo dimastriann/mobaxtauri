@@ -9,6 +9,7 @@ import {
   IconButton,
   Flex,
   Button,
+  Input,
 } from '@chakra-ui/react';
 import {
   LuFolder,
@@ -40,6 +41,8 @@ import {
   LuFilePlus,
   LuFolderInput,
   LuInfo,
+  LuSearch,
+  LuX,
 } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -201,11 +204,16 @@ const SftpSidebar: React.FC = () => {
   const [createPrompt, setCreatePrompt] = useState<'folder' | 'file' | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [selectedNames, setSelectedNames] = useState<Set<string>>(() => new Set());
+  const [filterQuery, setFilterQuery] = useState('');
   const panelRef = useRef<HTMLDivElement | null>(null);
   const lastSelectedIndexRef = useRef<number | null>(null);
   const lastNotifiedTransferRef = useRef<{ id: string; status: string } | null>(null);
 
   const selectedFiles = files.filter((file) => selectedNames.has(file.name));
+  const normalizedFilter = filterQuery.trim().toLocaleLowerCase();
+  const visibleFiles = normalizedFilter
+    ? files.filter((file) => file.name.toLocaleLowerCase().includes(normalizedFilter))
+    : files;
 
   const clearSelection = () => {
     setSelectedNames(new Set());
@@ -899,6 +907,37 @@ const SftpSidebar: React.FC = () => {
         {renderBreadcrumbs()}
       </Box>
 
+      <HStack px={2} py={1} borderBottom="1px solid" borderColor="border.subtle" gap={1}>
+        <Icon as={LuSearch} boxSize="12px" color="fg.subtle" aria-hidden="true" />
+        <Input
+          size="xs"
+          variant="subtle"
+          value={filterQuery}
+          placeholder={t('sftp.filterPlaceholder')}
+          aria-label={t('sftp.filter')}
+          onChange={(event) => {
+            setFilterQuery(event.target.value);
+            clearSelection();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setFilterQuery('');
+          }}
+        />
+        {filterQuery && (
+          <IconButton
+            aria-label={t('sftp.clearFilter')}
+            size="xs"
+            variant="ghost"
+            onClick={() => {
+              setFilterQuery('');
+              clearSelection();
+            }}
+          >
+            <LuX size={12} />
+          </IconButton>
+        )}
+      </HStack>
+
       {transfers.length > 0 && (
         <VStack
           align="stretch"
@@ -998,8 +1037,14 @@ const SftpSidebar: React.FC = () => {
               Error: {error}
             </Text>
           </Box>
+        ) : visibleFiles.length === 0 && files.length > 0 ? (
+          <Box p={4}>
+            <Text color="fg.muted" fontSize="11px">
+              {t('sftp.noMatches', { query: filterQuery.trim() })}
+            </Text>
+          </Box>
         ) : (
-          files.map((file, index) => {
+          visibleFiles.map((file, index) => {
             const isSelected = selectedNames.has(file.name);
             return (
               <HStack

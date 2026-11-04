@@ -20,6 +20,10 @@ export const en = {
   'settings.tab.about': 'About',
 
   'sftp.files': 'SFTP files',
+  'sftp.filter': 'Filter files',
+  'sftp.filterPlaceholder': 'Filter this folder…',
+  'sftp.clearFilter': 'Clear filter',
+  'sftp.noMatches': 'No files match “{query}”.',
   'sftp.downloadSelected': 'Download {count} items',
   'sftp.downloadManyResult': 'Downloaded {downloaded} items',
   'sftp.downloadManyFailed': 'Some items could not be downloaded',

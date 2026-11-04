@@ -17,6 +17,10 @@ export const id: Record<TranslationKey, string> = {
   'settings.tab.about': 'Tentang',
 
   'sftp.files': 'Berkas SFTP',
+  'sftp.filter': 'Filter berkas',
+  'sftp.filterPlaceholder': 'Filter folder ini…',
+  'sftp.clearFilter': 'Hapus filter',
+  'sftp.noMatches': 'Tidak ada berkas yang cocok dengan “{query}”.',
   'sftp.downloadSelected': 'Unduh {count} item',
   'sftp.downloadManyResult': '{downloaded} item diunduh',
   'sftp.downloadManyFailed': 'Beberapa item gagal diunduh',

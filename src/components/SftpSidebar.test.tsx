@@ -106,6 +106,35 @@ describe('SftpSidebar', () => {
     expect(a).toHaveAttribute('aria-selected', 'false');
   });
 
+  it('filters the current directory by file name', () => {
+    mockedUseSessionStore.mockReturnValue('session-1');
+    mockedUseSftpStore.mockReturnValue({
+      currentPath: '/home',
+      files: [
+        { name: 'app.log', is_dir: false, is_file: true, size: 1, modified: 0, mode: 0o100644 },
+        { name: 'report.txt', is_dir: false, is_file: true, size: 1, modified: 0, mode: 0o100644 },
+        { name: 'notes.md', is_dir: false, is_file: true, size: 1, modified: 0, mode: 0o100644 },
+      ],
+      isLoading: false,
+      error: null,
+      transfers: [],
+      fetchDirectory: vi.fn(),
+      cd: vi.fn(),
+    });
+
+    render(
+      <Provider>
+        <SftpSidebar />
+      </Provider>,
+    );
+
+    fireEvent.change(screen.getByLabelText('Filter files'), { target: { value: 'rep' } });
+
+    expect(screen.getByRole('option', { name: 'report.txt' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'app.log' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'notes.md' })).not.toBeInTheDocument();
+  });
+
   it('offers a batch delete action for a multi-selection', () => {
     mockedUseSessionStore.mockReturnValue('session-1');
     mockedUseSftpStore.mockReturnValue({
