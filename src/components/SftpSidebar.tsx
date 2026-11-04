@@ -198,8 +198,39 @@ const SftpSidebar: React.FC = () => {
   const [propertiesFile, setPropertiesFile] = useState<SftpFile | null>(null);
   const [createPrompt, setCreatePrompt] = useState<'folder' | 'file' | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [selectedNames, setSelectedNames] = useState<Set<string>>(() => new Set());
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const lastSelectedIndexRef = useRef<number | null>(null);
   const lastNotifiedTransferRef = useRef<{ id: string; status: string } | null>(null);
+
+  const clearSelection = () => {
+    setSelectedNames(new Set());
+    lastSelectedIndexRef.current = null;
+  };
+
+  const handleSelect = (
+    file: SftpFile,
+    index: number,
+    event: React.MouseEvent | React.KeyboardEvent,
+  ) => {
+    const additive = event.ctrlKey || event.metaKey;
+    if (event.shiftKey && lastSelectedIndexRef.current !== null) {
+      const start = Math.min(lastSelectedIndexRef.current, index);
+      const end = Math.max(lastSelectedIndexRef.current, index);
+      const range = files.slice(start, end + 1).map((entry) => entry.name);
+      setSelectedNames((previous) => new Set(additive ? [...previous, ...range] : range));
+    } else if (additive) {
+      setSelectedNames((previous) => {
+        const next = new Set(previous);
+        if (next.has(file.name)) next.delete(file.name);
+        else next.add(file.name);
+        return next;
+      });
+    } else {
+      setSelectedNames(new Set([file.name]));
+    }
+    lastSelectedIndexRef.current = index;
+  };
 
   const handleCreatePromptConfirm = (values: Record<string, string>) => {
     const name = (values.name ?? '').trim();
@@ -416,6 +447,7 @@ const SftpSidebar: React.FC = () => {
 
   const handleFileClick = (file: SftpFile) => {
     if (file.is_dir) {
+      clearSelection();
       cd(activeSessionId, file.name);
     }
   };
@@ -828,6 +860,16 @@ const SftpSidebar: React.FC = () => {
         px={1}
         pb={2}
         className="custom-scrollbar"
+        role="listbox"
+        aria-multiselectable="true"
+        aria-label={t('sftp.files')}
+        tabIndex={0}
+        onClick={(event) => {
+          if (!(event.target as HTMLElement).closest('[data-sftp-row]')) clearSelection();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') clearSelection();
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           setContextMenu({ x: e.clientX, y: e.clientY, file: null });
@@ -844,67 +886,90 @@ const SftpSidebar: React.FC = () => {
             </Text>
           </Box>
         ) : (
-          files.map((file) => (
-            <HStack
-              key={`${file.name}-${file.is_dir}`}
-              p={2}
-              borderRadius="4px"
-              cursor="pointer"
-              _hover={{ bg: 'bg.emphasized' }}
-              onDoubleClick={() => handleFileClick(file)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setContextMenu({ x: e.clientX, y: e.clientY, file });
-              }}
-              gap={3}
-              transition="background 0.15s"
-            >
-              <Icon as={getFileIcon(file)} boxSize="14px" color={getFileVisual(file).color} />
-              <VStack align="flex-start" gap={0} flex={1} overflow="hidden">
-                {renamingFile === file.name ? (
-                  <Box w="full" py={1}>
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onBlur={handleRename}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleRename();
-                        if (e.key === 'Escape') setRenamingFile(null);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        background: 'var(--chakra-colors-bg-muted)',
-                        border: '1px solid var(--chakra-colors-blue-fg)',
-                        borderRadius: '2px',
-                        color: 'var(--chakra-colors-fg)',
-                        fontSize: '12px',
-                        padding: '2px 4px',
-                        width: '100%',
-                        outline: 'none',
-                      }}
-                    />
-                  </Box>
-                ) : (
-                  <>
-                    <Text
-                      fontSize="12px"
-                      color="fg"
-                      lineClamp={1}
-                      fontWeight={file.is_dir ? '500' : '400'}
-                    >
-                      {file.name}
-                    </Text>
-                    <Text fontSize="9px" color="fg.muted" lineClamp={1}>
-                      {!file.is_dir ? `${formatFileSize(file.size)}  ` : ''}
-                      {formatMetaDetails(file)}
-                    </Text>
-                  </>
-                )}
-              </VStack>
-            </HStack>
-          ))
+          files.map((file, index) => {
+            const isSelected = selectedNames.has(file.name);
+            return (
+              <HStack
+                key={`${file.name}-${file.is_dir}`}
+                data-sftp-row
+                role="option"
+                aria-label={file.name}
+                aria-selected={isSelected}
+                tabIndex={0}
+                p={2}
+                borderRadius="4px"
+                cursor="pointer"
+                bg={isSelected ? 'blue.subtle' : undefined}
+                _hover={{ bg: isSelected ? 'blue.muted' : 'bg.emphasized' }}
+                onClick={(event) => handleSelect(file, index, event)}
+                onDoubleClick={() => handleFileClick(file)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    handleFileClick(file);
+                  } else if (event.key === ' ') {
+                    event.preventDefault();
+                    handleSelect(file, index, event);
+                  }
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!selectedNames.has(file.name)) {
+                    setSelectedNames(new Set([file.name]));
+                    lastSelectedIndexRef.current = index;
+                  }
+                  setContextMenu({ x: e.clientX, y: e.clientY, file });
+                }}
+                gap={3}
+                transition="background 0.15s"
+              >
+                <Icon as={getFileIcon(file)} boxSize="14px" color={getFileVisual(file).color} />
+                <VStack align="flex-start" gap={0} flex={1} overflow="hidden">
+                  {renamingFile === file.name ? (
+                    <Box w="full" py={1}>
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={handleRename}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleRename();
+                          if (e.key === 'Escape') setRenamingFile(null);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          background: 'var(--chakra-colors-bg-muted)',
+                          border: '1px solid var(--chakra-colors-blue-fg)',
+                          borderRadius: '2px',
+                          color: 'var(--chakra-colors-fg)',
+                          fontSize: '12px',
+                          padding: '2px 4px',
+                          width: '100%',
+                          outline: 'none',
+                        }}
+                      />
+                    </Box>
+                  ) : (
+                    <>
+                      <Text
+                        fontSize="12px"
+                        color="fg"
+                        lineClamp={1}
+                        fontWeight={file.is_dir ? '500' : '400'}
+                      >
+                        {file.name}
+                      </Text>
+                      <Text fontSize="9px" color="fg.muted" lineClamp={1}>
+                        {!file.is_dir ? `${formatFileSize(file.size)}  ` : ''}
+                        {formatMetaDetails(file)}
+                      </Text>
+                    </>
+                  )}
+                </VStack>
+              </HStack>
+            );
+          })
         )}
       </VStack>
 

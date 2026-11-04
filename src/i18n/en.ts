@@ -19,6 +19,7 @@ export const en = {
   'settings.tab.history': 'History',
   'settings.tab.about': 'About',
 
+  'sftp.files': 'SFTP files',
   'sftp.menu.properties': 'Properties',
   'sftp.properties.title': 'Properties',
   'sftp.properties.type': 'Type',

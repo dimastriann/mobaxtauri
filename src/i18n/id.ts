@@ -16,6 +16,7 @@ export const id: Record<TranslationKey, string> = {
   'settings.tab.history': 'Riwayat',
   'settings.tab.about': 'Tentang',
 
+  'sftp.files': 'Berkas SFTP',
   'sftp.menu.properties': 'Properti',
   'sftp.properties.title': 'Properti',
   'sftp.properties.type': 'Tipe',
