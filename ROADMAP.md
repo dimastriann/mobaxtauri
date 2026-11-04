@@ -7,21 +7,31 @@ This roadmap communicates direction rather than fixed deadlines. Priorities may 
 - [x] Add known-hosts storage and explicit SSH host-key verification (`security`, `help wanted`)
 - [x] Replace the application-managed vault key with a documented user/OS-backed unlock model (`security`)
 - [x] Add continuous-integration checks for pull requests
-- [ ] Normalize existing frontend and Rust formatting, then enforce formatting in CI (`testing`, `good first issue`)
-- [ ] Reduce the existing frontend lint-warning baseline (`frontend`, `good first issue`)
-- [ ] Resolve the Rust `type_complexity` and `too_many_arguments` Clippy warnings, then deny warnings in CI (`rust`, `good first issue`)
+- [x] Normalize existing frontend and Rust formatting, then enforce formatting in CI (`testing`, `good first issue`)
+- [x] Reduce the existing frontend lint-warning baseline (`frontend`, `good first issue`)
+- [x] Resolve the Rust `type_complexity` and `too_many_arguments` Clippy warnings, then deny warnings in CI (`rust`, `good first issue`)
 - [ ] Establish repeatable Windows, macOS, and Linux smoke-test checklists (`testing`, `help wanted`)
-- [ ] Add screenshots and a short demo to the README (`documentation`, `good first issue`)
+- [x] Add screenshots and a short demo to the README (`documentation`, `good first issue`)
 - [ ] Verify release downloads and installation instructions on each supported platform (`release`, `help wanted`)
 
 ## Next: reliability and compatibility
 
-- [ ] Support passphrase-protected SSH private keys (`ssh`, `help wanted`)
-- [ ] Improve authentication and connection error messages (`ssh`, `good first issue`)
-- [ ] Stream SFTP uploads/downloads instead of buffering whole files (`sftp`, `help wanted`)
-- [ ] Add transfer progress, cancellation, and conflict handling (`sftp`)
-- [ ] Add integration tests against a disposable SSH server (`testing`)
+- [x] Support passphrase-protected SSH private keys (`ssh`, `help wanted`)
+- [x] Improve authentication and connection error messages (`ssh`, `good first issue`)
+- [x] Stream SFTP uploads/downloads instead of buffering whole files (`sftp`, `help wanted`)
+- [x] Add transfer progress, cancellation, and conflict handling (`sftp`)
+- [x] Add integration tests against a disposable SSH server (`testing`)
 - [ ] Improve keyboard navigation, focus management, and screen-reader labels (`accessibility`, `help wanted`)
+
+## v0.8.0: SFTP productivity and session workflow
+
+- [x] SFTP multi-select, batch delete, and batch download
+- [x] SFTP properties and permission (chmod) editor
+- [x] Filename filter for the current SFTP directory
+- [x] Transfer speed and ETA in the queue
+- [x] Per-session startup command
+- [x] Trusted-hosts manager in SSH settings
+- [x] EN/ID localization for the SFTP explorer, session form, and SSH settings
 
 ## Later: broader workflows
 
