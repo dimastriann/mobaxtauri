@@ -39,6 +39,7 @@ import {
   LuFolderPlus,
   LuFilePlus,
   LuFolderInput,
+  LuInfo,
 } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -58,7 +59,9 @@ import { toaster } from './ui/toaster';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './ContextMenu';
 import SftpEditorModal from './SftpEditorModal';
 import SftpConflictModal from './SftpConflictModal';
+import SftpPropertiesModal from './SftpPropertiesModal';
 import PromptModal from './PromptModal';
+import { useTranslation } from '../store/useLocaleStore';
 
 const formatMtime = (secs: number | null): string => {
   if (!secs) return '';
@@ -151,6 +154,7 @@ const getFileVisual = (file: SftpFile): { icon: IconType; color: string } => {
 };
 
 const SftpSidebar: React.FC = () => {
+  const { t } = useTranslation();
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const activeSession = useSessionStore((state) =>
     state.sessions.find((s) => s.id === activeSessionId),
@@ -191,6 +195,7 @@ const SftpSidebar: React.FC = () => {
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [editorFile, setEditorFile] = useState<{ path: string; name: string } | null>(null);
+  const [propertiesFile, setPropertiesFile] = useState<SftpFile | null>(null);
   const [createPrompt, setCreatePrompt] = useState<'folder' | 'file' | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -553,6 +558,14 @@ const SftpSidebar: React.FC = () => {
         {renderCopyPathItems(file)}
         <ContextMenuSeparator />
         <ContextMenuItem
+          icon={LuInfo}
+          label={t('sftp.menu.properties')}
+          onClick={() => {
+            setContextMenu(null);
+            setPropertiesFile(file);
+          }}
+        />
+        <ContextMenuItem
           icon={LuPencil}
           label="Rename"
           onClick={() => {
@@ -616,6 +629,14 @@ const SftpSidebar: React.FC = () => {
         <ContextMenuSeparator />
         {renderCopyPathItems(file)}
         <ContextMenuSeparator />
+        <ContextMenuItem
+          icon={LuInfo}
+          label={t('sftp.menu.properties')}
+          onClick={() => {
+            setContextMenu(null);
+            setPropertiesFile(file);
+          }}
+        />
         <ContextMenuItem
           icon={LuPencil}
           label="Rename"
@@ -902,6 +923,23 @@ const SftpSidebar: React.FC = () => {
         filePath={editorFile?.path || ''}
         fileName={editorFile?.name || ''}
       />
+
+      {propertiesFile && (
+        <SftpPropertiesModal
+          isOpen
+          onClose={() => setPropertiesFile(null)}
+          sessionId={activeSessionId}
+          filePath={
+            currentPath.endsWith('/')
+              ? `${currentPath}${propertiesFile.name}`
+              : `${currentPath}/${propertiesFile.name}`
+          }
+          file={propertiesFile}
+          onSaved={() => {
+            void refresh(activeSessionId);
+          }}
+        />
+      )}
 
       <SftpConflictModal
         isOpen={!!conflictPrompt}
