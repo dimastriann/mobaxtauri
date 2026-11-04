@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { save, open } from '@tauri-apps/plugin-dialog';
+import { joinLocalPath } from '../utils/localPath';
 import {
   SFTP_TARGET_EXISTS_MARKER,
   type SftpConflictPolicy,
@@ -23,6 +24,11 @@ export interface SftpFile {
 
 /** How long finished transfers stay in the queue view. */
 const FINISHED_TRANSFER_LINGER_MS = 4000;
+
+export interface SftpBatchDownloadResult {
+  downloaded: number;
+  failures: { name: string; message: string }[];
+}
 
 export interface SftpConflictPrompt {
   kind: 'upload' | 'copy' | 'create-file' | 'folder-download' | 'folder-upload';
@@ -50,6 +56,10 @@ interface SftpState {
   reset: () => void;
   downloadFile: (sessionId: string, fileName: string) => Promise<void>;
   downloadFolder: (sessionId: string, folderName: string) => Promise<void>;
+  downloadSelected: (
+    sessionId: string,
+    files: SftpFile[],
+  ) => Promise<SftpBatchDownloadResult | null>;
   uploadFile: (sessionId: string) => Promise<void>;
   uploadFolder: (sessionId: string) => Promise<void>;
   uploadPaths: (sessionId: string, paths: string[]) => Promise<void>;
@@ -391,6 +401,44 @@ export const useSftpStore = create<SftpState>((set, get) => {
           isLoading: false,
         });
       }
+    },
+
+    downloadSelected: async (sessionId, files) => {
+      if (!files.length) return null;
+      const picked = await open({ multiple: false, directory: true });
+      if (!picked || Array.isArray(picked)) return null;
+
+      const state = get();
+      const result: SftpBatchDownloadResult = { downloaded: 0, failures: [] };
+      for (const [index, file] of files.entries()) {
+        const remotePath = state.currentPath.endsWith('/')
+          ? `${state.currentPath}${file.name}`
+          : `${state.currentPath}/${file.name}`;
+        const localPath = joinLocalPath(picked, file.name);
+        try {
+          if (file.is_dir) {
+            await invoke('sftp_download_folder', {
+              sessionId,
+              remotePath,
+              localPath,
+              transferId: `folder-${Date.now()}-${index}`,
+              conflictPolicy: 'rename',
+            });
+          } else {
+            await invoke('sftp_download_file', {
+              sessionId,
+              remotePath,
+              localPath,
+              transferId: `download-${Date.now()}-${index}`,
+            });
+          }
+          result.downloaded += 1;
+        } catch (err) {
+          result.failures.push({ name: file.name, message: String(err) });
+        }
+      }
+      await get().fetchDirectory(sessionId);
+      return result;
     },
 
     uploadFile: async (sessionId) => {

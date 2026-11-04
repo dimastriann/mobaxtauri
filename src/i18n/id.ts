@@ -17,6 +17,9 @@ export const id: Record<TranslationKey, string> = {
   'settings.tab.about': 'Tentang',
 
   'sftp.files': 'Berkas SFTP',
+  'sftp.downloadSelected': 'Unduh {count} item',
+  'sftp.downloadManyResult': '{downloaded} item diunduh',
+  'sftp.downloadManyFailed': 'Beberapa item gagal diunduh',
   'sftp.delete': 'Hapus',
   'sftp.deleteSelected': 'Hapus {count} item',
   'sftp.deleteManyTitle': 'Hapus Item Terpilih',

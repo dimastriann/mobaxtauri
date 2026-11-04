@@ -20,6 +20,9 @@ export const en = {
   'settings.tab.about': 'About',
 
   'sftp.files': 'SFTP files',
+  'sftp.downloadSelected': 'Download {count} items',
+  'sftp.downloadManyResult': 'Downloaded {downloaded} items',
+  'sftp.downloadManyFailed': 'Some items could not be downloaded',
   'sftp.delete': 'Delete',
   'sftp.deleteSelected': 'Delete {count} items',
   'sftp.deleteManyTitle': 'Delete Selected Items',

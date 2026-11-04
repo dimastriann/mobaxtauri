@@ -132,6 +132,7 @@ describe('SftpSidebar', () => {
     fireEvent.contextMenu(screen.getByRole('option', { name: 'b.txt' }));
 
     expect(screen.getByText('Delete 2 items')).toBeInTheDocument();
+    expect(screen.getByText('Download 2 items')).toBeInTheDocument();
   });
 
   it('should render file names when files are present', () => {

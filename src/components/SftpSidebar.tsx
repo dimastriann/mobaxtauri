@@ -171,6 +171,7 @@ const SftpSidebar: React.FC = () => {
     uploadFolder,
     uploadPaths,
     downloadFile,
+    downloadSelected,
     copyFile,
     openFile,
     renameFile,
@@ -523,6 +524,39 @@ const SftpSidebar: React.FC = () => {
     }
   };
 
+  const handleDownloadSelected = async () => {
+    if (!activeSessionId || selectedFiles.length === 0) return;
+    setContextMenu(null);
+
+    try {
+      const result = await downloadSelected(activeSessionId, selectedFiles);
+      if (!result) return;
+      clearSelection();
+
+      if (result.failures.length === 0) {
+        toaster.create({
+          title: t('sftp.downloadManyResult', { downloaded: result.downloaded }),
+          type: 'success',
+        });
+      } else {
+        toaster.create({
+          title: t('sftp.downloadManyFailed'),
+          description: result.failures
+            .slice(0, 3)
+            .map((failure) => `${failure.name}: ${failure.message}`)
+            .join('\n'),
+          type: 'error',
+        });
+      }
+    } catch (err) {
+      toaster.create({
+        title: t('sftp.downloadManyFailed'),
+        description: String(err),
+        type: 'error',
+      });
+    }
+  };
+
   const isBatchSelection = (file: SftpFile) =>
     selectedFiles.length > 1 && selectedNames.has(file.name);
 
@@ -618,6 +652,13 @@ const SftpSidebar: React.FC = () => {
   const renderFolderMenu = (menu: { x: number; y: number }, file: SftpFile) => (
     <ContextMenu x={menu.x} y={menu.y} onClose={() => setContextMenu(null)}>
       <VStack align="stretch" gap={0}>
+        {isBatchSelection(file) && (
+          <ContextMenuItem
+            icon={LuDownload}
+            label={t('sftp.downloadSelected', { count: selectedFiles.length })}
+            onClick={() => void handleDownloadSelected()}
+          />
+        )}
         <ContextMenuItem
           icon={LuFolderOpen}
           color="blue.fg"
@@ -679,6 +720,13 @@ const SftpSidebar: React.FC = () => {
   const renderFileMenu = (menu: { x: number; y: number }, file: SftpFile) => (
     <ContextMenu x={menu.x} y={menu.y} onClose={() => setContextMenu(null)}>
       <VStack align="stretch" gap={0}>
+        {isBatchSelection(file) && (
+          <ContextMenuItem
+            icon={LuDownload}
+            label={t('sftp.downloadSelected', { count: selectedFiles.length })}
+            onClick={() => void handleDownloadSelected()}
+          />
+        )}
         <ContextMenuItem
           icon={LuExternalLink}
           color="blue.fg"
