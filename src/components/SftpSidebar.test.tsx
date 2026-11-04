@@ -106,6 +106,34 @@ describe('SftpSidebar', () => {
     expect(a).toHaveAttribute('aria-selected', 'false');
   });
 
+  it('offers a batch delete action for a multi-selection', () => {
+    mockedUseSessionStore.mockReturnValue('session-1');
+    mockedUseSftpStore.mockReturnValue({
+      currentPath: '/home',
+      files: [
+        { name: 'a.txt', is_dir: false, is_file: true, size: 1, modified: 0, mode: 0o100644 },
+        { name: 'b.txt', is_dir: false, is_file: true, size: 1, modified: 0, mode: 0o100644 },
+      ],
+      isLoading: false,
+      error: null,
+      transfers: [],
+      fetchDirectory: vi.fn(),
+      cd: vi.fn(),
+    });
+
+    render(
+      <Provider>
+        <SftpSidebar />
+      </Provider>,
+    );
+
+    fireEvent.click(screen.getByRole('option', { name: 'a.txt' }));
+    fireEvent.click(screen.getByRole('option', { name: 'b.txt' }), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByRole('option', { name: 'b.txt' }));
+
+    expect(screen.getByText('Delete 2 items')).toBeInTheDocument();
+  });
+
   it('should render file names when files are present', () => {
     mockedUseSftpStore.mockReturnValue({
       currentPath: '/home',

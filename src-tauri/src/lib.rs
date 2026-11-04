@@ -8,6 +8,7 @@ mod session_manager;
 mod session_types;
 mod sftp_conflict;
 pub mod sftp_permissions;
+pub mod sftp_remove;
 pub mod sftp_transfer;
 mod sftp_utils;
 pub mod ssh;
@@ -405,6 +406,22 @@ async fn sftp_set_permissions(
         .cloned()
         .ok_or("SFTP session not found")?;
     crate::sftp_permissions::set_permissions(&sftp, &path, mode).await
+}
+
+#[tauri::command]
+async fn sftp_remove_many(
+    state: State<'_, AppState>,
+    session_id: String,
+    paths: Vec<String>,
+) -> Result<crate::sftp_remove::RemoveManyResult, String> {
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
+        .get(&session_id)
+        .cloned()
+        .ok_or("SFTP session not found")?;
+    Ok(crate::sftp_remove::remove_many(&sftp, paths).await)
 }
 
 #[tauri::command]
@@ -1209,6 +1226,7 @@ pub fn run() {
             ssh_resize,
             sftp_list_dir,
             sftp_set_permissions,
+            sftp_remove_many,
             sftp_download_file,
             sftp_upload_file,
             sftp_copy_file,

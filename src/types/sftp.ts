@@ -43,3 +43,14 @@ export interface SftpLocalEntryPayload {
   name: string;
   isDir: boolean;
 }
+
+/** Payload of sftp_remove_many (mirrors Rust sftp_remove::RemoveManyResult). */
+export interface SftpRemoveFailure {
+  path: string;
+  message: string;
+}
+
+export interface SftpRemoveManyResult {
+  removed: string[];
+  failures: SftpRemoveFailure[];
+}

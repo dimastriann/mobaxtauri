@@ -17,6 +17,12 @@ export const id: Record<TranslationKey, string> = {
   'settings.tab.about': 'Tentang',
 
   'sftp.files': 'Berkas SFTP',
+  'sftp.delete': 'Hapus',
+  'sftp.deleteSelected': 'Hapus {count} item',
+  'sftp.deleteManyTitle': 'Hapus Item Terpilih',
+  'sftp.deleteManyConfirm': 'Hapus {count} item terpilih? Tindakan ini tidak bisa dibatalkan.',
+  'sftp.deleteManyResult': '{removed} item dihapus',
+  'sftp.deleteManyFailed': 'Beberapa item gagal dihapus',
   'sftp.menu.properties': 'Properti',
   'sftp.properties.title': 'Properti',
   'sftp.properties.type': 'Tipe',

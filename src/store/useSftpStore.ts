@@ -5,6 +5,7 @@ import {
   SFTP_TARGET_EXISTS_MARKER,
   type SftpConflictPolicy,
   type SftpLocalEntryPayload,
+  type SftpRemoveManyResult,
   type SftpTransferEvent,
 } from '../types/sftp';
 
@@ -56,6 +57,7 @@ interface SftpState {
   openFile: (sessionId: string, fileName: string) => Promise<void>;
   renameFile: (sessionId: string, oldName: string, newName: string) => Promise<void>;
   deleteFile: (sessionId: string, name: string, isDir: boolean) => Promise<void>;
+  deleteFiles: (sessionId: string, names: string[]) => Promise<SftpRemoveManyResult>;
   createDir: (sessionId: string, dirName: string) => Promise<void>;
   createFile: (sessionId: string, fileName: string) => Promise<void>;
   updateTransfer: (transfer: SftpTransferEvent) => void;
@@ -517,6 +519,29 @@ export const useSftpStore = create<SftpState>((set, get) => {
       } catch (err) {
         console.error(err);
         set({ error: String(err), isLoading: false });
+      }
+    },
+
+    deleteFiles: async (sessionId, names) => {
+      const state = get();
+      const paths = names.map((name) =>
+        state.currentPath.endsWith('/')
+          ? `${state.currentPath}${name}`
+          : `${state.currentPath}/${name}`,
+      );
+
+      try {
+        set({ error: null });
+        const result = await invoke<SftpRemoveManyResult>('sftp_remove_many', {
+          sessionId,
+          paths,
+        });
+        await get().fetchDirectory(sessionId);
+        return result;
+      } catch (err) {
+        console.error(err);
+        set({ error: String(err) });
+        throw err;
       }
     },
 

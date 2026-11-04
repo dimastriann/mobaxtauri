@@ -881,6 +881,33 @@ async fn set_permissions_preserves_the_file_type_bits() {
 }
 
 #[tokio::test]
+async fn remove_many_classifies_entries_and_continues_after_failures() {
+    let ctx = TestContext::start("sftp-remove-many", HostTrust::Trusted, AuthorizedKey::None).await;
+    std::fs::write(ctx.sftp_root.join("one.txt"), b"one").expect("seed one");
+    std::fs::write(ctx.sftp_root.join("two.txt"), b"two").expect("seed two");
+    std::fs::create_dir(ctx.sftp_root.join("empty")).expect("seed empty dir");
+    let sftp = ctx.connected_sftp().await;
+
+    let result = mobaxtauri_lib::sftp_remove::remove_many(
+        &sftp,
+        vec![
+            "/one.txt".to_string(),
+            "/missing.txt".to_string(),
+            "/empty".to_string(),
+            "/two.txt".to_string(),
+        ],
+    )
+    .await;
+
+    assert_eq!(result.removed, vec!["/one.txt", "/empty", "/two.txt"]);
+    assert_eq!(result.failures.len(), 1);
+    assert_eq!(result.failures[0].path, "/missing.txt");
+    assert!(!ctx.sftp_root.join("one.txt").exists());
+    assert!(!ctx.sftp_root.join("empty").exists());
+    assert!(!ctx.sftp_root.join("two.txt").exists());
+}
+
+#[tokio::test]
 async fn unauthorized_key_is_rejected_with_an_actionable_message() {
     let ctx = TestContext::start("bad-pubkey", HostTrust::Trusted, AuthorizedKey::Encrypted).await;
     let error = match ctx

@@ -175,6 +175,7 @@ const SftpSidebar: React.FC = () => {
     openFile,
     renameFile,
     deleteFile,
+    deleteFiles,
     createDir,
     createFile,
     downloadFolder,
@@ -202,6 +203,8 @@ const SftpSidebar: React.FC = () => {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const lastSelectedIndexRef = useRef<number | null>(null);
   const lastNotifiedTransferRef = useRef<{ id: string; status: string } | null>(null);
+
+  const selectedFiles = files.filter((file) => selectedNames.has(file.name));
 
   const clearSelection = () => {
     setSelectedNames(new Set());
@@ -477,6 +480,52 @@ const SftpSidebar: React.FC = () => {
     setContextMenu(null);
   };
 
+  const handleDeleteSelected = async () => {
+    if (!activeSessionId || selectedFiles.length === 0) return;
+    setContextMenu(null);
+
+    try {
+      const confirmed = await ask(t('sftp.deleteManyConfirm', { count: selectedFiles.length }), {
+        title: t('sftp.deleteManyTitle'),
+        kind: 'warning',
+        okLabel: t('sftp.delete'),
+        cancelLabel: t('common.cancel'),
+      });
+      if (!confirmed) return;
+
+      const result = await deleteFiles(
+        activeSessionId,
+        selectedFiles.map((file) => file.name),
+      );
+      clearSelection();
+
+      if (result.failures.length === 0) {
+        toaster.create({
+          title: t('sftp.deleteManyResult', { removed: result.removed.length }),
+          type: 'success',
+        });
+      } else {
+        toaster.create({
+          title: t('sftp.deleteManyFailed'),
+          description: result.failures
+            .slice(0, 3)
+            .map((failure) => `${failure.path}: ${failure.message}`)
+            .join('\n'),
+          type: 'error',
+        });
+      }
+    } catch (err) {
+      toaster.create({
+        title: t('sftp.deleteManyFailed'),
+        description: String(err),
+        type: 'error',
+      });
+    }
+  };
+
+  const isBatchSelection = (file: SftpFile) =>
+    selectedFiles.length > 1 && selectedNames.has(file.name);
+
   const renderBreadcrumbs = () => {
     const parts = currentPath.split('/').filter((p) => p !== '');
     const breadcrumbs = [{ name: 'Root', path: '/' }];
@@ -609,10 +658,18 @@ const SftpSidebar: React.FC = () => {
         <ContextMenuItem
           icon={LuTrash2}
           color="red.fg"
-          label="Delete"
+          label={
+            isBatchSelection(file)
+              ? t('sftp.deleteSelected', { count: selectedFiles.length })
+              : t('sftp.delete')
+          }
           onClick={() => {
-            setContextMenu(null);
-            handleDelete(file);
+            if (isBatchSelection(file)) {
+              void handleDeleteSelected();
+            } else {
+              setContextMenu(null);
+              handleDelete(file);
+            }
           }}
         />
       </VStack>
@@ -681,10 +738,18 @@ const SftpSidebar: React.FC = () => {
         <ContextMenuItem
           icon={LuTrash2}
           color="red.fg"
-          label="Delete"
+          label={
+            isBatchSelection(file)
+              ? t('sftp.deleteSelected', { count: selectedFiles.length })
+              : t('sftp.delete')
+          }
           onClick={() => {
-            setContextMenu(null);
-            handleDelete(file);
+            if (isBatchSelection(file)) {
+              void handleDeleteSelected();
+            } else {
+              setContextMenu(null);
+              handleDelete(file);
+            }
           }}
         />
       </VStack>

@@ -20,6 +20,12 @@ export const en = {
   'settings.tab.about': 'About',
 
   'sftp.files': 'SFTP files',
+  'sftp.delete': 'Delete',
+  'sftp.deleteSelected': 'Delete {count} items',
+  'sftp.deleteManyTitle': 'Delete Selected Items',
+  'sftp.deleteManyConfirm': 'Delete {count} selected items? This cannot be undone.',
+  'sftp.deleteManyResult': 'Deleted {removed} items',
+  'sftp.deleteManyFailed': 'Some items could not be deleted',
   'sftp.menu.properties': 'Properties',
   'sftp.properties.title': 'Properties',
   'sftp.properties.type': 'Type',
