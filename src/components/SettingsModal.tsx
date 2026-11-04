@@ -88,7 +88,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     >
       <DialogContent bg="bg.panel" borderColor="border.subtle" maxW="600px" h="450px">
         <DialogHeader>
-          <DialogTitle color="fg.default">Settings</DialogTitle>
+          <DialogTitle color="fg.default">{t('settings.title')}</DialogTitle>
         </DialogHeader>
 
         <DialogBody display="flex" gap={4} p={4} overflow="hidden">
@@ -129,7 +129,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
         <DialogFooter>
           <Button size="sm" variant="ghost" onClick={onClose}>
-            Close
+            {t('common.close')}
           </Button>
         </DialogFooter>
         <DialogCloseTrigger />
@@ -582,6 +582,7 @@ const TerminalSettings: React.FC = () => {
 
 // ── SSH Settings ─────────────────────────────────────────────
 const SshSettings: React.FC = () => {
+  const { t } = useTranslation();
   const [defaultPort, setDefaultPort] = useState(
     () => localStorage.getItem('ssh-default-port') || '22',
   );
@@ -609,23 +610,23 @@ const SshSettings: React.FC = () => {
   return (
     <Stack gap={4}>
       <Text fontSize="14px" fontWeight="bold" color="fg">
-        SSH Defaults
+        {t('ssh.defaults')}
       </Text>
       <Box>
         <Text fontSize="13px" color="fg" mb={1}>
-          Health Monitor Interval
+          {t('ssh.healthInterval')}
         </Text>
         <select value={healthInterval} onChange={(e) => saveHealthInterval(e.target.value)}>
-          <option value="0">Off</option>
-          <option value="2">2 seconds</option>
-          <option value="5">5 seconds</option>
-          <option value="15">15 seconds</option>
-          <option value="60">60 seconds</option>
+          <option value="0">{t('ssh.health.off')}</option>
+          <option value="2">{t('ssh.health.2')}</option>
+          <option value="5">{t('ssh.health.5')}</option>
+          <option value="15">{t('ssh.health.15')}</option>
+          <option value="60">{t('ssh.health.60')}</option>
         </select>
       </Box>
       <Box>
         <Text fontSize="13px" color="fg" mb={1}>
-          Default Port
+          {t('ssh.defaultPort')}
         </Text>
         <Input
           size="sm"
@@ -640,7 +641,7 @@ const SshSettings: React.FC = () => {
       </Box>
       <Box>
         <Text fontSize="13px" color="fg" mb={1}>
-          Connection Timeout
+          {t('ssh.connectionTimeout')}
         </Text>
         <HStack gap={2}>
           <Input
@@ -654,7 +655,7 @@ const SshSettings: React.FC = () => {
             variant="subtle"
           />
           <Text fontSize="12px" color="fg.muted">
-            seconds
+            {t('ssh.seconds')}
           </Text>
         </HStack>
       </Box>

@@ -272,10 +272,10 @@ const SftpSidebar: React.FC = () => {
             ? variants.relativeToHome
             : variants.name;
       await writeText(value);
-      toaster.create({ title: 'Copied to clipboard', description: value, type: 'success' });
+      toaster.create({ title: t('sftp.copied'), description: value, type: 'success' });
     } catch (err) {
       console.error('Failed to copy path', err);
-      toaster.create({ title: 'Copy failed', description: String(err), type: 'error' });
+      toaster.create({ title: t('sftp.copyFailed'), description: String(err), type: 'error' });
     }
   };
 
@@ -283,7 +283,7 @@ const SftpSidebar: React.FC = () => {
     <>
       <ContextMenuItem
         icon={LuLink}
-        label="Copy Full Path"
+        label={t('sftp.menu.copyFullPath')}
         onClick={() => {
           setContextMenu(null);
           void copyPathVariant(file, 'full');
@@ -291,7 +291,7 @@ const SftpSidebar: React.FC = () => {
       />
       <ContextMenuItem
         icon={LuLink2}
-        label="Copy Relative Path"
+        label={t('sftp.menu.copyRelativePath')}
         onClick={() => {
           setContextMenu(null);
           void copyPathVariant(file, 'relative');
@@ -299,7 +299,7 @@ const SftpSidebar: React.FC = () => {
       />
       <ContextMenuItem
         icon={LuFile}
-        label="Copy Name"
+        label={t('sftp.menu.copyName')}
         onClick={() => {
           setContextMenu(null);
           void copyPathVariant(file, 'name');
@@ -351,14 +351,16 @@ const SftpSidebar: React.FC = () => {
 
           if (payload.status === 'completed') {
             toaster.create({
-              title: 'Transfer Completed',
-              description: `Transferred ${formatFileSize(payload.transferred)}`,
+              title: t('sftp.transferCompleted'),
+              description: t('sftp.transferCompletedDetail', {
+                size: formatFileSize(payload.transferred),
+              }),
               type: 'success',
             });
           } else if (payload.status === 'failed') {
             toaster.create({
-              title: 'Transfer Failed',
-              description: payload.message || 'An error occurred during file transfer.',
+              title: t('sftp.transferFailed'),
+              description: payload.message || t('sftp.transferFailedDetail'),
               type: 'error',
             });
           }
@@ -368,7 +370,7 @@ const SftpSidebar: React.FC = () => {
     return () => {
       unlisten.then((dispose) => dispose());
     };
-  }, [updateTransfer]);
+  }, [updateTransfer, t]);
 
   // OS-level drag & drop: route drops landing on this panel to uploads.
   // The Tauri drag event position is physical pixels, so it is converted
@@ -438,7 +440,7 @@ const SftpSidebar: React.FC = () => {
       <Flex p={8} h="full" align="center" justify="center" direction="column" gap={4}>
         <Icon as={LuFolder} boxSize="40px" color="fg.subtle" opacity={0.1} />
         <Text fontSize="12px" color="fg.muted" textAlign="center">
-          Terminal only. Connect to an SSH session to use SFTP.
+          {t('sftp.terminalOnly')}
         </Text>
       </Flex>
     );
@@ -449,10 +451,10 @@ const SftpSidebar: React.FC = () => {
       <Flex p={8} h="full" align="center" justify="center" direction="column" gap={4}>
         <Icon as={LuFolder} boxSize="40px" color="fg.subtle" opacity={0.2} />
         <Text fontSize="12px" fontWeight="600" color="red.fg" textAlign="center">
-          SESSION DISCONNECTED
+          {t('sftp.disconnected')}
         </Text>
         <Text fontSize="11px" color="fg.muted" textAlign="center">
-          The SSH connection was lost. Reconnect the session to use SFTP features.
+          {t('sftp.disconnectedHint')}
         </Text>
       </Flex>
     );
@@ -474,11 +476,11 @@ const SftpSidebar: React.FC = () => {
 
   const handleDelete = async (file: SftpFile) => {
     try {
-      const confirmed = await ask(`Are you sure you want to delete ${file.name}?`, {
-        title: 'Delete Confirmation',
+      const confirmed = await ask(t('sftp.deleteConfirm', { name: file.name }), {
+        title: t('sftp.deleteTitle'),
         kind: 'warning',
-        okLabel: 'Delete',
-        cancelLabel: 'Cancel',
+        okLabel: t('sftp.delete'),
+        cancelLabel: t('common.cancel'),
       });
 
       if (confirmed) {
@@ -571,7 +573,7 @@ const SftpSidebar: React.FC = () => {
 
   const renderBreadcrumbs = () => {
     const parts = currentPath.split('/').filter((p) => p !== '');
-    const breadcrumbs = [{ name: 'Root', path: '/' }];
+    const breadcrumbs = [{ name: t('sftp.breadcrumb.root'), path: '/' }];
 
     let current = '';
     parts.forEach((p) => {
@@ -615,7 +617,7 @@ const SftpSidebar: React.FC = () => {
         <ContextMenuItem
           icon={LuFolderPlus}
           color="blue.fg"
-          label="New Folder"
+          label={t('sftp.menu.newFolder')}
           onClick={() => {
             setContextMenu(null);
             setCreatePrompt('folder');
@@ -624,7 +626,7 @@ const SftpSidebar: React.FC = () => {
         <ContextMenuItem
           icon={LuFilePlus}
           color="blue.fg"
-          label="New File"
+          label={t('sftp.menu.newFile')}
           onClick={() => {
             setContextMenu(null);
             setCreatePrompt('file');
@@ -632,7 +634,7 @@ const SftpSidebar: React.FC = () => {
         />
         <ContextMenuItem
           icon={LuUpload}
-          label="Upload File"
+          label={t('sftp.menu.uploadFile')}
           onClick={() => {
             setContextMenu(null);
             uploadFile(activeSessionId);
@@ -640,7 +642,7 @@ const SftpSidebar: React.FC = () => {
         />
         <ContextMenuItem
           icon={LuFolderInput}
-          label="Upload Folder"
+          label={t('sftp.menu.uploadFolder')}
           onClick={() => {
             setContextMenu(null);
             void uploadFolder(activeSessionId);
@@ -648,7 +650,7 @@ const SftpSidebar: React.FC = () => {
         />
         <ContextMenuItem
           icon={LuRefreshCw}
-          label="Refresh"
+          label={t('sftp.menu.refresh')}
           onClick={() => {
             setContextMenu(null);
             refresh(activeSessionId);
@@ -671,7 +673,7 @@ const SftpSidebar: React.FC = () => {
         <ContextMenuItem
           icon={LuFolderOpen}
           color="blue.fg"
-          label="Open Folder"
+          label={t('sftp.menu.openFolder')}
           onClick={() => {
             setContextMenu(null);
             cd(activeSessionId, file.name);
@@ -679,7 +681,7 @@ const SftpSidebar: React.FC = () => {
         />
         <ContextMenuItem
           icon={LuDownload}
-          label="Download Folder"
+          label={t('sftp.menu.downloadFolder')}
           onClick={() => {
             setContextMenu(null);
             void downloadFolder(activeSessionId, file.name);
@@ -698,7 +700,7 @@ const SftpSidebar: React.FC = () => {
         />
         <ContextMenuItem
           icon={LuPencil}
-          label="Rename"
+          label={t('sftp.menu.rename')}
           onClick={() => {
             setRenamingFile(file.name);
             setRenameValue(file.name);
@@ -739,7 +741,7 @@ const SftpSidebar: React.FC = () => {
         <ContextMenuItem
           icon={LuExternalLink}
           color="blue.fg"
-          label="Open File"
+          label={t('sftp.menu.openFile')}
           onClick={() => {
             setContextMenu(null);
             openFile(activeSessionId, file.name);
@@ -747,7 +749,7 @@ const SftpSidebar: React.FC = () => {
         />
         <ContextMenuItem
           icon={LuCode}
-          label="Edit File"
+          label={t('sftp.menu.editFile')}
           onClick={() => {
             const path = currentPath.endsWith('/')
               ? `${currentPath}${file.name}`
@@ -758,7 +760,7 @@ const SftpSidebar: React.FC = () => {
         />
         <ContextMenuItem
           icon={LuDownload}
-          label="Download"
+          label={t('sftp.menu.download')}
           onClick={() => {
             setContextMenu(null);
             downloadFile(activeSessionId, file.name);
@@ -766,7 +768,7 @@ const SftpSidebar: React.FC = () => {
         />
         <ContextMenuItem
           icon={LuCopy}
-          label="Duplicate"
+          label={t('sftp.menu.duplicate')}
           onClick={() => {
             setContextMenu(null);
             copyFile(activeSessionId, file.name, `copy_${file.name}`);
@@ -785,7 +787,7 @@ const SftpSidebar: React.FC = () => {
         />
         <ContextMenuItem
           icon={LuPencil}
-          label="Rename"
+          label={t('sftp.menu.rename')}
           onClick={() => {
             setRenamingFile(file.name);
             setRenameValue(file.name);
@@ -849,37 +851,37 @@ const SftpSidebar: React.FC = () => {
       >
         <HStack gap={1}>
           <IconButton
-            aria-label="Upload"
+            aria-label={t('sftp.toolbar.upload')}
             size="xs"
             variant="ghost"
             onClick={() => uploadFile(activeSessionId)}
             color="blue.fg"
-            title="Upload File"
+            title={t('sftp.toolbar.uploadFile')}
           >
             <LuUpload size={14} />
           </IconButton>
           <IconButton
-            aria-label="New Folder"
+            aria-label={t('sftp.toolbar.newFolder')}
             size="xs"
             variant="ghost"
             onClick={() => setCreatePrompt('folder')}
             color="blue.fg"
-            title="New Folder"
+            title={t('sftp.toolbar.newFolder')}
           >
             <LuFolderPlus size={14} />
           </IconButton>
           <IconButton
-            aria-label="New File"
+            aria-label={t('sftp.toolbar.newFile')}
             size="xs"
             variant="ghost"
             onClick={() => setCreatePrompt('file')}
             color="blue.fg"
-            title="New File"
+            title={t('sftp.toolbar.newFile')}
           >
             <LuFilePlus size={14} />
           </IconButton>
           <IconButton
-            aria-label="Up"
+            aria-label={t('sftp.toolbar.up')}
             size="xs"
             variant="ghost"
             onClick={() => cd(activeSessionId, '..')}
@@ -888,7 +890,7 @@ const SftpSidebar: React.FC = () => {
             <LuArrowUp size={14} />
           </IconButton>
           <IconButton
-            aria-label="Refresh"
+            aria-label={t('sftp.toolbar.refresh')}
             size="xs"
             variant="ghost"
             onClick={() => refresh(activeSessionId)}
@@ -899,7 +901,7 @@ const SftpSidebar: React.FC = () => {
           </IconButton>
         </HStack>
         <Text fontSize="10px" color="fg.muted" fontWeight="bold">
-          SFTP EXPLORER
+          {t('sftp.title')}
         </Text>
       </HStack>
 
@@ -953,7 +955,9 @@ const SftpSidebar: React.FC = () => {
           className="custom-scrollbar"
         >
           <Text fontSize="10px" color="fg.subtle" fontWeight="bold" pt={1}>
-            TRANSFERS ({transfers.filter((entry) => entry.status === 'running').length} active)
+            {t('sftp.transfersHeading', {
+              active: transfers.filter((entry) => entry.status === 'running').length,
+            })}
           </Text>
           {transfers.map((entry) => {
             const percent =
@@ -986,7 +990,7 @@ const SftpSidebar: React.FC = () => {
                       variant="ghost"
                       onClick={() => void cancelTransfer(entry.transferId)}
                     >
-                      Cancel
+                      {t('sftp.transfer.cancel')}
                     </Button>
                   ) : (
                     <Text fontSize="10px" color={failed ? 'red.fg' : 'green.fg'}>
@@ -1040,7 +1044,7 @@ const SftpSidebar: React.FC = () => {
         ) : error ? (
           <Box p={4}>
             <Text color="red.400" fontSize="11px">
-              Error: {error}
+              {t('sftp.errorPrefix', { message: error })}
             </Text>
           </Box>
         ) : visibleFiles.length === 0 && files.length > 0 ? (
@@ -1179,12 +1183,15 @@ const SftpSidebar: React.FC = () => {
 
       <PromptModal
         isOpen={!!createPrompt}
-        title={createPrompt === 'file' ? 'New File' : 'New Folder'}
+        title={createPrompt === 'file' ? t('sftp.newFile') : t('sftp.newFolder')}
         fields={[
           {
             key: 'name',
-            label: createPrompt === 'file' ? 'File name' : 'Folder name',
-            placeholder: createPrompt === 'file' ? 'notes.txt' : 'documents',
+            label: createPrompt === 'file' ? t('sftp.fileName') : t('sftp.folderName'),
+            placeholder:
+              createPrompt === 'file'
+                ? t('sftp.fileNamePlaceholder')
+                : t('sftp.folderNamePlaceholder'),
           },
         ]}
         onConfirm={handleCreatePromptConfirm}

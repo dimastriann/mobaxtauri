@@ -14,6 +14,7 @@ import {
 } from './ui/dialog';
 import { Field } from './ui/field';
 import PromptModal from './PromptModal';
+import { useTranslation } from '../store/useLocaleStore';
 
 /** The backend needs the vault master password (no OS keychain). */
 const isMasterPasswordRequired = (error: unknown): boolean =>
@@ -34,6 +35,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   duplicateSource,
 }) => {
   const source = duplicateSource ?? editingSession;
+  const { t } = useTranslation();
   const [host, setHost] = useState('');
   const [user, setUser] = useState('');
   const [password, setPassword] = useState('');
@@ -229,10 +231,10 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         <DialogHeader>
           <DialogTitle color="fg.default">
             {duplicateSource
-              ? 'Duplicate SSH Session'
+              ? t('session.duplicate')
               : editingSession
-                ? 'Edit SSH Session'
-                : 'New SSH Session'}
+                ? t('session.edit')
+                : t('session.new')}
           </DialogTitle>
         </DialogHeader>
 
@@ -244,16 +246,16 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                   {saveError}
                 </Text>
               )}
-              <Field label="Session Name (Optional)">
+              <Field label={t('session.name')}>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Display Name"
+                  placeholder={t('session.namePlaceholder')}
                   size="sm"
                 />
               </Field>
 
-              <Field label="Folder">
+              <Field label={t('session.folder')}>
                 <select
                   value={folderId || ''}
                   onChange={(e) => setFolderId(e.target.value || null)}
@@ -271,7 +273,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                   }}
                 >
                   <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
-                    Uncategorized
+                    {t('session.uncategorized')}
                   </option>
                   {folders.map((f) => (
                     <option
@@ -285,7 +287,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                 </select>
               </Field>
 
-              <Field label="Tag">
+              <Field label={t('session.tag')}>
                 <select
                   value={tag || ''}
                   onChange={(e) => setTag((e.target.value as Session['tag']) || undefined)}
@@ -303,7 +305,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                   }}
                 >
                   <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
-                    None
+                    {t('session.tag.none')}
                   </option>
                   <option
                     value="prod"
@@ -312,7 +314,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                       color: 'var(--chakra-colors-red-400)',
                     }}
                   >
-                    Production
+                    {t('session.tag.prod')}
                   </option>
                   <option
                     value="staging"
@@ -321,7 +323,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                       color: 'var(--chakra-colors-orange-400)',
                     }}
                   >
-                    Staging
+                    {t('session.tag.staging')}
                   </option>
                   <option
                     value="dev"
@@ -330,23 +332,23 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                       color: 'var(--chakra-colors-green-400)',
                     }}
                   >
-                    Development
+                    {t('session.tag.dev')}
                   </option>
                 </select>
               </Field>
 
-              <Field label="Remote Host" required>
+              <Field label={t('session.host')} required>
                 <Input
                   value={host}
                   onChange={(e) => setHost(e.target.value)}
-                  placeholder="e.g. 192.168.1.10"
+                  placeholder={t('session.hostPlaceholder')}
                   size="sm"
                   required
                 />
               </Field>
 
               <HStack gap={4} align="flex-start">
-                <Field label="Username" flex={1} required>
+                <Field label={t('session.username')} flex={1} required>
                   <Input
                     value={user}
                     onChange={(e) => setUser(e.target.value)}
@@ -355,7 +357,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                     required
                   />
                 </Field>
-                <Field label="Port" w="80px" required>
+                <Field label={t('session.port')} w="80px" required>
                   <Input
                     type="number"
                     value={port}
@@ -366,9 +368,9 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                 </Field>
               </HStack>
 
-              <Field label="Jump Host (ProxyJump)">
+              <Field label={t('session.jump')}>
                 <select
-                  aria-label="Jump host session"
+                  aria-label={t('session.jumpAria')}
                   value={jumpSessionId ?? ''}
                   onChange={(event) => setJumpSessionId(event.target.value || null)}
                   style={{
@@ -385,7 +387,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                   }}
                 >
                   <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
-                    Direct connection
+                    {t('session.jumpDirect')}
                   </option>
                   {jumpCandidates.map((candidate) => (
                     <option
@@ -398,7 +400,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                   ))}
                 </select>
                 <Text fontSize="11px" color="fg.muted" mt={1}>
-                  Connect the jump host session first; this host is then reached through it.
+                  {t('session.jumpHelper')}
                 </Text>
               </Field>
 
@@ -410,15 +412,13 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                   onChange={(e) => setUseAgent(e.target.checked)}
                 />
                 <label htmlFor="use-ssh-agent" style={{ fontSize: '14px', cursor: 'pointer' }}>
-                  Use SSH Agent
+                  {t('session.useAgent')}
                 </label>
               </HStack>
 
               {useAgent ? (
                 <Text fontSize="12px" color="fg.muted" pl={6}>
-                  Authentication uses the keys offered by your SSH agent (Windows OpenSSH agent
-                  service or Pageant; SSH_AUTH_SOCK on Linux/macOS). Manage keys with ssh-add or in
-                  Pageant — they never leave the agent.
+                  {t('session.agentHelper')}
                 </Text>
               ) : (
                 <>
@@ -433,12 +433,12 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                       htmlFor="use-private-key"
                       style={{ fontSize: '14px', cursor: 'pointer' }}
                     >
-                      Use SSH Private Key
+                      {t('session.useKey')}
                     </label>
                   </HStack>
 
                   {usePrivateKey ? (
-                    <Field label="Private Key Path" required>
+                    <Field label={t('session.keyPath')} required>
                       <HStack w="full">
                         <Input
                           value={privateKeyPath}
@@ -461,18 +461,18 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                             }
                           }}
                         >
-                          Browse
+                          {t('session.browse')}
                         </Button>
                       </HStack>
                     </Field>
                   ) : (
                     <Stack gap={2}>
                       <Field
-                        label="Password (Optional)"
+                        label={t('session.password')}
                         helperText={
                           editingSession?.savePassword
-                            ? 'Leave empty to keep the saved password'
-                            : 'Leave empty for keys'
+                            ? t('session.passwordKeep')
+                            : t('session.passwordEmpty')
                         }
                       >
                         <Input
@@ -497,7 +497,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                             color: 'var(--chakra-colors-fg-muted)',
                           }}
                         >
-                          Save Password Securely in Vault
+                          {t('session.savePassword')}
                         </label>
                       </HStack>
                     </Stack>
@@ -505,14 +505,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                 </>
               )}
 
-              <Field
-                label="Startup Command (Optional)"
-                helperText="Runs in the shell after connecting; useful for tmux, cd, or environment setup."
-              >
+              <Field label={t('session.startup')} helperText={t('session.startupHelper')}>
                 <Input
                   value={startupCommand}
                   onChange={(e) => setStartupCommand(e.target.value)}
-                  placeholder="tmux attach || tmux new"
+                  placeholder={t('session.startupPlaceholder')}
                   size="sm"
                   fontFamily="monospace"
                 />
