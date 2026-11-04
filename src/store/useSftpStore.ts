@@ -17,6 +17,7 @@ export interface SftpFile {
   uid: number | null;
   gid: number | null;
   permissions: string;
+  mode: number | null;
 }
 
 /** How long finished transfers stay in the queue view. */

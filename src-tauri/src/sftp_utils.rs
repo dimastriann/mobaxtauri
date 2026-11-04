@@ -95,6 +95,23 @@ pub fn get_parent_path(path: &str) -> String {
     }
 }
 
+/// Highest permission value accepted from the chmod editor.
+pub const MAX_PERMISSION_MODE: u32 = 0o7777;
+
+/// Bits that encode the file type (regular, directory, symlink, ...).
+const FILE_TYPE_MASK: u32 = 0o170000;
+
+/// Combine a requested permission set with the existing file-type bits so a
+/// chmod never turns a regular file into a directory (or vice versa).
+pub fn merge_permission_mode(existing: Option<u32>, requested: u32) -> Result<u32, String> {
+    if requested > MAX_PERMISSION_MODE {
+        return Err(format!(
+            "Permissions must be between 0000 and 7777 (got {requested:04o})"
+        ));
+    }
+    Ok((existing.unwrap_or_default() & FILE_TYPE_MASK) | requested)
+}
+
 /// Convert Unix mode permissions to standard rwxr-xr-x string format
 pub fn format_permissions(permissions: Option<u32>, is_dir: bool) -> String {
     let mode = match permissions {
@@ -341,6 +358,33 @@ mod tests {
         assert_eq!(format_permissions(Some(0o644), false), "-rw-r--r--");
         assert_eq!(format_permissions(Some(0o700), false), "-rwx------");
         assert_eq!(format_permissions(None, false), "—");
+    }
+
+    #[test]
+    fn merge_permission_mode_preserves_the_file_type() {
+        assert_eq!(
+            merge_permission_mode(Some(0o100644), 0o640).unwrap(),
+            0o100640
+        );
+        assert_eq!(
+            merge_permission_mode(Some(0o040755), 0o750).unwrap(),
+            0o040750
+        );
+        assert_eq!(
+            merge_permission_mode(Some(0o120777), 0o700).unwrap(),
+            0o120700
+        );
+    }
+
+    #[test]
+    fn merge_permission_mode_accepts_a_missing_mode() {
+        assert_eq!(merge_permission_mode(None, 0o600).unwrap(), 0o600);
+    }
+
+    #[test]
+    fn merge_permission_mode_rejects_out_of_range_values() {
+        assert!(merge_permission_mode(None, 0o10000).is_err());
+        assert_eq!(merge_permission_mode(None, 0o7777).unwrap(), 0o7777);
     }
 
     fn temp_tree(name: &str) -> std::path::PathBuf {

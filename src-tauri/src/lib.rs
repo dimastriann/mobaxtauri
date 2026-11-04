@@ -7,6 +7,7 @@ mod recording;
 mod session_manager;
 mod session_types;
 mod sftp_conflict;
+pub mod sftp_permissions;
 pub mod sftp_transfer;
 mod sftp_utils;
 pub mod ssh;
@@ -380,12 +381,30 @@ async fn sftp_list_dir(
                 "uid": metadata.uid,
                 "gid": metadata.gid,
                 "permissions": permissions_str,
+                "mode": metadata.permissions,
             }));
         }
         Ok(result)
     } else {
         Err("SFTP session not found".into())
     }
+}
+
+#[tauri::command]
+async fn sftp_set_permissions(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+    mode: u32,
+) -> Result<(), String> {
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
+        .get(&session_id)
+        .cloned()
+        .ok_or("SFTP session not found")?;
+    crate::sftp_permissions::set_permissions(&sftp, &path, mode).await
 }
 
 #[tauri::command]
@@ -1189,6 +1208,7 @@ pub fn run() {
             ssh_disconnect,
             ssh_resize,
             sftp_list_dir,
+            sftp_set_permissions,
             sftp_download_file,
             sftp_upload_file,
             sftp_copy_file,

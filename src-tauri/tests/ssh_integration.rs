@@ -67,6 +67,8 @@ struct ServerConfig {
     /// Bytes echoed back through a remote-forward channel opened by
     /// `tcpip_forward`; the test waits for this to prove the tunnel works.
     remote_probe: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
+    /// Attributes received by the most recent SFTP SETSTAT request.
+    setstat_attrs: Arc<tokio::sync::Mutex<Option<FileAttributes>>>,
 }
 
 /// One connected client's handler: remembers the shell channel for the
@@ -205,7 +207,7 @@ impl ServerHandler for ClientSessions {
         // wrapper itself must be awaited for the spawn to happen.
         russh_sftp::server::run(
             channel.into_stream(),
-            SftpTestHandler::new(self.cfg.sftp_root.clone()),
+            SftpTestHandler::new(self.cfg.sftp_root.clone(), self.cfg.setstat_attrs.clone()),
         )
         .await;
         Ok(())
@@ -315,15 +317,17 @@ struct SftpTestHandler {
     next_handle: u32,
     files: HashMap<String, std::fs::File>,
     directories: HashMap<String, Vec<File>>,
+    setstat_attrs: Arc<tokio::sync::Mutex<Option<FileAttributes>>>,
 }
 
 impl SftpTestHandler {
-    fn new(root: PathBuf) -> Self {
+    fn new(root: PathBuf, setstat_attrs: Arc<tokio::sync::Mutex<Option<FileAttributes>>>) -> Self {
         Self {
             root,
             next_handle: 0,
             files: HashMap::new(),
             directories: HashMap::new(),
+            setstat_attrs,
         }
     }
 
@@ -472,6 +476,29 @@ impl SftpHandler for SftpTestHandler {
         Ok(Attrs { id, attrs })
     }
 
+    async fn setstat(
+        &mut self,
+        id: u32,
+        path: String,
+        attrs: FileAttributes,
+    ) -> Result<Status, Self::Error> {
+        let local = self.local(&path);
+        if !local.exists() {
+            return Err(StatusReply::new(StatusCode::NoSuchFile));
+        }
+        #[cfg(unix)]
+        if let Some(permissions) = attrs.permissions {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                &local,
+                std::fs::Permissions::from_mode(permissions & 0o7777),
+            )
+            .map_err(|_| StatusReply::new(StatusCode::Failure))?;
+        }
+        *self.setstat_attrs.lock().await = Some(attrs);
+        Ok(self.ok(id))
+    }
+
     async fn realpath(&mut self, id: u32, path: String) -> Result<Name, Self::Error> {
         Ok(Name {
             id,
@@ -527,6 +554,7 @@ struct TestContext {
     sftp_root: PathBuf,
     remote_targets: mobaxtauri_lib::ssh::RemoteForwardTargets,
     remote_probe: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
+    setstat_attrs: Arc<tokio::sync::Mutex<Option<FileAttributes>>>,
 }
 
 /// How the test server treats the client's public key.
@@ -561,11 +589,13 @@ impl TestContext {
             AuthorizedKey::None => "SHA256:bogus-no-key-authorized".to_string(),
         };
         let remote_probe = Arc::new(tokio::sync::Mutex::new(None));
+        let setstat_attrs = Arc::new(tokio::sync::Mutex::new(None));
         let cfg = Arc::new(ServerConfig {
             password: PASSWORD.to_string(),
             authorized_fingerprint,
             sftp_root: sftp_root.clone(),
             remote_probe: remote_probe.clone(),
+            setstat_attrs: setstat_attrs.clone(),
         });
         let host_fingerprint = fixture_fingerprint("plain_test_key");
 
@@ -616,6 +646,7 @@ impl TestContext {
             sftp_root,
             remote_targets: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             remote_probe,
+            setstat_attrs,
         }
     }
 
@@ -811,6 +842,42 @@ async fn plain_key_auth_connects_and_lists_the_sftp_root() {
     let entries = sftp.read_dir("/").await.expect("list root");
     let names: Vec<String> = entries.into_iter().map(|entry| entry.file_name()).collect();
     assert_eq!(names, vec!["hello.txt".to_string()]);
+}
+
+#[tokio::test]
+async fn set_permissions_preserves_the_file_type_bits() {
+    let ctx = TestContext::start("sftp-chmod", HostTrust::Trusted, AuthorizedKey::None).await;
+    std::fs::write(ctx.sftp_root.join("perms.txt"), b"mode").expect("seed file");
+    let sftp = ctx.connected_sftp().await;
+
+    mobaxtauri_lib::sftp_permissions::set_permissions(&sftp, "/perms.txt", 0o640)
+        .await
+        .expect("chmod succeeds");
+
+    let recorded = ctx
+        .setstat_attrs
+        .lock()
+        .await
+        .clone()
+        .expect("server received a SETSTAT request");
+    let mode = recorded.permissions.expect("SETSTAT carries permissions");
+    assert_eq!(mode & 0o777, 0o640);
+    #[cfg(unix)]
+    assert_eq!(
+        mode & 0o170000,
+        0o100000,
+        "the regular-file type bits survive the chmod"
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let on_disk = std::fs::metadata(ctx.sftp_root.join("perms.txt"))
+            .expect("read chmodded file")
+            .permissions()
+            .mode();
+        assert_eq!(on_disk & 0o777, 0o640);
+    }
 }
 
 #[tokio::test]
