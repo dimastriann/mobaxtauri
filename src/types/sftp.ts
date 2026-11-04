@@ -21,6 +21,8 @@ export interface SftpTransferEvent {
   transferred: number;
   total: number | null;
   percent?: number | null;
+  bytesPerSec?: number | null;
+  etaSeconds?: number | null;
   message: string | null;
 }
 

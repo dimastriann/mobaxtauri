@@ -5,6 +5,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::Duration,
 };
 use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::Mutex;
@@ -43,6 +44,8 @@ pub struct TransferEvent {
     pub transferred: u64,
     pub total: Option<u64>,
     pub percent: Option<f32>,
+    pub bytes_per_sec: Option<f64>,
+    pub eta_seconds: Option<u64>,
     pub message: Option<String>,
 }
 
@@ -54,6 +57,36 @@ pub fn calculate_percentage(transferred: u64, total: Option<u64>) -> Option<f32>
         }
         _ => None,
     }
+}
+
+/// Bytes per second, sampled only after a short warm-up so the first
+/// chunk does not produce a noisy spike.
+pub fn calculate_transfer_rate(transferred: u64, elapsed: Duration) -> Option<f64> {
+    if transferred == 0 || elapsed < Duration::from_millis(100) {
+        return None;
+    }
+    let seconds = elapsed.as_secs_f64();
+    if seconds <= 0.0 {
+        return None;
+    }
+    Some(transferred as f64 / seconds)
+}
+
+/// Remaining wall-clock seconds for a transfer with a known byte total.
+pub fn calculate_eta(
+    total: Option<u64>,
+    transferred: u64,
+    bytes_per_sec: Option<f64>,
+) -> Option<u64> {
+    let total = total?;
+    if transferred >= total {
+        return Some(0);
+    }
+    let rate = bytes_per_sec?;
+    if rate <= 0.0 {
+        return None;
+    }
+    Some(((total - transferred) as f64 / rate).ceil() as u64)
 }
 
 #[derive(Default)]
@@ -156,5 +189,32 @@ mod tests {
         assert_eq!(calculate_percentage(1, Some(3)), Some(33.3));
         assert_eq!(calculate_percentage(100, None), None);
         assert_eq!(calculate_percentage(100, Some(0)), None);
+    }
+
+    #[test]
+    fn calculates_transfer_rate_after_warmup() {
+        use super::calculate_transfer_rate;
+        use std::time::Duration;
+
+        assert_eq!(calculate_transfer_rate(0, Duration::from_secs(1)), None);
+        assert_eq!(
+            calculate_transfer_rate(100, Duration::from_millis(50)),
+            None
+        );
+        assert_eq!(
+            calculate_transfer_rate(2048, Duration::from_secs(2)),
+            Some(1024.0)
+        );
+    }
+
+    #[test]
+    fn estimates_remaining_time() {
+        use super::calculate_eta;
+
+        assert_eq!(calculate_eta(Some(4096), 1024, Some(1024.0)), Some(3));
+        assert_eq!(calculate_eta(Some(1024), 1024, Some(1024.0)), Some(0));
+        assert_eq!(calculate_eta(None, 1024, Some(1024.0)), None);
+        assert_eq!(calculate_eta(Some(4096), 1024, None), None);
+        assert_eq!(calculate_eta(Some(4096), 1024, Some(0.0)), None);
     }
 }

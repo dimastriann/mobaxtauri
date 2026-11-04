@@ -24,6 +24,7 @@ export const en = {
   'sftp.filterPlaceholder': 'Filter this folder…',
   'sftp.clearFilter': 'Clear filter',
   'sftp.noMatches': 'No files match “{query}”.',
+  'sftp.eta': 'ETA {eta}',
   'sftp.downloadSelected': 'Download {count} items',
   'sftp.downloadManyResult': 'Downloaded {downloaded} items',
   'sftp.downloadManyFailed': 'Some items could not be downloaded',

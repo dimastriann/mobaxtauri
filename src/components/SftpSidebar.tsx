@@ -58,6 +58,7 @@ import { SFTP_TRANSFER_EVENT, type SftpTransferEvent } from '../types/sftp';
 import type { SftpPathVariantsPayload } from '../types/sftp';
 import { type SftpFile } from '../store/useSftpStore';
 import { formatFileSize } from '../utils/formatFileSize';
+import { formatEta, formatTransferSpeed } from '../utils/transferMetrics';
 import { toaster } from './ui/toaster';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './ContextMenu';
 import SftpEditorModal from './SftpEditorModal';
@@ -963,6 +964,9 @@ const SftpSidebar: React.FC = () => {
                   : 25;
             const failed = entry.status === 'failed';
             const done = entry.status === 'completed';
+            const speed =
+              entry.status === 'running' ? formatTransferSpeed(entry.bytesPerSec) : null;
+            const eta = entry.status === 'running' ? formatEta(entry.etaSeconds) : null;
             return (
               <Box key={entry.transferId} py={1}>
                 <HStack justify="space-between" gap={2}>
@@ -973,6 +977,8 @@ const SftpSidebar: React.FC = () => {
                     {entry.percent !== undefined && entry.percent !== null
                       ? ` (${entry.percent}%)`
                       : ''}
+                    {speed ? ` | ${speed}` : ''}
+                    {eta ? ` | ${t('sftp.eta', { eta })}` : ''}
                   </Text>
                   {entry.status === 'running' ? (
                     <Button

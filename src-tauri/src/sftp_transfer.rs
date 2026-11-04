@@ -5,8 +5,8 @@
 
 use crate::sftp_utils;
 use crate::transfers::{
-    calculate_percentage, emit_transfer, is_cancelled, TransferEvent, TransferManager,
-    TransferStatus,
+    calculate_eta, calculate_percentage, calculate_transfer_rate, emit_transfer, is_cancelled,
+    TransferEvent, TransferManager, TransferStatus,
 };
 use russh_sftp::client::SftpSession;
 use tauri::{AppHandle, Runtime};
@@ -42,6 +42,7 @@ pub async fn download_file<R: Runtime>(
         .await;
     let mut buffer = vec![0_u8; 64 * 1024];
     let mut transferred = 0_u64;
+    let started = std::time::Instant::now();
 
     emit_transfer(
         app_handle,
@@ -54,6 +55,12 @@ pub async fn download_file<R: Runtime>(
             transferred,
             total,
             percent: calculate_percentage(transferred, total),
+            bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+            eta_seconds: calculate_eta(
+                total,
+                transferred,
+                calculate_transfer_rate(transferred, started.elapsed()),
+            ),
             message: None,
         },
     );
@@ -86,6 +93,12 @@ pub async fn download_file<R: Runtime>(
                     transferred,
                     total,
                     percent: calculate_percentage(transferred, total),
+                    bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+                    eta_seconds: calculate_eta(
+                        total,
+                        transferred,
+                        calculate_transfer_rate(transferred, started.elapsed()),
+                    ),
                     message: None,
                 },
             );
@@ -124,6 +137,12 @@ pub async fn download_file<R: Runtime>(
             transferred,
             total,
             percent: calculate_percentage(transferred, total),
+            bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+            eta_seconds: calculate_eta(
+                total,
+                transferred,
+                calculate_transfer_rate(transferred, started.elapsed()),
+            ),
             message: result.as_ref().err().cloned(),
         },
     );
@@ -174,6 +193,7 @@ pub async fn upload_file<R: Runtime>(
         .await;
     let mut buffer = vec![0_u8; 64 * 1024];
     let mut transferred = 0_u64;
+    let started = std::time::Instant::now();
 
     let result = async {
         loop {
@@ -206,6 +226,12 @@ pub async fn upload_file<R: Runtime>(
                     transferred,
                     total,
                     percent: calculate_percentage(transferred, total),
+                    bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+                    eta_seconds: calculate_eta(
+                        total,
+                        transferred,
+                        calculate_transfer_rate(transferred, started.elapsed()),
+                    ),
                     message: None,
                 },
             );
@@ -240,6 +266,12 @@ pub async fn upload_file<R: Runtime>(
             transferred,
             total,
             percent: calculate_percentage(transferred, total),
+            bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+            eta_seconds: calculate_eta(
+                total,
+                transferred,
+                calculate_transfer_rate(transferred, started.elapsed()),
+            ),
             message: result.as_ref().err().cloned(),
         },
     );
@@ -291,6 +323,7 @@ pub async fn copy_file<R: Runtime>(
         .await;
     let mut buffer = vec![0_u8; 64 * 1024];
     let mut transferred = 0_u64;
+    let started = std::time::Instant::now();
 
     let result = async {
         loop {
@@ -320,6 +353,12 @@ pub async fn copy_file<R: Runtime>(
                     transferred,
                     total,
                     percent: calculate_percentage(transferred, total),
+                    bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+                    eta_seconds: calculate_eta(
+                        total,
+                        transferred,
+                        calculate_transfer_rate(transferred, started.elapsed()),
+                    ),
                     message: None,
                 },
             );
@@ -354,6 +393,12 @@ pub async fn copy_file<R: Runtime>(
             transferred,
             total,
             percent: calculate_percentage(transferred, total),
+            bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+            eta_seconds: calculate_eta(
+                total,
+                transferred,
+                calculate_transfer_rate(transferred, started.elapsed()),
+            ),
             message: result.as_ref().err().cloned(),
         },
     );
@@ -431,6 +476,7 @@ pub async fn download_folder<R: Runtime>(
         .begin(transfer_id.clone(), session_id.clone())
         .await;
     let mut transferred = 0_u64;
+    let started = std::time::Instant::now();
     let mut final_total: Option<u64> = None;
 
     let result = async {
@@ -499,6 +545,12 @@ pub async fn download_folder<R: Runtime>(
                         transferred,
                         total: Some(total),
                         percent: calculate_percentage(transferred, Some(total)),
+                        bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+                        eta_seconds: calculate_eta(
+                            Some(total),
+                            transferred,
+                            calculate_transfer_rate(transferred, started.elapsed()),
+                        ),
                         message: Some(relative.clone()),
                     },
                 );
@@ -542,6 +594,12 @@ pub async fn download_folder<R: Runtime>(
             transferred,
             total: final_total,
             percent: calculate_percentage(transferred, final_total),
+            bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+            eta_seconds: calculate_eta(
+                final_total,
+                transferred,
+                calculate_transfer_rate(transferred, started.elapsed()),
+            ),
             message: result.as_ref().err().cloned(),
         },
     );
@@ -596,6 +654,7 @@ pub async fn upload_folder<R: Runtime>(
         .begin(transfer_id.clone(), session_id.clone())
         .await;
     let mut transferred = 0_u64;
+    let started = std::time::Instant::now();
 
     emit_transfer(
         app_handle,
@@ -608,6 +667,12 @@ pub async fn upload_folder<R: Runtime>(
             transferred,
             total: Some(total),
             percent: calculate_percentage(transferred, Some(total)),
+            bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+            eta_seconds: calculate_eta(
+                Some(total),
+                transferred,
+                calculate_transfer_rate(transferred, started.elapsed()),
+            ),
             message: None,
         },
     );
@@ -696,6 +761,12 @@ pub async fn upload_folder<R: Runtime>(
                         transferred,
                         total: Some(total),
                         percent: calculate_percentage(transferred, Some(total)),
+                        bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+                        eta_seconds: calculate_eta(
+                            Some(total),
+                            transferred,
+                            calculate_transfer_rate(transferred, started.elapsed()),
+                        ),
                         message: Some(relative.clone()),
                     },
                 );
@@ -735,6 +806,12 @@ pub async fn upload_folder<R: Runtime>(
             transferred,
             total: Some(total),
             percent: calculate_percentage(transferred, Some(total)),
+            bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
+            eta_seconds: calculate_eta(
+                Some(total),
+                transferred,
+                calculate_transfer_rate(transferred, started.elapsed()),
+            ),
             message: result.as_ref().err().cloned(),
         },
     );

@@ -21,6 +21,7 @@ export const id: Record<TranslationKey, string> = {
   'sftp.filterPlaceholder': 'Filter folder ini…',
   'sftp.clearFilter': 'Hapus filter',
   'sftp.noMatches': 'Tidak ada berkas yang cocok dengan “{query}”.',
+  'sftp.eta': 'Sisa {eta}',
   'sftp.downloadSelected': 'Unduh {count} item',
   'sftp.downloadManyResult': '{downloaded} item diunduh',
   'sftp.downloadManyFailed': 'Beberapa item gagal diunduh',
