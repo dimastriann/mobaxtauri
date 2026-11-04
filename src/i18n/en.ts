@@ -74,6 +74,18 @@ export const en = {
   'terminal.weight.bold': 'Bold',
   'terminal.fontFamily': 'Font Family',
   'terminal.scrollback': 'Scrollback Lines',
+  'ssh.trustedHosts.heading': 'Trusted Hosts',
+  'ssh.trustedHosts.helper':
+    'Host keys accepted on first connection. Remove one to require verification again.',
+  'ssh.trustedHosts.loading': 'Loading trusted hosts…',
+  'ssh.trustedHosts.empty': 'No trusted hosts yet.',
+  'ssh.trustedHosts.loadFailed': 'Failed to load trusted hosts',
+  'ssh.trustedHosts.remove': 'Remove',
+  'ssh.trustedHosts.removeTitle': 'Remove Trusted Host',
+  'ssh.trustedHosts.removeConfirm': 'Remove the trusted key for {host}:{port}?',
+  'ssh.trustedHosts.removeHost': 'Remove trust for {host}',
+  'ssh.trustedHosts.firstSeen': 'First seen',
+
   'terminal.applyNote':
     'Theme and font changes apply immediately. Scrollback applies to new terminal sessions.',
 } as const;

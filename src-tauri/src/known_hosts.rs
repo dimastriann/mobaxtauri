@@ -8,13 +8,16 @@ pub const KNOWN_HOSTS_FILE: &str = "known_hosts.json";
 /// A trusted SSH host key. A host may hold several entries when different
 /// key algorithms are negotiated across connections.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct KnownHost {
     pub host: String,
     pub port: u16,
+    #[serde(alias = "key_type")]
     pub key_type: String,
     /// SSH fingerprint in `SHA256:<base64>` form.
     pub fingerprint: String,
     /// Unix timestamp of first acceptance.
+    #[serde(alias = "first_seen")]
     pub first_seen: u64,
 }
 
@@ -65,6 +68,18 @@ pub fn remove_host(entries: &mut Vec<KnownHost>, host: &str, port: u16) -> bool 
     let before = entries.len();
     entries.retain(|entry| !(entry.host == host && entry.port == port));
     entries.len() != before
+}
+
+/// Stable display order for the trusted-hosts manager.
+pub fn sorted_hosts(entries: &[KnownHost]) -> Vec<KnownHost> {
+    let mut entries = entries.to_vec();
+    entries.sort_by(|a, b| {
+        a.host
+            .cmp(&b.host)
+            .then(a.port.cmp(&b.port))
+            .then(a.key_type.cmp(&b.key_type))
+    });
+    entries
 }
 
 pub fn parse_known_hosts(json: &str) -> Result<Vec<KnownHost>, String> {
@@ -153,6 +168,16 @@ impl KnownHostsService {
         Ok(removed)
     }
 
+    pub async fn list<R: Runtime>(
+        &self,
+        app_handle: &AppHandle<R>,
+    ) -> Result<Vec<KnownHost>, String> {
+        self.ensure_loaded(app_handle).await?;
+        let state = self.state.lock().await;
+        let loaded = state.as_ref().ok_or("Known hosts store is locked")?;
+        Ok(sorted_hosts(&loaded.entries))
+    }
+
     async fn ensure_loaded<R: Runtime>(&self, app_handle: &AppHandle<R>) -> Result<(), String> {
         let mut state = self.state.lock().await;
         if state.is_some() {
@@ -206,8 +231,8 @@ fn now_unix_secs() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_known_hosts, remove_host, resolve_host_key, serialize_known_hosts, upsert_host,
-        HostKeyAction, KnownHost,
+        parse_known_hosts, remove_host, resolve_host_key, serialize_known_hosts, sorted_hosts,
+        upsert_host, HostKeyAction, KnownHost,
     };
 
     fn entry(host: &str, port: u16, fingerprint: &str) -> KnownHost {
@@ -304,5 +329,26 @@ mod tests {
     #[test]
     fn rejects_corrupt_known_hosts_file() {
         assert!(parse_known_hosts("not json").is_err());
+    }
+
+    #[test]
+    fn sorts_trusted_hosts_by_host_and_port() {
+        let hosts = sorted_hosts(&[
+            entry("zeta.example", 22, "SHA256:z"),
+            entry("alpha.example", 2222, "SHA256:a2"),
+            entry("alpha.example", 22, "SHA256:a"),
+        ]);
+
+        assert_eq!(
+            hosts
+                .iter()
+                .map(|host| (host.host.as_str(), host.port))
+                .collect::<Vec<_>>(),
+            vec![
+                ("alpha.example", 22),
+                ("alpha.example", 2222),
+                ("zeta.example", 22)
+            ]
+        );
     }
 }

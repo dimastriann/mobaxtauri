@@ -33,7 +33,10 @@ import {
   LuHistory,
   LuPlus,
   LuTrash2,
+  LuShieldCheck,
 } from 'react-icons/lu';
+import { ask } from '@tauri-apps/plugin-dialog';
+import type { KnownHost } from '../types/ssh';
 import { useSessionStore } from '../store/useSessionStore';
 import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore';
 import { useTranslation } from '../store/useLocaleStore';
@@ -655,7 +658,124 @@ const SshSettings: React.FC = () => {
           </Text>
         </HStack>
       </Box>
+      <TrustedHostsSettings />
     </Stack>
+  );
+};
+
+const formatFirstSeen = (seconds: number): string => {
+  if (!seconds) return '—';
+  return new Date(seconds * 1000).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+};
+
+const TrustedHostsSettings: React.FC = () => {
+  const { t } = useTranslation();
+  const [hosts, setHosts] = useState<KnownHost[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    void invoke<KnownHost[]>('known_hosts_list')
+      .then((entries) => {
+        if (!disposed) setHosts(entries);
+      })
+      .catch((loadError) => {
+        if (!disposed) setError(String(loadError));
+      })
+      .finally(() => {
+        if (!disposed) setIsLoading(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  const remove = async (host: KnownHost) => {
+    const confirmed = await ask(
+      t('ssh.trustedHosts.removeConfirm', { host: host.host, port: host.port }),
+      {
+        title: t('ssh.trustedHosts.removeTitle'),
+        kind: 'warning',
+        okLabel: t('ssh.trustedHosts.remove'),
+        cancelLabel: t('common.cancel'),
+      },
+    );
+    if (!confirmed) return;
+    try {
+      await invoke('known_hosts_remove', { host: host.host, port: host.port });
+      setHosts((entries) =>
+        entries.filter((entry) => !(entry.host === host.host && entry.port === host.port)),
+      );
+    } catch (removeError) {
+      setError(String(removeError));
+    }
+  };
+
+  return (
+    <Box borderTop="1px solid" borderColor="border.subtle" pt={3}>
+      <HStack gap={2} mb={1}>
+        <Icon as={LuShieldCheck} boxSize="14px" color="green.fg" />
+        <Text fontSize="14px" fontWeight="bold" color="fg">
+          {t('ssh.trustedHosts.heading')}
+        </Text>
+      </HStack>
+      <Text fontSize="11px" color="fg.muted" mb={2}>
+        {t('ssh.trustedHosts.helper')}
+      </Text>
+
+      {isLoading ? (
+        <Text fontSize="11px" color="fg.muted">
+          {t('ssh.trustedHosts.loading')}
+        </Text>
+      ) : error ? (
+        <Text fontSize="11px" color="red.fg" role="alert">
+          {t('ssh.trustedHosts.loadFailed')}: {error}
+        </Text>
+      ) : hosts.length === 0 ? (
+        <Text fontSize="11px" color="fg.muted">
+          {t('ssh.trustedHosts.empty')}
+        </Text>
+      ) : (
+        <VStack align="stretch" gap={1}>
+          {hosts.map((host) => (
+            <HStack
+              key={`${host.host}-${host.port}-${host.keyType}`}
+              p={2}
+              borderRadius="md"
+              bg="bg.muted"
+              gap={2}
+              align="flex-start"
+            >
+              <Box flex={1} minW={0}>
+                <Text fontSize="12px" fontWeight="500" color="fg">
+                  {host.host}:{host.port}
+                </Text>
+                <Text fontSize="10px" color="fg.muted" fontFamily="monospace" wordBreak="break-all">
+                  {host.keyType} · {host.fingerprint}
+                </Text>
+                <Text fontSize="10px" color="fg.subtle">
+                  {t('ssh.trustedHosts.firstSeen')}: {formatFirstSeen(host.firstSeen)}
+                </Text>
+              </Box>
+              <Button
+                size="xs"
+                variant="ghost"
+                colorPalette="red"
+                aria-label={t('ssh.trustedHosts.removeHost', { host: host.host })}
+                onClick={() => void remove(host)}
+              >
+                <LuTrash2 />
+              </Button>
+            </HStack>
+          ))}
+        </VStack>
+      )}
+    </Box>
   );
 };
 

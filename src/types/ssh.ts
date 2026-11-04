@@ -59,6 +59,15 @@ export const SSH_HEALTH_EVENT = 'ssh-health';
 
 export const SSH_HOST_KEY_EVENT = 'ssh-host-key';
 
+/** One trusted host key (mirrors Rust known_hosts::KnownHost). */
+export interface KnownHost {
+  host: string;
+  port: number;
+  keyType: string;
+  fingerprint: string;
+  firstSeen: number;
+}
+
 /// Emitted when a server presents a key that is not in the known-hosts
 /// store. `mismatch: true` marks the dangerous case: the host is known
 /// with a different key (possible man-in-the-middle).

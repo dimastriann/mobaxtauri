@@ -71,6 +71,18 @@ export const id: Record<TranslationKey, string> = {
   'terminal.weight.bold': 'Tebal',
   'terminal.fontFamily': 'Jenis Font',
   'terminal.scrollback': 'Jumlah Baris Gulir',
+  'ssh.trustedHosts.heading': 'Host Tepercaya',
+  'ssh.trustedHosts.helper':
+    'Kunci host yang diterima saat koneksi pertama. Hapus salah satu untuk memverifikasi ulang.',
+  'ssh.trustedHosts.loading': 'Memuat host tepercaya…',
+  'ssh.trustedHosts.empty': 'Belum ada host tepercaya.',
+  'ssh.trustedHosts.loadFailed': 'Gagal memuat host tepercaya',
+  'ssh.trustedHosts.remove': 'Hapus',
+  'ssh.trustedHosts.removeTitle': 'Hapus Host Tepercaya',
+  'ssh.trustedHosts.removeConfirm': 'Hapus kunci tepercaya untuk {host}:{port}?',
+  'ssh.trustedHosts.removeHost': 'Hapus kepercayaan untuk {host}',
+  'ssh.trustedHosts.firstSeen': 'Pertama terlihat',
+
   'terminal.applyNote':
     'Perubahan tema dan font langsung berlaku. Jumlah baris gulir berlaku untuk sesi terminal baru.',
 };

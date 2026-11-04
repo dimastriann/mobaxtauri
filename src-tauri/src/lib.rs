@@ -73,6 +73,24 @@ async fn ssh_trust_host_key(
 }
 
 #[tauri::command]
+async fn known_hosts_list(
+    app_handle: AppHandle,
+    known_hosts: State<'_, KnownHostsService>,
+) -> Result<Vec<crate::known_hosts::KnownHost>, String> {
+    known_hosts.list(&app_handle).await
+}
+
+#[tauri::command]
+async fn known_hosts_remove(
+    app_handle: AppHandle,
+    known_hosts: State<'_, KnownHostsService>,
+    host: String,
+    port: u16,
+) -> Result<bool, String> {
+    known_hosts.remove(&app_handle, &host, port).await
+}
+
+#[tauri::command]
 async fn credential_unlock(
     app_handle: AppHandle,
     credentials: State<'_, CredentialService>,
@@ -1223,6 +1241,8 @@ pub fn run() {
             set_health_interval,
             set_health_visibility,
             ssh_trust_host_key,
+            known_hosts_list,
+            known_hosts_remove,
             ssh_send_data,
             ssh_disconnect,
             ssh_resize,
