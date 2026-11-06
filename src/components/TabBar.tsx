@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { HStack, Box, Text, IconButton, Icon } from '@chakra-ui/react';
 import { LuBell, LuChevronLeft, LuChevronRight, LuColumns2, LuPlus, LuX } from 'react-icons/lu';
 import { Session, useSessionStore } from '../store/useSessionStore';
+import { buildTabDisplayNames } from '../utils/sessionTabs';
 import { ask } from '@tauri-apps/plugin-dialog';
 
 interface TabBarProps {
@@ -38,6 +39,8 @@ const TabBar: React.FC<TabBarProps> = ({
   const openSessions = openTabs
     .map((id) => sessions.find((s) => s.id === id))
     .filter(Boolean) as Session[];
+
+  const displayNames = buildTabDisplayNames(openSessions, sessions);
 
   const handleClose = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -235,7 +238,7 @@ const TabBar: React.FC<TabBarProps> = ({
                 flex={1}
                 userSelect="none"
               >
-                {session.name}
+                {displayNames.get(session.id) ?? session.name}
               </Text>
 
               {session.hasBell && (

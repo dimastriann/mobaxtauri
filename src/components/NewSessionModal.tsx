@@ -62,7 +62,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const folders = useSessionStore((state) => state.folders);
   const sessions = useSessionStore((state) => state.sessions);
   const jumpCandidates = sessions.filter(
-    (session) => session.type === 'ssh' && session.id !== editingSession?.id,
+    (session) => session.type === 'ssh' && !session.ephemeral && session.id !== editingSession?.id,
   );
   const addSession = useSessionStore((state) => state.addSession);
   const updateSession = useSessionStore((state) => state.updateSession);

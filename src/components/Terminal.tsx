@@ -316,8 +316,22 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       try {
         updateStatus('connecting');
         term.writeln(
-          `\r\n\x1b[38;5;81m● Connecting to ${user}@${host}:${session.port || 22}...\x1b[0m`,
+          `\r\n\x1b[38;5;81m�-? Connecting to ${user}@${host}:${session.port || 22}...\x1b[0m`,
         );
+
+        const jumpConfigId = session.jumpSessionId;
+        const jumpInstance = jumpConfigId
+          ? (useSessionStore
+              .getState()
+              .sessions.find(
+                (entry) => entry.id === jumpConfigId && entry.status === 'connected',
+              ) ??
+            useSessionStore
+              .getState()
+              .sessions.find(
+                (entry) => entry.configId === jumpConfigId && entry.status === 'connected',
+              ))
+          : undefined;
 
         await invoke('ssh_connect', {
           request: {
@@ -329,7 +343,8 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
             privateKeyPath: session.privateKeyPath ?? null,
             keyPassphrase: keyPassphrase ?? null,
             useAgent: session.useAgent ?? false,
-            jumpSessionId: session.jumpSessionId ?? null,
+            credentialSessionId: session.configId ?? session.id,
+            jumpSessionId: jumpInstance?.id ?? session.jumpSessionId ?? null,
             startupCommand: session.startupCommand ?? null,
             useSavedCredential: Boolean(session.savePassword && !password && !session.password),
             connectionTimeoutSecs: getSshConnectionTimeoutSeconds(),

@@ -11,15 +11,16 @@ import {
   LuArrowLeft,
 } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
-import { Session, Folder, useSessionStore } from '../store/useSessionStore';
+import { Session, Folder, sessionConfigId, useSessionStore } from '../store/useSessionStore';
 import OSIcon from './OSIcon';
 
 interface SessionCardProps {
   session: Session;
+  isConnected: boolean;
   onConnect: (session: Session) => void;
 }
 
-const SessionCard: React.FC<SessionCardProps> = ({ session, onConnect }) => {
+const SessionCard: React.FC<SessionCardProps> = ({ session, isConnected, onConnect }) => {
   const updateSession = useSessionStore((state) => state.updateSession);
   return (
     <Box
@@ -47,7 +48,7 @@ const SessionCard: React.FC<SessionCardProps> = ({ session, onConnect }) => {
           bg="bg.muted"
           align="center"
           justify="center"
-          color={session.status === 'connected' ? 'green.400' : 'fg.muted'}
+          color={isConnected ? 'green.400' : 'fg.muted'}
         >
           <OSIcon os={session.os} boxSize={5} />
         </Flex>
@@ -142,7 +143,12 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
     }
   };
 
-  const activeSessionsCount = sessions.filter((s) => s.status === 'connected').length;
+  const connectedConfigIds = new Set(
+    sessions
+      .filter((session) => session.status === 'connected')
+      .map((session) => sessionConfigId(session)),
+  );
+  const activeSessionsCount = connectedConfigIds.size;
   const sshSessions = sessions.filter((s) => s.type === 'ssh' && !s.ephemeral);
 
   const prodCount = sshSessions.filter((s) => s.tag === 'prod').length;
@@ -376,6 +382,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
                       <SessionCard
                         key={session.id}
                         session={session}
+                        isConnected={connectedConfigIds.has(session.id)}
                         onConnect={onConnectSession}
                       />
                     ))}
@@ -413,6 +420,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
                       <SessionCard
                         key={session.id}
                         session={session}
+                        isConnected={connectedConfigIds.has(session.id)}
                         onConnect={onConnectSession}
                       />
                     ))}

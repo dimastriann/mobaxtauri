@@ -80,6 +80,7 @@ export const en = {
   'sftp.clearFilter': 'Clear filter',
   'sftp.noMatches': 'No files match “{query}”.',
   'session.new': 'New SSH Session',
+  'session.openNewConnection': 'Open New Connection',
   'session.edit': 'Edit SSH Session',
   'session.duplicate': 'Duplicate SSH Session',
   'session.name': 'Session Name (Optional)',

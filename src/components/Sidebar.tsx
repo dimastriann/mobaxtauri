@@ -32,7 +32,13 @@ import {
   LuNetwork,
 } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
-import { Session, Folder, Snippet, useSessionStore } from '../store/useSessionStore';
+import {
+  Session,
+  Folder,
+  Snippet,
+  sessionConfigId,
+  useSessionStore,
+} from '../store/useSessionStore';
 import { useExportImport } from '../hooks/useExportImport';
 import SftpSidebar from './SftpSidebar';
 import ForwardSidebar from './ForwardSidebar';
@@ -58,6 +64,7 @@ interface SessionItemProps {
   onDragStart: (e: React.DragEvent, sessionId: string) => void;
   onContextMenu: (e: React.MouseEvent, id: string, name: string) => void;
   onOpen: () => void;
+  onOpenNew: () => void;
 }
 
 const SessionItem: React.FC<SessionItemProps> = ({
@@ -67,6 +74,7 @@ const SessionItem: React.FC<SessionItemProps> = ({
   onDragStart,
   onContextMenu,
   onOpen,
+  onOpenNew,
 }) => {
   let tagColorStr = 'transparent';
   if (session.tag === 'prod') tagColorStr = 'red.400';
@@ -87,10 +95,13 @@ const SessionItem: React.FC<SessionItemProps> = ({
       onContextMenu={(e) => onContextMenu(e, session.id, session.name)}
       draggable={session.id !== 'local'}
       onDragStart={(e) => onDragStart(e, session.id)}
-      onDoubleClick={onOpen}
+      onDoubleClick={(event) => {
+        if (event.ctrlKey || event.metaKey) onOpenNew();
+        else onOpen();
+      }}
       tabIndex={0}
       role="button"
-      aria-label={`${isOpen ? 'Activate' : 'Connect'} session ${session.name} (double-click)`}
+      aria-label={`${isOpen ? 'Activate' : 'Connect'} session ${session.name} (double-click; Ctrl/Cmd+double-click for a new connection)`}
       onKeyDown={(e) => {
         if (e.key === 'Enter') onOpen();
       }}
@@ -124,7 +135,8 @@ interface SessionsTabProps {
   handleDropOnFolder: (e: React.DragEvent, folderId: string | null) => void;
   handleDragStart: (e: React.DragEvent, sessionId: string) => void;
   toggleFolderCollapse: (id: string) => void;
-  openTab: (id: string) => void;
+  openConfig: (id: string) => void;
+  openNewInstance: (id: string) => void;
 }
 
 const SessionsTab: React.FC<SessionsTabProps> = ({
@@ -142,7 +154,8 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
   handleDropOnFolder,
   handleDragStart,
   toggleFolderCollapse,
-  openTab,
+  openConfig,
+  openNewInstance,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -159,6 +172,14 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
   const hasResults = filteredSessions.length > 0;
   const workspaces = useSessionStore((state) => state.workspaces);
   const deleteWorkspace = useSessionStore((state) => state.deleteWorkspace);
+  const openConfigIds = new Set(
+    openTabs
+      .map((tabId) => sessions.find((session) => session.id === tabId))
+      .filter((session): session is Session => Boolean(session))
+      .map(sessionConfigId),
+  );
+  const activeSession = sessions.find((session) => session.id === activeSessionId);
+  const activeConfigId = activeSession ? sessionConfigId(activeSession) : null;
 
   useEffect(() => {
     const focusSearch = () => searchInputRef.current?.focus();
@@ -251,7 +272,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                   {workspace.name}
                 </Text>
                 <Text fontSize="10px" color="fg.subtle">
-                  {workspace.sessionIds.length}
+                  {workspace.configIds.length}
                 </Text>
                 <IconButton
                   aria-label={`Delete workspace ${workspace.name}`}
@@ -359,11 +380,12 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                         <SessionItem
                           key={session.id}
                           session={session}
-                          isActive={activeSessionId === session.id}
-                          isOpen={openTabs.includes(session.id)}
+                          isActive={activeConfigId === session.id}
+                          isOpen={openConfigIds.has(session.id)}
                           onDragStart={handleDragStart}
                           onContextMenu={(e, id, name) => onContextMenu(e, 'session', id, name)}
-                          onOpen={() => openTab(session.id)}
+                          onOpen={() => openConfig(session.id)}
+                          onOpenNew={() => openNewInstance(session.id)}
                         />
                       ))}
                     </VStack>
@@ -380,21 +402,23 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                 <SessionItem
                   key={session.id}
                   session={session}
-                  isActive={activeSessionId === session.id}
-                  isOpen={openTabs.includes(session.id)}
+                  isActive={activeConfigId === session.id}
+                  isOpen={openConfigIds.has(session.id)}
                   onDragStart={handleDragStart}
                   onContextMenu={(e, id, name) => onContextMenu(e, 'session', id, name)}
-                  onOpen={() => openTab(session.id)}
+                  onOpen={() => openConfig(session.id)}
+                  onOpenNew={() => openNewInstance(session.id)}
                 />
               ))}
             {localSession && (
               <SessionItem
                 session={localSession}
-                isActive={activeSessionId === localSession.id}
-                isOpen={openTabs.includes(localSession.id)}
+                isActive={activeConfigId === localSession.id}
+                isOpen={openConfigIds.has(localSession.id)}
                 onDragStart={handleDragStart}
                 onContextMenu={(e, id, name) => onContextMenu(e, 'session', id, name)}
-                onOpen={() => openTab(localSession.id)}
+                onOpen={() => openConfig(localSession.id)}
+                onOpenNew={() => openNewInstance(localSession.id)}
               />
             )}
             {!hasResults && (
@@ -617,7 +641,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   const openTabs = useSessionStore((state) => state.openTabs);
   const isLoading = useSessionStore((state) => state.isLoading);
   const toggleFolderCollapse = useSessionStore((state) => state.toggleFolderCollapse);
-  const openTab = useSessionStore((state) => state.openTab);
+  const openConfig = useSessionStore((state) => state.openConfig);
+  const openNewInstance = useSessionStore((state) => state.openNewInstance);
   const { handleExport } = useExportImport();
 
   // ── Resize logic ────────────────────────────────────────────
@@ -780,7 +805,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             handleDropOnFolder={handleDropOnFolder}
             handleDragStart={handleDragStart}
             toggleFolderCollapse={toggleFolderCollapse}
-            openTab={openTab}
+            openConfig={openConfig}
+            openNewInstance={openNewInstance}
           />
         )}
         {sidebarTab === 'sftp' && <SftpSidebar />}

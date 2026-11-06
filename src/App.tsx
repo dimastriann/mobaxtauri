@@ -29,8 +29,9 @@ import SettingsModal from './components/SettingsModal';
 import CommandPalette from './components/CommandPalette';
 import { useExportImport } from './hooks/useExportImport';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './components/ContextMenu';
-import { Session, useSessionStore } from './store/useSessionStore';
+import { findOpenInstanceId, Session, useSessionStore } from './store/useSessionStore';
 import { useTerminalAppearanceStore } from './store/useTerminalAppearanceStore';
+import { useTranslation } from './store/useLocaleStore';
 import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { emit, listen } from '@tauri-apps/api/event';
@@ -59,6 +60,7 @@ interface PromptConfig {
 }
 
 function App() {
+  const { t } = useTranslation();
   const [isModalOpen, setModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<Session | undefined>(undefined);
   const [duplicateSource, setDuplicateSource] = useState<Session | undefined>(undefined);
@@ -67,6 +69,7 @@ function App() {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const openTabs = useSessionStore((state) => state.openTabs);
   const setActiveSession = useSessionStore((state) => state.setActiveSession);
+  const openNewInstance = useSessionStore((state) => state.openNewInstance);
   const closeTab = useSessionStore((state) => state.closeTab);
   const deleteSession = useSessionStore((state) => state.deleteSession);
   const updateSession = useSessionStore((state) => state.updateSession);
@@ -177,6 +180,13 @@ function App() {
 
   const handleConnectSession = (session: Session) => {
     setMainView('terminals');
+    const state = useSessionStore.getState();
+    const existing = findOpenInstanceId(state.sessions, state.openTabs, session.id);
+    if (existing) {
+      activateTerminalSession(existing);
+      return;
+    }
+    state.openTab(session.id);
     activateTerminalSession(session.id);
   };
 
@@ -685,6 +695,16 @@ function App() {
                   setEditingSession(sessions.find((s) => s.id === id));
                   setDuplicateSource(undefined);
                   setModalOpen(true);
+                }}
+              />
+              <ContextMenuItem
+                icon={LuTerminal}
+                label={t('session.openNewConnection')}
+                onClick={() => {
+                  const id = sidebarMenu.id!;
+                  setSidebarMenu(null);
+                  openNewInstance(id);
+                  setMainView('terminals');
                 }}
               />
               <ContextMenuItem

@@ -16,7 +16,9 @@ export interface Session {
   password?: string;
   privateKeyPath?: string;
   useAgent?: boolean;
-  /** Connected bastion session used as a ProxyJump transport. */
+  /** Saved profile this runtime instance was opened from. */
+  configId?: string;
+  /** Connected bastion profile used as a ProxyJump transport. */
   jumpSessionId?: string;
   /** Optional command sent to the shell immediately after connecting. */
   startupCommand?: string;
@@ -35,6 +37,55 @@ export interface Session {
   ephemeral?: boolean;
 }
 
+/** The saved profile behind a tab (config id for instances). */
+export const sessionConfigId = (session: Session): string => session.configId ?? session.id;
+
+/** Whether the tab/instance was opened from `configId`. */
+export const sessionBelongsToConfig = (session: Session, configId: string): boolean =>
+  session.id === configId || session.configId === configId;
+
+/** Open tab id for a saved config, if any instance is currently open. */
+export const findOpenInstanceId = (
+  sessions: Session[],
+  openTabs: string[],
+  configId: string,
+): string | null => {
+  for (const tabId of openTabs) {
+    const session = sessions.find((entry) => entry.id === tabId);
+    if (session && sessionBelongsToConfig(session, configId)) return tabId;
+  }
+  return null;
+};
+
+const createInstanceId = (configId: string) =>
+  `${configId}::instance-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+const createSessionInstance = (config: Session): Session => ({
+  ...config,
+  id: createInstanceId(config.id),
+  configId: config.id,
+  ephemeral: true,
+  status: 'disconnected',
+  error: undefined,
+  lastActivity: Date.now(),
+  health: undefined,
+  healthHistory: undefined,
+  hasBell: false,
+});
+
+/** The terminal unmount path cannot disconnect a row that was already
+ * removed from the store, so close/delete paths disconnect first. */
+const disconnectSshInstances = (sessions: Session[], ids: Iterable<string>) => {
+  const targets = new Set(ids);
+  for (const session of sessions) {
+    if (targets.has(session.id) && session.type === 'ssh') {
+      invoke('ssh_disconnect', { sessionId: session.id }).catch((error: unknown) => {
+        console.warn(`[STORE] Failed to disconnect ${session.id}:`, error);
+      });
+    }
+  }
+};
+
 export interface Folder {
   id: string;
   name: string;
@@ -50,8 +101,9 @@ export interface Snippet {
 export interface Workspace {
   id: string;
   name: string;
-  sessionIds: string[];
-  activeSessionId: string | null;
+  /** Saved profiles in tab order; duplicates mean multiple instances. */
+  configIds: string[];
+  activeIndex: number;
 }
 
 export interface ConnectionHistoryEntry {
@@ -83,6 +135,10 @@ interface SessionState {
   // Tab management
   setActiveSession: (id: string) => void;
   openTab: (id: string) => void;
+  /** Activate an existing instance of `configId`, or open the config itself. */
+  openConfig: (configId: string) => void;
+  /** Open another independent connection from the same saved config. */
+  openNewInstance: (configId: string) => void;
   closeTab: (id: string) => void;
   reorderTabs: (ids: string[]) => void;
   shutdownAll: () => Promise<void>;
@@ -136,6 +192,30 @@ interface PersistedAppData {
 
 type PersistedSession = Omit<Session, 'status'> & { status?: SessionStatus };
 
+type StoredWorkspace = Partial<Workspace> & {
+  sessionIds?: string[];
+  activeSessionId?: string | null;
+};
+
+const normalizeWorkspace = (workspace: StoredWorkspace): Workspace => {
+  if (workspace.configIds) {
+    return {
+      id: workspace.id ?? `workspace-${Date.now()}`,
+      name: workspace.name ?? 'Workspace',
+      configIds: workspace.configIds,
+      activeIndex: workspace.activeIndex ?? 0,
+    };
+  }
+  const configIds = workspace.sessionIds ?? [];
+  const activeSessionId = workspace.activeSessionId ?? null;
+  return {
+    id: workspace.id ?? `workspace-${Date.now()}`,
+    name: workspace.name ?? 'Workspace',
+    configIds,
+    activeIndex: Math.max(configIds.indexOf(activeSessionId ?? ''), 0),
+  };
+};
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [{ id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' }],
   openTabs: ['local'],
@@ -163,11 +243,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   deleteSession: (id) => {
+    const current = get();
+    const configuredInstances = new Set(
+      current.sessions
+        .filter((session) => session.id === id || session.configId === id)
+        .map((session) => session.id),
+    );
+    configuredInstances.add(id);
+    disconnectSshInstances(current.sessions, configuredInstances);
     set((state) => {
-      const newSessions = state.sessions.filter((s) => s.id !== id);
-      const newTabs = state.openTabs.filter((t) => t !== id);
+      const removedIds = new Set(
+        state.sessions
+          .filter((session) => session.id === id || session.configId === id)
+          .map((session) => session.id),
+      );
+      removedIds.add(id);
+      const newSessions = state.sessions.filter((session) => !removedIds.has(session.id));
+      const newTabs = state.openTabs.filter((tabId) => !removedIds.has(tabId));
       const newActive =
-        state.activeSessionId === id
+        state.activeSessionId && removedIds.has(state.activeSessionId)
           ? newTabs[newTabs.length - 1] || 'local'
           : state.activeSessionId;
       return {
@@ -175,14 +269,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         openTabs: newTabs,
         activeSessionId: newActive,
         workspaces: state.workspaces.map((workspace) => {
-          const sessionIds = workspace.sessionIds.filter((sessionId) => sessionId !== id);
+          const configIds = workspace.configIds.filter((configId) => configId !== id);
           return {
             ...workspace,
-            sessionIds,
-            activeSessionId:
-              workspace.activeSessionId === id
-                ? (sessionIds[0] ?? null)
-                : workspace.activeSessionId,
+            configIds,
+            activeIndex: Math.min(workspace.activeIndex, Math.max(configIds.length - 1, 0)),
           };
         }),
       };
@@ -283,6 +374,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
+  openConfig: (configId: string) => {
+    const state = get();
+    const existing = state.openTabs.find((id) => {
+      const session = state.sessions.find((entry) => entry.id === id);
+      return session ? sessionBelongsToConfig(session, configId) : false;
+    });
+    if (existing) {
+      get().setActiveSession(existing);
+      return;
+    }
+    get().openTab(configId);
+  },
+
+  openNewInstance: (configId: string) => {
+    const state = get();
+    const config = state.sessions.find((session) => session.id === configId && !session.ephemeral);
+    const alreadyOpen = state.openTabs.some((tabId) => {
+      const tab = state.sessions.find((session) => session.id === tabId);
+      return tab ? sessionBelongsToConfig(tab, configId) : false;
+    });
+    if (!config || config.type === 'local' || !alreadyOpen) {
+      get().openConfig(configId);
+      return;
+    }
+    const instance = createSessionInstance(config);
+    set({
+      sessions: [...state.sessions, instance],
+      openTabs: [...state.openTabs, instance.id],
+      activeSessionId: instance.id,
+    });
+  },
+
   // Folder Actions
   addFolder: (name) => {
     const id = `folder-${Date.now()}`;
@@ -323,6 +446,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   closeTab: (id) => {
     const state = get();
+    disconnectSshInstances(state.sessions, [id]);
     const idx = state.openTabs.indexOf(id);
     const newTabs = state.openTabs.filter((t) => t !== id);
 
@@ -336,9 +460,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
     }
 
-    // Mark SSH sessions as disconnected so re-opening reconnects
     const session = state.sessions.find((s) => s.id === id);
-    if (session?.type === 'ssh') {
+    if (session?.ephemeral) {
+      // Runtime instances and quick-connect sessions leave no profile row.
+      set({
+        sessions: state.sessions.filter((s) => s.id !== id),
+        openTabs: newTabs,
+        activeSessionId: newActive,
+      });
+    } else if (session?.type === 'ssh') {
       set({
         sessions: state.sessions.map((s) =>
           s.id === id
@@ -361,19 +491,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   reorderTabs: (ids) => set({ openTabs: ids }),
 
   shutdownAll: async () => {
-    const { openTabs } = get();
-    // Disconnect all SSH sessions
+    const { openTabs, sessions } = get();
+    // Disconnect every live SSH instance, including clones and quick connects.
     for (const id of openTabs) {
-      if (id.startsWith('ssh-')) {
-        try {
-          await (await import('@tauri-apps/api/core')).invoke('ssh_disconnect', { sessionId: id });
-        } catch (err) {
-          console.warn(`[STORE] Failed to disconnect ${id}:`, err);
-        }
+      const session = sessions.find((entry) => entry.id === id);
+      if (session?.type !== 'ssh') continue;
+      try {
+        await (await import('@tauri-apps/api/core')).invoke('ssh_disconnect', { sessionId: id });
+      } catch (err) {
+        console.warn(`[STORE] Failed to disconnect ${id}:`, err);
       }
     }
-    // Clear all tabs
-    set({ openTabs: ['local'], activeSessionId: 'local' });
+    // Drop runtime instances and quick-connect rows; saved profiles remain.
+    set((state) => ({
+      sessions: state.sessions.filter((session) => !session.ephemeral),
+      openTabs: ['local'],
+      activeSessionId: 'local',
+    }));
 
     // SFTP store resets automatically when activeSessionId changes in SftpSidebar
   },
@@ -397,10 +531,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   addWorkspace: (name) => {
-    const { openTabs, activeSessionId } = get();
+    const { openTabs, activeSessionId, sessions } = get();
+    const configIds = openTabs.map((tabId) => {
+      const session = sessions.find((entry) => entry.id === tabId);
+      return session ? sessionConfigId(session) : tabId;
+    });
+    const activeIndex = Math.max(openTabs.indexOf(activeSessionId ?? ''), 0);
     const id = `workspace-${Date.now()}`;
     set((state) => ({
-      workspaces: [...state.workspaces, { id, name, sessionIds: [...openTabs], activeSessionId }],
+      workspaces: [...state.workspaces, { id, name, configIds, activeIndex }],
     }));
     get().scheduleSave();
   },
@@ -414,24 +553,62 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const state = get();
     const workspace = state.workspaces.find((item) => item.id === id);
     if (!workspace) return;
-    const existingIds = new Set(state.sessions.map((session) => session.id));
-    const sessionIds = workspace.sessionIds.filter((sessionId) => existingIds.has(sessionId));
-    const restoredTabs = sessionIds.length ? sessionIds : ['local'];
-    const activeSessionId =
-      workspace.activeSessionId && restoredTabs.includes(workspace.activeSessionId)
-        ? workspace.activeSessionId
-        : restoredTabs[0];
-    set({ openTabs: restoredTabs, activeSessionId });
+
+    const restoredSessions: Session[] = [];
+    const restoredTabs: string[] = [];
+    const openedConfigs = new Set<string>();
+    for (const configId of workspace.configIds) {
+      const config = state.sessions.find(
+        (session) => session.id === configId && !session.ephemeral,
+      );
+      if (configId === 'local' || config?.type === 'local') {
+        if (!openedConfigs.has('local')) {
+          openedConfigs.add('local');
+          restoredTabs.push('local');
+        }
+        continue;
+      }
+      if (!config) continue;
+      if (!openedConfigs.has(configId)) {
+        openedConfigs.add(configId);
+        restoredTabs.push(config.id);
+        continue;
+      }
+      const instance = createSessionInstance(config);
+      restoredSessions.push(instance);
+      restoredTabs.push(instance.id);
+    }
+
+    const tabs = restoredTabs.length ? restoredTabs : ['local'];
+    const activeIndex = Math.min(Math.max(workspace.activeIndex, 0), tabs.length - 1);
+    disconnectSshInstances(
+      state.sessions,
+      state.sessions
+        .filter((session) => session.ephemeral && !tabs.includes(session.id))
+        .map((session) => session.id),
+    );
+    set((current) => ({
+      sessions: [
+        ...current.sessions.filter((session) => !session.ephemeral || tabs.includes(session.id)),
+        ...restoredSessions,
+      ],
+      openTabs: tabs,
+      activeSessionId: tabs[activeIndex],
+    }));
   },
 
   recordConnection: (sessionId, status, message) => {
-    const session = get().sessions.find((item) => item.id === sessionId);
+    const sessions = get().sessions;
+    const session = sessions.find((item) => item.id === sessionId);
     if (!session) return;
+    const config = session.configId
+      ? sessions.find((item) => item.id === session.configId && !item.ephemeral)
+      : session;
     const entry: ConnectionHistoryEntry = {
       id: `history-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      sessionId,
-      sessionName: session.name,
-      host: session.host,
+      sessionId: config?.id ?? sessionId,
+      sessionName: config?.name ?? session.name,
+      host: config?.host ?? session.host,
       status,
       timestamp: Date.now(),
       message,
@@ -468,6 +645,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         savedWorkspaces = (await legacyStore.get<Workspace[]>('workspaces')) || [];
         savedHistory = (await legacyStore.get<ConnectionHistoryEntry[]>('connectionHistory')) || [];
       }
+
+      savedWorkspaces = (savedWorkspaces as StoredWorkspace[]).map(normalizeWorkspace);
 
       const local: Session = {
         id: 'local',
@@ -539,21 +718,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   saveToDisk: async () => {
     try {
       const state = get();
-      const toSave = state.sessions.map(
-        ({
-          status: _status,
-          error: _error,
-          lastActivity: _lastActivity,
-          password: _password,
-          hasBell: _hasBell,
-          health: _health,
-          healthHistory: _healthHistory,
-          ...s
-        }) => s,
-      );
+      const toSave = state.sessions
+        .filter((session) => !session.ephemeral)
+        .map(
+          ({
+            status: _status,
+            error: _error,
+            lastActivity: _lastActivity,
+            password: _password,
+            hasBell: _hasBell,
+            health: _health,
+            healthHistory: _healthHistory,
+            configId: _configId,
+            ...s
+          }) => s,
+        );
       await invoke('save_app_data', {
         document: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           sessions: toSave,
           folders: state.folders,
           snippets: state.snippets,

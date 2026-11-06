@@ -77,6 +77,7 @@ export const id: Record<TranslationKey, string> = {
   'sftp.clearFilter': 'Hapus filter',
   'sftp.noMatches': 'Tidak ada berkas yang cocok dengan “{query}”.',
   'session.new': 'Sesi SSH Baru',
+  'session.openNewConnection': 'Buka Koneksi Baru',
   'session.edit': 'Edit Sesi SSH',
   'session.duplicate': 'Duplikat Sesi SSH',
   'session.name': 'Nama Sesi (Opsional)',
