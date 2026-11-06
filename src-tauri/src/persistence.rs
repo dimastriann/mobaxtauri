@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 const APP_DATA_FILE: &str = "mobaxtauri-data.json";
-const CURRENT_SCHEMA_VERSION: u32 = 1;
+const CURRENT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,12 +82,54 @@ fn validate(document: AppDataDocument) -> Result<AppDataDocument, String> {
     Ok(document)
 }
 
+/// v2 stores workspace membership as `configIds` plus `activeIndex`,
+/// because multiple tabs may now share one saved profile.
+fn migrate(mut document: AppDataDocument) -> AppDataDocument {
+    if document.schema_version != 1 {
+        return document;
+    }
+    for workspace in &mut document.workspaces {
+        migrate_workspace(workspace);
+    }
+    document.schema_version = CURRENT_SCHEMA_VERSION;
+    document
+}
+
+fn migrate_workspace(workspace: &mut Value) {
+    let Some(object) = workspace.as_object_mut() else {
+        return;
+    };
+    if !object.contains_key("configIds") {
+        let config_ids = object
+            .remove("sessionIds")
+            .unwrap_or_else(|| Value::Array(Vec::new()));
+        object.insert("configIds".to_string(), config_ids);
+    }
+    if !object.contains_key("activeIndex") {
+        let active_config = object
+            .get("activeSessionId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let index = active_config
+            .as_deref()
+            .and_then(|active| {
+                object
+                    .get("configIds")
+                    .and_then(Value::as_array)
+                    .and_then(|ids| ids.iter().position(|id| id.as_str() == Some(active)))
+            })
+            .unwrap_or(0);
+        object.insert("activeIndex".to_string(), serde_json::json!(index));
+    }
+    object.remove("activeSessionId");
+}
+
 fn read_document(path: &Path) -> Result<AppDataDocument, String> {
     let content = std::fs::read_to_string(path)
         .map_err(|error| format!("Failed to read app data: {error}"))?;
     let document = serde_json::from_str(&content)
         .map_err(|error| format!("Failed to parse app data: {error}"))?;
-    validate(document)
+    validate(migrate(document))
 }
 
 fn write_document_atomically(path: &Path, document: &AppDataDocument) -> Result<(), String> {
@@ -206,8 +248,8 @@ pub fn build_backup_export(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_backup_export, strip_transient_session_fields, validate, AppDataDocument,
-        BackupSelection,
+        build_backup_export, migrate, strip_transient_session_fields, validate, AppDataDocument,
+        BackupSelection, CURRENT_SCHEMA_VERSION,
     };
     use serde_json::json;
 
@@ -242,7 +284,32 @@ mod tests {
 
     #[test]
     fn rejects_unknown_schema_versions() {
-        assert!(validate(document(2)).is_err());
+        assert!(validate(document(3)).is_err());
+        assert!(validate(document(1)).is_err());
+    }
+
+    #[test]
+    fn migrates_v1_workspaces_to_config_ids() {
+        let mut doc = document(1);
+        doc.workspaces = vec![json!({
+            "id": "workspace-1",
+            "name": "Production",
+            "sessionIds": ["ssh-prod", "ssh-db"],
+            "activeSessionId": "ssh-db"
+        })];
+
+        let migrated = migrate(doc);
+        validate(migrated.clone()).expect("migrated document must validate");
+        assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(
+            migrated.workspaces[0],
+            json!({
+                "id": "workspace-1",
+                "name": "Production",
+                "configIds": ["ssh-prod", "ssh-db"],
+                "activeIndex": 1
+            })
+        );
     }
 
     #[test]
