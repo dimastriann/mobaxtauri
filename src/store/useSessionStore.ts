@@ -376,6 +376,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   openConfig: (configId: string) => {
     const state = get();
+    if (!state.sessions.some((session) => session.id === configId && !session.ephemeral)) {
+      return;
+    }
     const existing = state.openTabs.find((id) => {
       const session = state.sessions.find((entry) => entry.id === id);
       return session ? sessionBelongsToConfig(session, configId) : false;
