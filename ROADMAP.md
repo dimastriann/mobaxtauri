@@ -33,14 +33,24 @@ This roadmap communicates direction rather than fixed deadlines. Priorities may 
 - [x] Trusted-hosts manager in SSH settings
 - [x] EN/ID localization for the SFTP explorer, session form, and SSH settings
 
+## v0.9.0: session instances
+
+- [x] Open multiple independent connections from one saved session config
+- [x] Activate the existing tab on double-click; open another via the context menu or Ctrl/Cmd+double-click
+- [x] Numbered tab titles for repeated instances (`prod`, `prod (2)`, ...)
+- [x] Share the saved vault credential per config
+- [x] Resolve ProxyJump against a live instance of the chosen config
+- [x] Save and restore multi-instance workspaces
+- [x] Migrate app data to schema v2
+
 ## Later: broader workflows
 
-- [ ] SSH agent support
-- [ ] Port forwarding
-- [ ] ProxyJump / bastion-host support
-- [ ] Configurable terminal profiles and themes
-- [ ] Transfer queue and synchronization workflows
-- [ ] Localization infrastructure
+- [x] SSH agent support
+- [x] Port forwarding
+- [x] ProxyJump / bastion-host support
+- [x] Configurable terminal profiles and themes
+- [x] Transfer queue and synchronization workflows
+- [x] Localization infrastructure
 
 ## Suggested starter issues
 

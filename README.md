@@ -38,7 +38,7 @@ In particular, upgrading from a 0.3.x release prompts once for saved credentials
 | SSH terminal | Multiple Xterm.js terminal tabs backed by asynchronous Rust SSH sessions |
 | Authentication | Password and OpenSSH private-key authentication |
 | SFTP | Browse, filter, multi-select, upload, download, copy, rename, edit, create, delete, and change permissions on remote files and directories |
-| Session management | Folders, drag and drop, environment tags, saved tab workspaces, quick connect, and optional per-session startup commands |
+| Session management | Folders, drag and drop, environment tags, saved tab workspaces, quick connect, multiple tabs from one saved profile, and optional per-session startup commands |
 | Productivity | Command snippets, command palette, configurable shortcuts, terminal search, and recording export |
 | Import and export | Application backup/restore, OpenSSH config import, and MobaXterm bookmark import |
 | Host information | Linux-focused OS detection and CPU, memory, swap, and disk health display |
