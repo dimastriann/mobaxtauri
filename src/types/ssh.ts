@@ -22,6 +22,8 @@ export interface SshConnectRequest {
   keyPassphrase?: string | null;
   useSavedCredential: boolean;
   useAgent?: boolean;
+  /** Saved profile id for vault lookups; absent means `sessionId`. */
+  credentialSessionId?: string | null;
   jumpSessionId?: string | null;
   startupCommand?: string | null;
   connectionTimeoutSecs: number;

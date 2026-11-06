@@ -27,6 +27,10 @@ pub struct SshConnectRequest {
     pub key_passphrase: Option<String>,
     #[serde(default)]
     pub use_saved_credential: bool,
+    /// Saved profile id used for vault lookups; defaults to `session_id`
+    /// so older clients and single-instance tabs keep working.
+    #[serde(default)]
+    pub credential_session_id: Option<String>,
     #[serde(default)]
     pub use_agent: bool,
     /// Session id of a connected bastion to tunnel through (ProxyJump).
@@ -156,6 +160,7 @@ mod tests {
             private_key_path: None,
             key_passphrase: None,
             use_saved_credential: false,
+            credential_session_id: None,
             use_agent: false,
             jump_session_id: None,
             startup_command: None,
@@ -188,6 +193,7 @@ mod tests {
 
         assert_eq!(request.connection_timeout(), Ok(Duration::from_secs(15)));
         assert_eq!(request.startup_command, None);
+        assert_eq!(request.credential_session_id, None);
     }
 
     #[test]
