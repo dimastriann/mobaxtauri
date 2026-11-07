@@ -36,6 +36,9 @@ jobs:
       - name: install frontend dependencies
         run: npm install
 
+      - name: check version consistency
+        run: npm run check:version
+
       - name: run frontend tests
         run: npm run test -- --run
 

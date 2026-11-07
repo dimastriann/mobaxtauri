@@ -17,7 +17,8 @@
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml",
     "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --all",
     "sync:skills": "node scripts/sync-skills.mjs",
-    "project:check": "tsc --noEmit && eslint src --max-warnings 0 && prettier --check \"src/**/*.{ts,tsx,css,html,json}\" && cargo clippy --manifest-path src-tauri/Cargo.toml"
+    "check:version": "node scripts/check-version.mjs",
+    "project:check": "node scripts/check-version.mjs && tsc --noEmit && eslint src --max-warnings 0 && prettier --check \"src/**/*.{ts,tsx,css,html,json}\" && cargo clippy --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
