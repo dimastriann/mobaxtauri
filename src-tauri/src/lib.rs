@@ -12,6 +12,7 @@ pub mod sftp_remove;
 pub mod sftp_transfer;
 mod sftp_utils;
 pub mod ssh;
+pub mod ssh_keys;
 pub mod terminal_theme;
 pub mod transfers;
 mod vault_key;
@@ -27,6 +28,7 @@ use crate::session_types::{
     SshSessionStatus,
 };
 use crate::ssh::SshSession;
+use crate::ssh_keys::SshKeyService;
 use crate::transfers::TransferManager;
 use bytes::Bytes;
 use std::collections::HashMap;
@@ -88,6 +90,91 @@ async fn known_hosts_remove(
     port: u16,
 ) -> Result<bool, String> {
     known_hosts.remove(&app_handle, &host, port).await
+}
+
+#[tauri::command]
+async fn ssh_key_list(
+    app_handle: AppHandle,
+    keys: State<'_, SshKeyService>,
+) -> Result<Vec<crate::ssh_keys::SshKeyMetadata>, String> {
+    keys.list(&app_handle).await
+}
+
+#[tauri::command]
+async fn ssh_key_generate(
+    app_handle: AppHandle,
+    keys: State<'_, SshKeyService>,
+    name: String,
+    algorithm: String,
+    comment: String,
+    passphrase: Option<String>,
+) -> Result<crate::ssh_keys::SshKeyMetadata, String> {
+    keys.generate(&app_handle, name, algorithm, comment, passphrase)
+        .await
+}
+
+#[tauri::command]
+async fn ssh_key_register(
+    app_handle: AppHandle,
+    keys: State<'_, SshKeyService>,
+    name: String,
+    path: String,
+) -> Result<crate::ssh_keys::SshKeyMetadata, String> {
+    keys.register(&app_handle, name, path).await
+}
+
+#[tauri::command]
+async fn ssh_key_remove(
+    app_handle: AppHandle,
+    keys: State<'_, SshKeyService>,
+    id: String,
+) -> Result<(), String> {
+    keys.remove(&app_handle, &id).await
+}
+
+#[tauri::command]
+async fn ssh_key_export(
+    app_handle: AppHandle,
+    keys: State<'_, SshKeyService>,
+    id: String,
+    destination: String,
+) -> Result<(), String> {
+    keys.export(&app_handle, &id, &destination).await
+}
+
+#[tauri::command]
+async fn ssh_key_deploy(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    keys: State<'_, SshKeyService>,
+    session_id: String,
+    key_id: String,
+) -> Result<(), String> {
+    let public_key = keys.public_key(&app_handle, &key_id).await?;
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
+        .get(&session_id)
+        .cloned()
+        .ok_or("SFTP session not found")?;
+    let cached_home = state.sftp_homes.lock().await.get(&session_id).cloned();
+    let home = match cached_home {
+        Some(home) => home,
+        None => {
+            let resolved = sftp
+                .canonicalize(".")
+                .await
+                .map_err(|error| format!("Failed to resolve the remote home folder: {error:?}"))?;
+            state
+                .sftp_homes
+                .lock()
+                .await
+                .insert(session_id, resolved.clone());
+            resolved
+        }
+    };
+    crate::ssh_keys::deploy_public_key(&sftp, &home, &public_key).await
 }
 
 #[tauri::command]
@@ -1205,6 +1292,7 @@ pub fn run() {
         .manage(PersistenceService::default())
         .manage(CredentialService::default())
         .manage(KnownHostsService::default())
+        .manage(SshKeyService::default())
         .manage(TransferManager::default())
         .manage(ForwardManager::default())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -1245,6 +1333,12 @@ pub fn run() {
             ssh_trust_host_key,
             known_hosts_list,
             known_hosts_remove,
+            ssh_key_list,
+            ssh_key_generate,
+            ssh_key_register,
+            ssh_key_remove,
+            ssh_key_export,
+            ssh_key_deploy,
             ssh_send_data,
             ssh_disconnect,
             ssh_resize,

@@ -910,6 +910,33 @@ async fn remove_many_classifies_entries_and_continues_after_failures() {
 }
 
 #[tokio::test]
+async fn deploys_a_public_key_to_authorized_keys_idempotently() {
+    let ctx = TestContext::start("ssh-key-deploy", HostTrust::Trusted, AuthorizedKey::None).await;
+    let sftp = ctx.connected_sftp().await;
+    let (_, public, _, _, _, _) =
+        mobaxtauri_lib::ssh_keys::generate_key_pair("ed25519", "deployed", None)
+            .expect("generate key");
+
+    mobaxtauri_lib::ssh_keys::deploy_public_key(&sftp, "/", &public)
+        .await
+        .expect("first deploy");
+    mobaxtauri_lib::ssh_keys::deploy_public_key(&sftp, "/", &public)
+        .await
+        .expect("second deploy");
+
+    let content = std::fs::read_to_string(ctx.sftp_root.join(".ssh").join("authorized_keys"))
+        .expect("authorized_keys is written");
+    assert_eq!(
+        content
+            .lines()
+            .filter(|line| line.trim() == public.trim())
+            .count(),
+        1,
+        "duplicate keys must not be appended"
+    );
+}
+
+#[tokio::test]
 async fn unauthorized_key_is_rejected_with_an_actionable_message() {
     let ctx = TestContext::start("bad-pubkey", HostTrust::Trusted, AuthorizedKey::Encrypted).await;
     let error = match ctx

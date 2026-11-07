@@ -31,7 +31,7 @@ keyring = "4"
 getrandom = "0.4"
 russh-cryptovec = "0.62"
 bytes = "1.11.1"
-ssh-key = "0.6.7"
+ssh-key = { version = "0.6.7", features = ["encryption", "ed25519", "getrandom", "rsa"] }
 async-trait = "0.1.89"
 tauri-plugin-store = "2"
 tauri-plugin-log = "2.8.0"

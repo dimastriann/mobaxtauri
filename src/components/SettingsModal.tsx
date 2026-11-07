@@ -34,9 +34,11 @@ import {
   LuPlus,
   LuTrash2,
   LuShieldCheck,
+  LuKeyRound,
 } from 'react-icons/lu';
 import { ask } from '@tauri-apps/plugin-dialog';
 import type { KnownHost } from '../types/ssh';
+import SshKeyManager from './SshKeyManager';
 import { useSessionStore } from '../store/useSessionStore';
 import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore';
 import { useTranslation } from '../store/useLocaleStore';
@@ -60,6 +62,7 @@ type SettingsTab =
   | 'appearance'
   | 'terminal'
   | 'ssh'
+  | 'keys'
   | 'shortcuts'
   | 'snippets'
   | 'history'
@@ -73,6 +76,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     { id: 'appearance', label: t('settings.tab.appearance'), icon: LuPalette },
     { id: 'terminal', label: t('settings.tab.terminal'), icon: LuTerminal },
     { id: 'ssh', label: t('settings.tab.ssh'), icon: LuServer },
+    { id: 'keys', label: t('settings.tab.keys'), icon: LuKeyRound },
     { id: 'shortcuts', label: t('settings.tab.shortcuts'), icon: LuKeyboard },
     { id: 'snippets', label: t('settings.tab.snippets'), icon: LuCode },
     { id: 'history', label: t('settings.tab.history'), icon: LuHistory },
@@ -120,6 +124,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'terminal' && <TerminalSettings />}
             {activeTab === 'ssh' && <SshSettings />}
+            {activeTab === 'keys' && <SshKeyManager />}
             {activeTab === 'shortcuts' && <ShortcutSettings />}
             {activeTab === 'snippets' && <SnippetSettings />}
             {activeTab === 'history' && <ConnectionHistorySettings />}
@@ -139,6 +144,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 };
 
 const SnippetSettings: React.FC = () => {
+  const { t } = useTranslation();
   const snippets = useSessionStore((state) => state.snippets);
   const addSnippet = useSessionStore((state) => state.addSnippet);
   const deleteSnippet = useSessionStore((state) => state.deleteSnippet);
@@ -155,11 +161,11 @@ const SnippetSettings: React.FC = () => {
   return (
     <Stack gap={3}>
       <Text fontSize="14px" fontWeight="bold" color="fg">
-        Quick Command Presets
+        {t('settings.snippets.heading')}
       </Text>
       <Input
         size="sm"
-        placeholder="Preset name"
+        placeholder={t('settings.snippets.namePlaceholder')}
         value={name}
         onChange={(e) => setName(e.target.value)}
       />
@@ -167,7 +173,7 @@ const SnippetSettings: React.FC = () => {
         <Input
           size="sm"
           fontFamily="monospace"
-          placeholder="Command"
+          placeholder={t('settings.snippets.commandPlaceholder')}
           value={command}
           onChange={(e) => setCommand(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
@@ -178,7 +184,7 @@ const SnippetSettings: React.FC = () => {
           onClick={handleAdd}
           disabled={!name.trim() || !command.trim()}
         >
-          <LuPlus /> Add
+          <LuPlus /> {t('settings.snippets.add')}
         </Button>
       </HStack>
       <VStack align="stretch" gap={1}>
@@ -204,7 +210,7 @@ const SnippetSettings: React.FC = () => {
         ))}
         {!snippets.length && (
           <Text fontSize="11px" color="fg.muted">
-            No command presets saved.
+            {t('settings.snippets.empty')}
           </Text>
         )}
       </VStack>
@@ -213,16 +219,17 @@ const SnippetSettings: React.FC = () => {
 };
 
 const ConnectionHistorySettings: React.FC = () => {
+  const { t } = useTranslation();
   const history = useSessionStore((state) => state.connectionHistory);
   const clearHistory = useSessionStore((state) => state.clearConnectionHistory);
   return (
     <Stack gap={3}>
       <Flex justify="space-between" align="center">
         <Text fontSize="14px" fontWeight="bold" color="fg">
-          Connection History
+          {t('settings.history.heading')}
         </Text>
         <Button size="xs" variant="ghost" onClick={clearHistory} disabled={!history.length}>
-          Clear
+          {t('settings.history.clear')}
         </Button>
       </Flex>
       <VStack align="stretch" gap={1}>
@@ -242,7 +249,7 @@ const ConnectionHistorySettings: React.FC = () => {
                       : 'orange.fg'
                 }
               >
-                {entry.status}
+                {t(`settings.history.${entry.status}` as const)}
               </Text>
             </HStack>
             <Text fontSize="10px" color="fg.muted">
@@ -258,7 +265,7 @@ const ConnectionHistorySettings: React.FC = () => {
         ))}
         {!history.length && (
           <Text fontSize="11px" color="fg.muted">
-            No connection activity recorded yet.
+            {t('settings.history.empty')}
           </Text>
         )}
       </VStack>
@@ -268,6 +275,7 @@ const ConnectionHistorySettings: React.FC = () => {
 
 // ── Keyboard Shortcut Settings ──────────────────────────────
 const ShortcutSettings: React.FC = () => {
+  const { t } = useTranslation();
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(loadKeyboardShortcuts);
   const [recording, setRecording] = useState<ShortcutAction | null>(null);
 
@@ -288,14 +296,14 @@ const ShortcutSettings: React.FC = () => {
     <Stack gap={3}>
       <Flex justify="space-between" align="center">
         <Text fontSize="14px" fontWeight="bold" color="fg">
-          Keyboard Shortcuts
+          {t('settings.shortcuts.heading')}
         </Text>
         <Button size="xs" variant="ghost" onClick={resetShortcuts}>
-          <LuRotateCcw /> Reset
+          <LuRotateCcw /> {t('settings.shortcuts.reset')}
         </Button>
       </Flex>
       <Text fontSize="11px" color="fg.muted">
-        Click a shortcut, then press the new key combination.
+        {t('settings.shortcuts.hint')}
       </Text>
       {Object.keys(SHORTCUT_LABELS).map((key) => {
         const action = key as ShortcutAction;
@@ -305,13 +313,13 @@ const ShortcutSettings: React.FC = () => {
         return (
           <Flex key={action} justify="space-between" align="center" gap={3}>
             <Text fontSize="12px" color="fg">
-              {SHORTCUT_LABELS[action]}
+              {t(`shortcut.${action}` as const)}
             </Text>
             <Input
               size="xs"
               w="145px"
               readOnly
-              value={recording === action ? 'Press keys…' : shortcuts[action]}
+              value={recording === action ? t('settings.shortcuts.pressKeys') : shortcuts[action]}
               color={duplicate ? 'orange.fg' : undefined}
               cursor="pointer"
               textAlign="center"
@@ -333,7 +341,7 @@ const ShortcutSettings: React.FC = () => {
       })}
       {new Set(Object.values(shortcuts)).size !== Object.keys(shortcuts).length && (
         <Text fontSize="11px" color="orange.fg">
-          Duplicate shortcuts are highlighted. Only the first matching action will run.
+          {t('settings.shortcuts.duplicate')}
         </Text>
       )}
     </Stack>
@@ -460,7 +468,7 @@ const TerminalSettings: React.FC = () => {
           {t('terminal.theme.label')}
         </Text>
         <select
-          aria-label="Terminal color theme"
+          aria-label={t('settings.terminal.colorThemeAria')}
           value={selectedThemeId ?? ''}
           onChange={(event) => selectTheme(event.target.value || null)}
           style={settingsSelectStyle}
@@ -522,7 +530,7 @@ const TerminalSettings: React.FC = () => {
             {t('terminal.weight')}
           </Text>
           <select
-            aria-label="Terminal font weight"
+            aria-label={t('settings.terminal.fontWeightAria')}
             value={fontPreferences.weight}
             onChange={(event) =>
               updateFontPreferences({
@@ -549,7 +557,7 @@ const TerminalSettings: React.FC = () => {
           value={fontPreferences.family}
           onChange={(event) => updateFontPreferences({ family: event.target.value })}
           variant="subtle"
-          placeholder="e.g. Cascadia Code, monospace"
+          placeholder={t('settings.terminal.fontFamilyPlaceholder')}
         />
       </Box>
       <Box>
@@ -569,7 +577,7 @@ const TerminalSettings: React.FC = () => {
             variant="subtle"
           />
           <Text fontSize="12px" color="fg.muted">
-            lines
+            {t('settings.terminal.lines')}
           </Text>
         </HStack>
       </Box>
@@ -782,6 +790,7 @@ const TrustedHostsSettings: React.FC = () => {
 
 // ── About Section ────────────────────────────────────────────
 const AboutSettings: React.FC = () => {
+  const { t } = useTranslation();
   return (
     <Stack gap={4} align="center" justify="center" flex={1} h="full">
       <Text fontSize="24px" fontWeight="bold" bgGradient="to-r" bgClip="text" color="blue.400">
@@ -791,10 +800,10 @@ const AboutSettings: React.FC = () => {
         v0.9.0
       </Text>
       <Text fontSize="12px" color="fg.muted" textAlign="center" maxW="250px">
-        A modern SSH client and terminal emulator built with Tauri and React.
+        {t('settings.about.description')}
       </Text>
       <Text fontSize="11px" color="fg.muted" mt={4}>
-        Made with ❤️ using Rust + React
+        {t('settings.about.madeWith')}
       </Text>
     </Stack>
   );
