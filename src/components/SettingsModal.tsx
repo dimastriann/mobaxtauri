@@ -797,7 +797,7 @@ const AboutSettings: React.FC = () => {
         MobaXTauri
       </Text>
       <Text fontSize="13px" color="fg.muted">
-        v0.9.0
+        v0.10.0
       </Text>
       <Text fontSize="12px" color="fg.muted" textAlign="center" maxW="250px">
         {t('settings.about.description')}
