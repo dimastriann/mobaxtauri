@@ -9,6 +9,7 @@ import {
   DialogTitle,
   DialogCloseTrigger,
 } from './ui/dialog';
+import { useTranslation } from '../store/useLocaleStore';
 
 interface PromptField {
   key: string;
@@ -31,6 +32,7 @@ interface PromptModalProps {
  * Supports one or more labelled text fields and calls `onConfirm` with their values.
  */
 const PromptModal: React.FC<PromptModalProps> = ({ isOpen, title, fields, onConfirm, onClose }) => {
+  const { t } = useTranslation();
   const [values, setValues] = useState<Record<string, string>>({});
   const firstInputRef = useRef<HTMLInputElement>(null);
 
@@ -98,10 +100,10 @@ const PromptModal: React.FC<PromptModalProps> = ({ isOpen, title, fields, onConf
         <DialogFooter>
           <HStack gap={2}>
             <Button size="sm" variant="ghost" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button size="sm" colorPalette="blue" type="submit" form="prompt-form">
-              OK
+              {t('common.ok')}
             </Button>
           </HStack>
         </DialogFooter>

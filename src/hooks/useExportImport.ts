@@ -3,14 +3,17 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSessionStore, type Folder, type Session, type Snippet } from '../store/useSessionStore';
 import { parseSSHConfig, parseMobaXtermINI } from '../utils/importParsers';
 
+import { useTranslation } from '../store/useLocaleStore';
+
 export function useExportImport() {
+  const { t } = useTranslation();
   const exportSelection = async (payload: {
     sessionId?: string;
     folderId?: string;
     defaultPath: string;
   }) => {
     const selectedPath = await save({
-      filters: [{ name: 'MobaXTauri Backup', extensions: ['json'] }],
+      filters: [{ name: t('exportImport.backupFilter'), extensions: ['json'] }],
       defaultPath: payload.defaultPath,
     });
     if (!selectedPath) return;
@@ -22,7 +25,10 @@ export function useExportImport() {
       folderId: payload.folderId,
       exportedAt: new Date().toISOString(),
     });
-    await message(`Exported ${count} session(s).`, { title: 'Export', kind: 'info' });
+    await message(t('exportImport.exported', { count }), {
+      title: t('exportImport.exportTitle'),
+      kind: 'info',
+    });
   };
 
   const handleExportSession = async (sessionId: string, sessionName: string) => {
@@ -33,7 +39,10 @@ export function useExportImport() {
       });
     } catch (err) {
       console.error('Session export failed:', err);
-      await message(`Export failed: ${err}`, { title: 'Export Error', kind: 'error' });
+      await message(t('exportImport.exportFailed', { message: String(err) }), {
+        title: t('exportImport.exportError'),
+        kind: 'error',
+      });
     }
   };
 
@@ -45,14 +54,17 @@ export function useExportImport() {
       });
     } catch (err) {
       console.error('Folder export failed:', err);
-      await message(`Export failed: ${err}`, { title: 'Export Error', kind: 'error' });
+      await message(t('exportImport.exportFailed', { message: String(err) }), {
+        title: t('exportImport.exportError'),
+        kind: 'error',
+      });
     }
   };
 
   const handleExport = async () => {
     try {
       const selectedPath = await save({
-        filters: [{ name: 'MobaXTauri Backup', extensions: ['json'] }],
+        filters: [{ name: t('exportImport.backupFilter'), extensions: ['json'] }],
         defaultPath: 'mobaxtauri_backup.json',
       });
 
@@ -78,17 +90,23 @@ export function useExportImport() {
         content: JSON.stringify(exportData, null, 2),
       });
 
-      await message('Backup exported successfully!', { title: 'Export', kind: 'info' });
+      await message(t('exportImport.backupExported'), {
+        title: t('exportImport.exportTitle'),
+        kind: 'info',
+      });
     } catch (err) {
       console.error('Export failed:', err);
-      await message(`Export failed: ${err}`, { title: 'Export Error', kind: 'error' });
+      await message(t('exportImport.exportFailed', { message: String(err) }), {
+        title: t('exportImport.exportError'),
+        kind: 'error',
+      });
     }
   };
 
   const handleImportJSON = async () => {
     try {
       const selectedPath = await open({
-        filters: [{ name: 'MobaXTauri Backup', extensions: ['json'] }],
+        filters: [{ name: t('exportImport.backupFilter'), extensions: ['json'] }],
         multiple: false,
       });
 
@@ -103,13 +121,13 @@ export function useExportImport() {
       };
 
       if (data.app !== 'mobaxtauri') {
-        throw new Error('Invalid backup file format.');
+        throw new Error(t('exportImport.invalidBackup'));
       }
 
-      const shouldMerge = await ask(
-        'Do you want to MERGE imported sessions with your existing ones?\n\n- Click "Yes" to Merge (keep existing and append new)\n- Click "No" to REPLACE everything',
-        { title: 'Import Sessions', kind: 'warning' },
-      );
+      const shouldMerge = await ask(t('exportImport.mergePrompt'), {
+        title: t('exportImport.importSessions'),
+        kind: 'warning',
+      });
 
       const importedSessions = (data.sessions ?? []).map((s) => ({
         ...s,
@@ -173,10 +191,16 @@ export function useExportImport() {
       }
 
       await useSessionStore.getState().saveToDisk();
-      await message('Import completed successfully!', { title: 'Import', kind: 'info' });
+      await message(t('exportImport.importCompleted'), {
+        title: t('exportImport.importTitle'),
+        kind: 'info',
+      });
     } catch (err) {
       console.error('Import failed:', err);
-      await message(`Import failed: ${err}`, { title: 'Import Error', kind: 'error' });
+      await message(t('exportImport.importFailed', { message: String(err) }), {
+        title: t('exportImport.importError'),
+        kind: 'error',
+      });
     }
   };
 
@@ -192,8 +216,8 @@ export function useExportImport() {
       const parsedSessions = parseSSHConfig(content);
 
       if (parsedSessions.length === 0) {
-        await message('No valid SSH hosts found in the selected file.', {
-          title: 'Import SSH Config',
+        await message(t('exportImport.noSshHosts'), {
+          title: t('exportImport.importSshConfig'),
           kind: 'info',
         });
         return;
@@ -215,19 +239,22 @@ export function useExportImport() {
       if (importedCount > 0) {
         useSessionStore.setState({ sessions: newSessions });
         await useSessionStore.getState().saveToDisk();
-        await message(`Successfully imported ${importedCount} sessions from SSH config!`, {
-          title: 'Import Complete',
+        await message(t('exportImport.importedSsh', { count: importedCount }), {
+          title: t('exportImport.importComplete'),
           kind: 'info',
         });
       } else {
-        await message('All imported hosts already exist in your sessions.', {
-          title: 'Import Info',
+        await message(t('exportImport.allExist'), {
+          title: t('exportImport.importInfo'),
           kind: 'info',
         });
       }
     } catch (err) {
       console.error('SSH Config Import failed:', err);
-      await message(`Import failed: ${err}`, { title: 'Import Error', kind: 'error' });
+      await message(t('exportImport.importFailed', { message: String(err) }), {
+        title: t('exportImport.importError'),
+        kind: 'error',
+      });
     }
   };
 
@@ -244,8 +271,8 @@ export function useExportImport() {
       const { sessions: parsedSessions, folders: parsedFolders } = parseMobaXtermINI(content);
 
       if (parsedSessions.length === 0) {
-        await message('No valid SSH bookmarks found in the selected MobaXterm file.', {
-          title: 'Import MobaXterm',
+        await message(t('exportImport.noMobaBookmarks'), {
+          title: t('exportImport.importMobaXterm'),
           kind: 'info',
         });
         return;
@@ -290,13 +317,16 @@ export function useExportImport() {
       });
 
       await useSessionStore.getState().saveToDisk();
-      await message(`Successfully imported ${importedCount} sessions from MobaXterm bookmarks!`, {
-        title: 'Import Complete',
+      await message(t('exportImport.importedMoba', { count: importedCount }), {
+        title: t('exportImport.importComplete'),
         kind: 'info',
       });
     } catch (err) {
       console.error('MobaXterm Import failed:', err);
-      await message(`Import failed: ${err}`, { title: 'Import Error', kind: 'error' });
+      await message(t('exportImport.importFailed', { message: String(err) }), {
+        title: t('exportImport.importError'),
+        kind: 'error',
+      });
     }
   };
 

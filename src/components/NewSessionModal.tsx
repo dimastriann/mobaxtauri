@@ -520,7 +520,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
 
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={isConnecting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             type="submit"
@@ -529,7 +529,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
             size="sm"
             loading={isConnecting}
           >
-            {duplicateSource ? 'Create' : editingSession ? 'Save Changes' : 'Connect'}
+            {duplicateSource
+              ? t('session.create')
+              : editingSession
+                ? t('session.saveChanges')
+                : t('session.connect')}
           </Button>
         </DialogFooter>
         <DialogCloseTrigger />
@@ -537,13 +541,13 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
 
       <PromptModal
         isOpen={masterPasswordPrompt !== null}
-        title="Unlock credential vault"
+        title={t('session.unlockVault')}
         fields={[
           {
             key: 'password',
-            label: 'Vault master password',
+            label: t('session.vaultPassword'),
             type: 'password',
-            placeholder: 'Master password',
+            placeholder: t('session.masterPasswordPlaceholder'),
           },
         ]}
         onConfirm={handleMasterPasswordConfirm}

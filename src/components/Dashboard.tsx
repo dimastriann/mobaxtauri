@@ -13,6 +13,7 @@ import {
 import type { IconType } from 'react-icons';
 import { Session, Folder, sessionConfigId, useSessionStore } from '../store/useSessionStore';
 import OSIcon from './OSIcon';
+import { useTranslation } from '../store/useLocaleStore';
 
 interface SessionCardProps {
   session: Session;
@@ -21,6 +22,7 @@ interface SessionCardProps {
 }
 
 const SessionCard: React.FC<SessionCardProps> = ({ session, isConnected, onConnect }) => {
+  const { t } = useTranslation();
   const updateSession = useSessionStore((state) => state.updateSession);
   return (
     <Box
@@ -62,7 +64,7 @@ const SessionCard: React.FC<SessionCardProps> = ({ session, isConnected, onConne
 
       <Flex justify="space-between" align="center" mt={3}>
         <Text fontSize="xs" color="fg.muted">
-          Port {session.port}
+          {t('dashboard.port')} {session.port}
         </Text>
         <Icon
           as={LuStar}
@@ -114,6 +116,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ onQuickConnect, onConnectSession }: DashboardProps) {
+  const { t } = useTranslation();
   const sessions = useSessionStore((state) => state.sessions);
   const snippets = useSessionStore((state) => state.snippets);
   const folders = useSessionStore((state) => state.folders);
@@ -192,10 +195,10 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
             WebkitTextFillColor: 'transparent',
           }}
         >
-          Welcome back
+          {t('dashboard.welcome')}
         </Text>
         <Text color="fg.muted" fontSize="sm" mt={1}>
-          Manage your infrastructure, connections, and snippets from one place.
+          {t('dashboard.subtitle')}
         </Text>
       </Flex>
 
@@ -212,12 +215,12 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
         <Flex align="center" mb={2}>
           <Icon as={LuZap} color="yellow.400" boxSize={4} mr={2} />
           <Text fontSize="sm" fontWeight="semibold">
-            Quick Connect
+            {t('dashboard.quickConnect')}
           </Text>
         </Flex>
         <Flex gap={2}>
           <Input
-            placeholder="user@host:port (Press Enter to connect)"
+            placeholder={t('dashboard.quickPlaceholder')}
             list="quick-connect-hosts"
             size="md"
             variant="subtle"
@@ -247,7 +250,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
               }
             }}
           >
-            Connect
+            {t('dashboard.connect')}
           </Button>
         </Flex>
         {quickHistory.length > 0 && (
@@ -270,7 +273,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
                 localStorage.removeItem('quick-connect-history');
               }}
             >
-              Clear
+              {t('dashboard.clear')}
             </Button>
           </Flex>
         )}
@@ -289,7 +292,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
           >
             <Flex justify="space-between" align="center" mb={4}>
               <Text fontSize="lg" fontWeight="semibold">
-                Folders ({folders.length})
+                {t('dashboard.folders', { count: folders.length })}
               </Text>
               <Icon as={LuFolder} color="fg.muted" boxSize={5} />
             </Flex>
@@ -315,7 +318,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
                     onClick={() => setSelectedFolderId(f.id)}
                     role="button"
                     tabIndex={0}
-                    aria-label={`Show sessions in folder ${f.name}`}
+                    aria-label={t('dashboard.showFolder', { name: f.name })}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') setSelectedFolderId(f.id);
                     }}
@@ -326,7 +329,9 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
                         {f.name}
                       </Text>
                       <Text fontSize="xs" color="fg.muted">
-                        {count} host{count !== 1 ? 's' : ''}
+                        {count === 1
+                          ? t('dashboard.host', { count })
+                          : t('dashboard.hosts', { count })}
                       </Text>
                     </Flex>
                   </Flex>
@@ -334,7 +339,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
               })}
               {folders.length === 0 && (
                 <Text color="fg.muted" fontSize="sm">
-                  No folders created yet.
+                  {t('dashboard.noFolders')}
                 </Text>
               )}
             </Grid>
@@ -346,7 +351,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
               <>
                 <Flex align="center" mb={4}>
                   <IconButton
-                    aria-label="Back to all folders"
+                    aria-label={t('dashboard.backToFolders')}
                     size="xs"
                     variant="ghost"
                     mr={2}
@@ -369,9 +374,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
                     borderColor="border.subtle"
                     borderRadius="xl"
                   >
-                    <Text color="fg.muted">
-                      No sessions in this folder yet. Add one from the sidebar.
-                    </Text>
+                    <Text color="fg.muted">{t('dashboard.noSessionsInFolder')}</Text>
                   </Flex>
                 ) : (
                   <Grid
@@ -394,7 +397,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
                 <Flex align="center" mb={4}>
                   <Icon as={LuClock} color="fg.muted" boxSize={5} mr={2} />
                   <Text fontSize="xl" fontWeight="semibold">
-                    Recent & Favorites
+                    {t('dashboard.recentFavorites')}
                   </Text>
                 </Flex>
 
@@ -407,9 +410,7 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
                     borderColor="border.subtle"
                     borderRadius="xl"
                   >
-                    <Text color="fg.muted">
-                      No recent sessions found. Connect to a host to see it here.
-                    </Text>
+                    <Text color="fg.muted">{t('dashboard.noRecent')}</Text>
                   </Flex>
                 ) : (
                   <Grid
@@ -444,19 +445,19 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
           >
             <StatCard
               icon={LuServer}
-              title="Total Hosts"
+              title={t('dashboard.totalHosts')}
               value={sshSessions.length.toString()}
               color="blue"
             />
             <StatCard
               icon={LuTerminal}
-              title="Active Sessions"
+              title={t('dashboard.activeSessions')}
               value={activeSessionsCount.toString()}
               color="green"
             />
             <StatCard
               icon={LuCode}
-              title="Saved Snippets"
+              title={t('dashboard.savedSnippets')}
               value={snippets.length.toString()}
               color="purple"
             />
@@ -471,16 +472,21 @@ export default function Dashboard({ onQuickConnect, onConnectSession }: Dashboar
             }}
             gap={4}
           >
-            <StatCard icon={LuServer} title="Production" value={prodCount.toString()} color="red" />
             <StatCard
               icon={LuServer}
-              title="Staging"
+              title={t('dashboard.production')}
+              value={prodCount.toString()}
+              color="red"
+            />
+            <StatCard
+              icon={LuServer}
+              title={t('dashboard.staging')}
               value={stagingCount.toString()}
               color="orange"
             />
             <StatCard
               icon={LuServer}
-              title="Development"
+              title={t('dashboard.development')}
               value={devCount.toString()}
               color="green"
             />

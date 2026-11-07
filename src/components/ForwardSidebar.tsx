@@ -4,8 +4,10 @@ import { LuNetwork, LuPlus, LuTrash2 } from 'react-icons/lu';
 import { useSessionStore } from '../store/useSessionStore';
 import { useForwardStore } from '../store/useForwardStore';
 import { toaster } from './ui/toaster';
+import { useTranslation } from '../store/useLocaleStore';
 
 const ForwardSidebar: React.FC = () => {
+  const { t } = useTranslation();
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const activeSession = useSessionStore((state) =>
     state.sessions.find((s) => s.id === activeSessionId),
@@ -42,7 +44,7 @@ const ForwardSidebar: React.FC = () => {
     if (!activeSessionId) return;
     const portValue = bindPort.trim() ? Number(bindPort) : 0;
     if (!Number.isInteger(portValue) || portValue < 0 || portValue > 65535) {
-      toaster.create({ title: 'Invalid port', type: 'error' });
+      toaster.create({ title: t('forwards.invalidPort'), type: 'error' });
       return;
     }
     if (kind === 'remote') {
@@ -53,14 +55,14 @@ const ForwardSidebar: React.FC = () => {
         !Number.isInteger(localPort) ||
         localPort <= 0
       ) {
-        toaster.create({ title: 'Enter a local target host and port', type: 'error' });
+        toaster.create({ title: t('forwards.enterLocalTarget'), type: 'error' });
         return;
       }
       await addRemote(activeSessionId, remoteHost.trim(), portValue, targetHost.trim(), localPort);
     } else if (kind === 'local') {
       const remotePort = Number(targetPort);
       if (!targetHost.trim() || !Number.isInteger(remotePort) || remotePort <= 0) {
-        toaster.create({ title: 'Enter a target host and port', type: 'error' });
+        toaster.create({ title: t('forwards.enterTarget'), type: 'error' });
         return;
       }
       await addLocal(activeSessionId, targetHost.trim(), remotePort, portValue);
@@ -76,7 +78,7 @@ const ForwardSidebar: React.FC = () => {
       <Flex p={8} h="full" align="center" justify="center" direction="column" gap={4}>
         <Icon as={LuNetwork} boxSize="40px" color="fg.subtle" opacity={0.15} />
         <Text fontSize="12px" color="fg.muted" textAlign="center">
-          Connect to an SSH session to add tunnels.
+          {t('forwards.connectHint')}
         </Text>
       </Flex>
     );
@@ -88,14 +90,14 @@ const ForwardSidebar: React.FC = () => {
     <VStack align="stretch" h="full" minH={0} overflow="hidden" gap={0}>
       <HStack p={2} borderBottom="1px solid" borderColor="border.subtle" bg="bg.panel">
         <Text fontSize="10px" color="fg.muted" fontWeight="bold">
-          TUNNELS
+          {t('forwards.title')}
         </Text>
       </HStack>
 
       <VStack align="stretch" p={2} gap={2} borderBottom="1px solid" borderColor="border.subtle">
         <HStack gap={2}>
           <select
-            aria-label="Tunnel kind"
+            aria-label={t('forwards.kind')}
             value={kind}
             onChange={(event) => setKind(event.target.value as 'local' | 'dynamic' | 'remote')}
             style={{
@@ -110,48 +112,54 @@ const ForwardSidebar: React.FC = () => {
             }}
           >
             <option value="local" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
-              Local
+              {t('forwards.local')}
             </option>
             <option value="dynamic" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
-              Dynamic (SOCKS5)
+              {t('forwards.dynamic')}
             </option>
             <option value="remote" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
-              Remote
+              {t('forwards.remote')}
             </option>
           </select>
           <Input
-            aria-label="Port"
+            aria-label={t('forwards.port')}
             value={bindPort}
             onChange={(event) => setBindPort(event.target.value)}
-            placeholder={kind === 'remote' ? 'Server port (auto)' : 'Local port (auto)'}
+            placeholder={
+              kind === 'remote'
+                ? t('forwards.serverPortPlaceholder')
+                : t('forwards.bindPortPlaceholder')
+            }
             size="xs"
             w="140px"
           />
         </HStack>
         {kind === 'remote' && (
           <Input
-            aria-label="Server listen host"
+            aria-label={t('forwards.serverListenHost')}
             value={remoteHost}
             onChange={(event) => setRemoteHost(event.target.value)}
-            placeholder="Server listen host"
+            placeholder={t('forwards.serverListenHost')}
             size="xs"
           />
         )}
         {kind !== 'dynamic' && (
           <HStack gap={2}>
             <Input
-              aria-label="Target host"
+              aria-label={t('forwards.targetHost')}
               value={targetHost}
               onChange={(event) => setTargetHost(event.target.value)}
-              placeholder={kind === 'remote' ? 'Local target host' : 'Target host (remote)'}
+              placeholder={
+                kind === 'remote' ? t('forwards.localTargetHost') : t('forwards.remoteTargetHost')
+              }
               size="xs"
               flex={1}
             />
             <Input
-              aria-label="Target port"
+              aria-label={t('forwards.targetPort')}
               value={targetPort}
               onChange={(event) => setTargetPort(event.target.value)}
-              placeholder={kind === 'remote' ? 'Local port' : 'Port'}
+              placeholder={kind === 'remote' ? t('forwards.localPort') : t('forwards.targetPort')}
               size="xs"
               w="80px"
             />
@@ -160,10 +168,10 @@ const ForwardSidebar: React.FC = () => {
         <Button size="xs" colorPalette="blue" onClick={() => void handleAdd()} loading={isLoading}>
           <Icon as={LuPlus} boxSize="12px" />
           {kind === 'local'
-            ? 'Add Local Forward'
+            ? t('forwards.addLocal')
             : kind === 'dynamic'
-              ? 'Add SOCKS5 Proxy'
-              : 'Add Remote Forward'}
+              ? t('forwards.addDynamic')
+              : t('forwards.addRemote')}
         </Button>
         {error && (
           <Text fontSize="11px" color="red.fg" wordBreak="break-word">
@@ -176,8 +184,7 @@ const ForwardSidebar: React.FC = () => {
         {sessionForwards.length === 0 ? (
           <Box p={4}>
             <Text fontSize="11px" color="fg.muted">
-              No tunnels for this session. Local forwards map a local port to a remote target;
-              dynamic forwards expose a SOCKS5 proxy.
+              {t('forwards.empty')}
             </Text>
           </Box>
         ) : (
@@ -200,14 +207,14 @@ const ForwardSidebar: React.FC = () => {
                 </Text>
                 <Text fontSize="10px" color="fg.subtle">
                   {forward.kind === 'dynamic'
-                    ? 'SOCKS5 proxy'
+                    ? t('forwards.socks5')
                     : forward.kind === 'remote'
-                      ? 'Remote forward'
-                      : 'Local forward'}
+                      ? t('forwards.remoteLabel')
+                      : t('forwards.localLabel')}
                 </Text>
               </Box>
               <Button
-                aria-label="Remove tunnel"
+                aria-label={t('forwards.remove')}
                 size="xs"
                 variant="ghost"
                 color="red.fg"

@@ -1030,7 +1030,26 @@ const SftpSidebar: React.FC = () => {
           if (!(event.target as HTMLElement).closest('[data-sftp-row]')) clearSelection();
         }}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') clearSelection();
+          if (event.key === 'Escape') {
+            clearSelection();
+            return;
+          }
+          if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+          const rows = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>('[data-sftp-row]'),
+          );
+          if (!rows.length) return;
+          const current = rows.indexOf(document.activeElement as HTMLElement);
+          const next =
+            event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? rows.length - 1
+                : event.key === 'ArrowDown'
+                  ? Math.min(current + 1, rows.length - 1)
+                  : Math.max(current - 1, 0);
+          event.preventDefault();
+          rows[next]?.focus();
         }}
         onContextMenu={(e) => {
           e.preventDefault();

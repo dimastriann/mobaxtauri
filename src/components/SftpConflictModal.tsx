@@ -10,6 +10,7 @@ import {
   DialogCloseTrigger,
 } from './ui/dialog';
 import type { SftpConflictPolicy } from '../types/sftp';
+import { useTranslation } from '../store/useLocaleStore';
 
 interface SftpConflictModalProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ const SftpConflictModal: React.FC<SftpConflictModalProps> = ({
   onResolve,
   onClose,
 }) => {
+  const { t } = useTranslation();
   return (
     <DialogRoot
       open={isOpen}
@@ -33,32 +35,28 @@ const SftpConflictModal: React.FC<SftpConflictModalProps> = ({
     >
       <DialogContent bg="bg.panel" borderColor="border.subtle">
         <DialogHeader>
-          <DialogTitle color="fg.default">Destination already exists</DialogTitle>
+          <DialogTitle color="fg.default">{t('sftp.conflict.title')}</DialogTitle>
         </DialogHeader>
         <DialogBody pb={2}>
           <VStack align="flex-start" gap={2}>
             <Text fontSize="13px" color="fg.default">
-              <Text as="span" fontWeight="600">
-                {destName}
-              </Text>{' '}
-              already exists in the remote folder.
+              {t('sftp.conflict.body', { name: destName })}
             </Text>
             <Text fontSize="12px" color="fg.muted">
-              Rename saves the new item under a suffixed name, overwrite replaces the existing file,
-              and skip leaves everything unchanged.
+              {t('sftp.conflict.helper')}
             </Text>
           </VStack>
         </DialogBody>
         <DialogFooter>
           <HStack gap={2}>
             <Button size="sm" variant="ghost" onClick={() => onResolve('skip')}>
-              Skip
+              {t('sftp.conflict.skip')}
             </Button>
             <Button size="sm" colorPalette="blue" onClick={() => onResolve('rename')}>
-              Rename copy
+              {t('sftp.conflict.rename')}
             </Button>
             <Button size="sm" colorPalette="red" onClick={() => onResolve('overwrite')}>
-              Overwrite
+              {t('sftp.conflict.overwrite')}
             </Button>
           </HStack>
         </DialogFooter>

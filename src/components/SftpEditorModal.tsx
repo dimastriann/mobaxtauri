@@ -11,6 +11,7 @@ import {
   DialogTitle,
   DialogCloseTrigger,
 } from './ui/dialog';
+import { useTranslation } from '../store/useLocaleStore';
 
 interface SftpEditorModalProps {
   isOpen: boolean;
@@ -85,6 +86,7 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
   filePath,
   fileName,
 }) => {
+  const { t } = useTranslation();
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -217,8 +219,8 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
       >
         <DialogHeader>
           <DialogTitle color="fg.default" fontSize="14px">
-            Edit File: {fileName}
-            {isDirty ? ' •' : ''}
+            {t('editor.title', { name: fileName })}
+            {isDirty ? ' ?' : ''}
           </DialogTitle>
         </DialogHeader>
 
@@ -234,17 +236,16 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
               flexWrap="wrap"
             >
               <Text fontSize="11px" color="orange.fg" flex={1}>
-                The file changed on the server since it was loaded. Overwriting replaces the server
-                copy with your edits.
+                {t('editor.changed')}
               </Text>
               <Button size="xs" colorPalette="red" onClick={handleOverwrite} loading={isSaving}>
-                Overwrite anyway
+                {t('editor.overwriteAnyway')}
               </Button>
               <Button size="xs" colorPalette="blue" onClick={handleReload}>
-                Reload from server
+                {t('editor.reload')}
               </Button>
               <Button size="xs" variant="ghost" onClick={() => setSaveConflict(false)}>
-                Dismiss
+                {t('editor.dismiss')}
               </Button>
             </HStack>
           )}
@@ -254,7 +255,7 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
             </Box>
           ) : error ? (
             <Box p={4} color="red.400" bg="red.subtle" borderRadius="md">
-              <Text fontSize="12px">Error: {error}</Text>
+              <Text fontSize="12px">{t('editor.error', { message: error })}</Text>
             </Box>
           ) : (
             <Box
@@ -339,14 +340,14 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
               {language}
             </Badge>
             <Text fontSize="11px" color="fg.muted">
-              Ln {cursor.line}, Col {cursor.column}
+              {t('editor.lineColumn', { line: cursor.line, column: cursor.column })}
             </Text>
             <Text fontSize="11px" color={isDirty ? 'orange.fg' : 'fg.muted'}>
-              {isDirty ? 'Modified' : 'Saved'}
+              {isDirty ? t('editor.modified') : t('editor.saved')}
             </Text>
             <Box flex={1} />
             <Button variant="ghost" size="sm" onClick={onClose} disabled={isLoading || isSaving}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               colorPalette="blue"
@@ -355,7 +356,7 @@ const SftpEditorModal: React.FC<SftpEditorModalProps> = ({
               loading={isSaving}
               disabled={isLoading || !!error || !isDirty}
             >
-              Save
+              {t('editor.save')}
             </Button>
           </HStack>
         </DialogFooter>

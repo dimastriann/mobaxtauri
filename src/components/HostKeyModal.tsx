@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import type { SshHostKeyEvent } from '../types/ssh';
+import { useTranslation } from '../store/useLocaleStore';
 
 interface HostKeyModalProps {
   prompt: SshHostKeyEvent | null;
@@ -22,6 +23,7 @@ interface HostKeyModalProps {
  * and styling escalate to a man-in-the-middle warning.
  */
 const HostKeyModal: React.FC<HostKeyModalProps> = ({ prompt, onAccept, onReject }) => {
+  const { t } = useTranslation();
   const mismatch = prompt?.mismatch ?? false;
 
   return (
@@ -41,20 +43,21 @@ const HostKeyModal: React.FC<HostKeyModalProps> = ({ prompt, onAccept, onReject 
           <Stack gap={3}>
             {mismatch && (
               <Text fontSize="12px" color="red.fg">
-                This host is known with a DIFFERENT key. The connection may be intercepted
-                (man-in-the-middle). Only continue if the server operator told you the key changed.
+                {t('hostKey.mismatchWarning')}
               </Text>
             )}
             <Text fontSize="12px" color="fg.muted">
-              Verify this fingerprint against your server before trusting it.
+              {t('hostKey.verify')}
             </Text>
             <Stack gap={1} fontFamily="monospace" fontSize="11px">
               <Text color="fg.default">
-                Host: {prompt?.host}:{prompt?.port}
+                {t('hostKey.host')}: {prompt?.host}:{prompt?.port}
               </Text>
-              <Text color="fg.default">Key type: {prompt?.keyType}</Text>
+              <Text color="fg.default">
+                {t('hostKey.keyType')}: {prompt?.keyType}
+              </Text>
               <Text color="fg.default" wordBreak="break-all">
-                Fingerprint: {prompt?.fingerprint}
+                {t('hostKey.fingerprint')}: {prompt?.fingerprint}
               </Text>
             </Stack>
           </Stack>
@@ -62,14 +65,14 @@ const HostKeyModal: React.FC<HostKeyModalProps> = ({ prompt, onAccept, onReject 
         <DialogFooter>
           <HStack gap={2}>
             <Button size="sm" variant="ghost" onClick={onReject}>
-              Reject
+              {t('hostKey.reject')}
             </Button>
             <Button
               size="sm"
               colorPalette={mismatch ? 'red' : 'blue'}
               onClick={() => prompt && onAccept(prompt)}
             >
-              {mismatch ? 'Replace key and connect' : 'Trust and connect'}
+              {mismatch ? t('hostKey.replace') : t('hostKey.trust')}
             </Button>
           </HStack>
         </DialogFooter>

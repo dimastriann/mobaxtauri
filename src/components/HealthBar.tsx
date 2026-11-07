@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { HStack, Box, Text } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
 import { useSessionStore } from '../store/useSessionStore';
+import { useTranslation } from '../store/useLocaleStore';
 
 const HealthBar: React.FC = () => {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -47,13 +49,13 @@ const HealthBar: React.FC = () => {
       flexWrap="wrap"
       cursor="pointer"
       onClick={() => setExpanded((value) => !value)}
-      title="Click to show detailed health values"
+      title={t('health.clickDetails')}
     >
       <HStack
         gap={1}
         flexShrink={0}
         opacity={isStale ? 0.55 : 1}
-        title={isStale ? 'Health data is stale' : 'Live health data'}
+        title={isStale ? t('health.stale') : t('health.live')}
       >
         <Text color="fg.subtle" fontWeight="600">
           CPU
@@ -70,7 +72,14 @@ const HealthBar: React.FC = () => {
         <Text w="42px" textAlign="right">
           {h.cpu.toFixed(1)}%
         </Text>
-        <Box display="flex" alignItems="end" gap="1px" h="14px" w="28px" title="Recent CPU trend">
+        <Box
+          display="flex"
+          alignItems="end"
+          gap="1px"
+          h="14px"
+          w="28px"
+          title={t('health.recentCpu')}
+        >
           {history.slice(-10).map((sample, index) => (
             <Box
               key={index}
@@ -81,7 +90,7 @@ const HealthBar: React.FC = () => {
           ))}
         </Box>
       </HStack>
-      {isStale && <Text color="orange.400">stale</Text>}
+      {isStale && <Text color="orange.400">{t('health.staleLabel')}</Text>}
       {expanded && (
         <Text color="fg.muted" whiteSpace="nowrap">
           RAM {h.ram_used.toFixed(0)}/{h.ram_total.toFixed(0)} MB · SWAP {h.swap_used.toFixed(0)}/

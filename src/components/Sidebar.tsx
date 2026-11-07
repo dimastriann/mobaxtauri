@@ -44,6 +44,7 @@ import SftpSidebar from './SftpSidebar';
 import ForwardSidebar from './ForwardSidebar';
 import OSIcon from './OSIcon';
 import { Tooltip } from './ui/tooltip';
+import { useTranslation } from '../store/useLocaleStore';
 
 type SidebarMenuType = 'folder' | 'session' | 'empty' | 'snippet' | 'input' | 'import';
 
@@ -76,6 +77,7 @@ const SessionItem: React.FC<SessionItemProps> = ({
   onOpen,
   onOpenNew,
 }) => {
+  const { t } = useTranslation();
   let tagColorStr = 'transparent';
   if (session.tag === 'prod') tagColorStr = 'red.400';
   else if (session.tag === 'staging') tagColorStr = 'orange.400';
@@ -101,7 +103,7 @@ const SessionItem: React.FC<SessionItemProps> = ({
       }}
       tabIndex={0}
       role="button"
-      aria-label={`${isOpen ? 'Activate' : 'Connect'} session ${session.name} (double-click; Ctrl/Cmd+double-click for a new connection)`}
+      aria-label={`${isOpen ? t('sidebar.activateSession', { name: session.name }) : t('sidebar.connectSession', { name: session.name })} (${t('sidebar.newConnectionHint')})`}
       onKeyDown={(e) => {
         if (e.key === 'Enter') onOpen();
       }}
@@ -157,6 +159,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
   openConfig,
   openNewInstance,
 }) => {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
@@ -191,11 +194,11 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
     <>
       <HStack p={3} justify="space-between">
         <Text fontSize="11px" fontWeight="bold" color="fg.subtle" letterSpacing="0.05em">
-          LIST
+          {t('sidebar.list')}
         </Text>
         <HStack gap={1}>
           <IconButton
-            aria-label="Import Bookmarks"
+            aria-label={t('sidebar.importBookmarks')}
             size="xs"
             variant="ghost"
             onClick={(e) => onContextMenu(e, 'import')}
@@ -204,7 +207,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
             <LuUpload size={14} />
           </IconButton>
           <IconButton
-            aria-label="Export Bookmarks"
+            aria-label={t('sidebar.exportBookmarks')}
             size="xs"
             variant="ghost"
             onClick={handleExport}
@@ -213,7 +216,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
             <LuDownload size={14} />
           </IconButton>
           <IconButton
-            aria-label="New Session"
+            aria-label={t('sidebar.newSession')}
             size="xs"
             variant="ghost"
             onClick={onNewSession}
@@ -222,7 +225,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
             <LuPlus size={14} />
           </IconButton>
           <IconButton
-            aria-label="New Folder"
+            aria-label={t('sidebar.newFolder')}
             size="xs"
             variant="ghost"
             onClick={onAddFolder}
@@ -239,12 +242,12 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
             <HStack gap={1.5} color="fg.subtle">
               <LuLayers size={12} />
               <Text fontSize="10px" fontWeight="bold" letterSpacing="0.05em">
-                WORKSPACES
+                {t('sidebar.workspaces')}
               </Text>
             </HStack>
             <IconButton
-              aria-label="Save current tabs as workspace"
-              title="Save current tabs as workspace"
+              aria-label={t('sidebar.saveWorkspace')}
+              title={t('sidebar.saveWorkspace')}
               size="2xs"
               variant="ghost"
               onClick={onSaveWorkspace}
@@ -254,7 +257,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
           </HStack>
           {workspaces.length === 0 ? (
             <Text px={1} fontSize="10px" color="fg.subtle">
-              Save the current tab group for quick restore.
+              {t('sidebar.saveWorkspaceHint')}
             </Text>
           ) : (
             workspaces.map((workspace) => (
@@ -275,7 +278,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                   {workspace.configIds.length}
                 </Text>
                 <IconButton
-                  aria-label={`Delete workspace ${workspace.name}`}
+                  aria-label={t('sidebar.deleteWorkspace', { name: workspace.name })}
                   size="2xs"
                   variant="ghost"
                   color="fg.muted"
@@ -306,8 +309,8 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
           ref={searchInputRef}
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search sessions"
-          aria-label="Search sessions by name, host, or tag"
+          placeholder={t('sidebar.searchPlaceholder')}
+          aria-label={t('sidebar.searchAria')}
           size="xs"
           pl="28px"
           pr={searchQuery ? '28px' : undefined}
@@ -315,8 +318,8 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
         />
         {searchQuery && (
           <IconButton
-            aria-label="Clear session search"
-            title="Clear search"
+            aria-label={t('sidebar.clearSearch')}
+            title={t('sidebar.clearSearch')}
             size="2xs"
             variant="ghost"
             position="absolute"
@@ -336,6 +339,25 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
         px={2}
         pb={4}
         className="custom-scrollbar"
+        role="list"
+        onKeyDown={(event) => {
+          if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+          const rows = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>('[role="button"]'),
+          );
+          if (!rows.length) return;
+          const current = rows.indexOf(document.activeElement as HTMLElement);
+          const next =
+            event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? rows.length - 1
+                : event.key === 'ArrowDown'
+                  ? Math.min(current + 1, rows.length - 1)
+                  : Math.max(current - 1, 0);
+          event.preventDefault();
+          rows[next]?.focus();
+        }}
         onContextMenu={(e) => onContextMenu(e, 'empty')}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => handleDropOnFolder(e, null)}
@@ -456,14 +478,15 @@ const SnippetsTab: React.FC<SnippetsTabProps> = ({
   onExecuteSnippet,
   onContextMenu,
 }) => {
+  const { t } = useTranslation();
   return (
     <>
       <HStack p={3} justify="space-between">
         <Text fontSize="11px" fontWeight="bold" color="fg.subtle" letterSpacing="0.05em">
-          QUICK COMMANDS
+          {t('sidebar.quickCommands')}
         </Text>
         <IconButton
-          aria-label="New Snippet"
+          aria-label={t('sidebar.newSnippet')}
           size="xs"
           variant="ghost"
           onClick={onAddSnippet}
@@ -494,7 +517,7 @@ const SnippetsTab: React.FC<SnippetsTabProps> = ({
           >
             <Icon as={LuCode} boxSize="24px" />
             <Text fontSize="11px" textAlign="center">
-              No snippets yet. Save common commands here.
+              {t('sidebar.noSnippets')}
             </Text>
           </Flex>
         ) : (
@@ -568,58 +591,61 @@ export const SidebarPanelTabs: React.FC<SidebarPanelTabsProps> = ({
   active,
   onSelect,
   showLabels,
-}) => (
-  <HStack role="tablist" aria-label="Sidebar panels" gap={0} flex={1} minW={0}>
-    {SIDEBAR_TABS.map((tab) => {
-      const isActive = active === tab.id;
-      return (
-        <Tooltip
-          key={tab.id}
-          content={tab.label}
-          positioning={{ placement: 'bottom' }}
-          openDelay={300}
-        >
-          <Button
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            aria-label={tab.label}
-            title={tab.label}
-            variant="ghost"
-            flex={1}
-            minW={0}
-            h="auto"
-            py="7px"
-            borderRadius={0}
-            borderBottom="2px solid"
-            borderColor={isActive ? 'blue.fg' : 'transparent'}
-            _hover={{ bg: isActive ? 'transparent' : 'bg.muted' }}
-            onClick={() => onSelect(tab.id)}
+}) => {
+  const { t } = useTranslation();
+  return (
+    <HStack role="tablist" aria-label={t('sidebar.panels')} gap={0} flex={1} minW={0}>
+      {SIDEBAR_TABS.map((tab) => {
+        const isActive = active === tab.id;
+        return (
+          <Tooltip
+            key={tab.id}
+            content={t(`sidebar.tab.${tab.id}` as const)}
+            positioning={{ placement: 'bottom' }}
+            openDelay={300}
           >
-            <HStack justify="center" gap={showLabels ? 1.5 : 0} minW={0}>
-              <Icon
-                as={tab.icon}
-                boxSize="14px"
-                color={isActive ? 'blue.fg' : 'fg.muted'}
-                flexShrink={0}
-              />
-              {showLabels && (
-                <Text
-                  fontSize="11px"
-                  fontWeight="bold"
-                  color={isActive ? 'fg' : 'fg.muted'}
-                  whiteSpace="nowrap"
-                >
-                  {tab.label}
-                </Text>
-              )}
-            </HStack>
-          </Button>
-        </Tooltip>
-      );
-    })}
-  </HStack>
-);
+            <Button
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-label={t(`sidebar.tab.${tab.id}` as const)}
+              title={t(`sidebar.tab.${tab.id}` as const)}
+              variant="ghost"
+              flex={1}
+              minW={0}
+              h="auto"
+              py="7px"
+              borderRadius={0}
+              borderBottom="2px solid"
+              borderColor={isActive ? 'blue.fg' : 'transparent'}
+              _hover={{ bg: isActive ? 'transparent' : 'bg.muted' }}
+              onClick={() => onSelect(tab.id)}
+            >
+              <HStack justify="center" gap={showLabels ? 1.5 : 0} minW={0}>
+                <Icon
+                  as={tab.icon}
+                  boxSize="14px"
+                  color={isActive ? 'blue.fg' : 'fg.muted'}
+                  flexShrink={0}
+                />
+                {showLabels && (
+                  <Text
+                    fontSize="11px"
+                    fontWeight="bold"
+                    color={isActive ? 'fg' : 'fg.muted'}
+                    whiteSpace="nowrap"
+                  >
+                    {t(`sidebar.tab.${tab.id}` as const)}
+                  </Text>
+                )}
+              </HStack>
+            </Button>
+          </Tooltip>
+        );
+      })}
+    </HStack>
+  );
+};
 
 const Sidebar: React.FC<SidebarProps> = ({
   collapsed,
@@ -643,6 +669,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const toggleFolderCollapse = useSessionStore((state) => state.toggleFolderCollapse);
   const openConfig = useSessionStore((state) => state.openConfig);
   const openNewInstance = useSessionStore((state) => state.openNewInstance);
+  const { t } = useTranslation();
   const { handleExport } = useExportImport();
 
   // ── Resize logic ────────────────────────────────────────────
@@ -712,7 +739,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         gap={1}
       >
         <IconButton
-          aria-label="Expand sidebar"
+          aria-label={t('sidebar.expand')}
           size="xs"
           variant="ghost"
           onClick={onToggleCollapse}
@@ -724,12 +751,12 @@ const Sidebar: React.FC<SidebarProps> = ({
         {SIDEBAR_TABS.map((tab) => (
           <Tooltip
             key={tab.id}
-            content={tab.label}
+            content={t(`sidebar.tab.${tab.id}` as const)}
             positioning={{ placement: 'right' }}
             openDelay={300}
           >
             <IconButton
-              aria-label={tab.label}
+              aria-label={t(`sidebar.tab.${tab.id}` as const)}
               size="xs"
               variant="ghost"
               onClick={() => {
@@ -775,7 +802,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           />
           <Box py="6px" px={1} display="flex" alignItems="center">
             <IconButton
-              aria-label="Collapse sidebar"
+              aria-label={t('sidebar.collapse')}
               size="xs"
               variant="ghost"
               onClick={onToggleCollapse}

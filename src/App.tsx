@@ -124,7 +124,7 @@ function App() {
 
       const match = str.match(/^([^@]+)@([^:]+)(?::(\d+))?$/);
       if (!match) {
-        alert('Invalid format. Use user@host or user@host:port');
+        alert(t('app.invalidQuickConnect'));
         return;
       }
 
@@ -282,15 +282,12 @@ function App() {
       if (dialogOpen) return;
       dialogOpen = true;
       try {
-        const confirmed = await ask(
-          'SSH sessions are still connected. Closing MobaXTauri will disconnect them. Close anyway?',
-          {
-            title: 'Active sessions',
-            kind: 'warning',
-            okLabel: 'Close',
-            cancelLabel: 'Stay',
-          },
-        );
+        const confirmed = await ask(t('app.closeConfirm'), {
+          title: t('app.activeSessionsTitle'),
+          kind: 'warning',
+          okLabel: t('app.close'),
+          cancelLabel: t('app.stay'),
+        });
         if (confirmed) {
           await invoke('quit_app');
         }
@@ -305,7 +302,7 @@ function App() {
     return () => {
       unlisten?.();
     };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const handleGlobalClick = () => setSidebarMenu(null);
@@ -352,7 +349,7 @@ function App() {
           session?.type === 'ssh' &&
           session.status === 'connected' &&
           !(await ask(`Disconnect "${session.name}" and close the tab?`, {
-            title: 'Close Session',
+            title: t('tabs.closeTitle'),
             kind: 'warning',
           }))
         )
@@ -380,6 +377,7 @@ function App() {
     closeTab,
     setActiveSession,
     handleNewSession,
+    t,
   ]);
 
   useEffect(() => {
@@ -425,16 +423,18 @@ function App() {
   // ── UI Handlers ─────────────────────────────────────────────────
   const handleAddFolder = () => {
     setPromptConfig({
-      title: 'New Folder',
-      fields: [{ key: 'name', label: 'Folder Name', placeholder: 'e.g. Production' }],
+      title: t('app.newFolderTitle'),
+      fields: [
+        { key: 'name', label: t('app.folderName'), placeholder: t('app.folderPlaceholder') },
+      ],
       onConfirm: ({ name }) => addFolder(name),
     });
   };
   const handleAddSnippet = () => {
     setPromptConfig({
-      title: 'New Snippet',
+      title: t('app.newSnippetTitle'),
       fields: [
-        { key: 'name', label: 'Snippet Name', placeholder: 'e.g. Check disk usage' },
+        { key: 'name', label: t('app.snippetName'), placeholder: t('app.snippetPlaceholder') },
         { key: 'command', label: 'Command', placeholder: 'e.g. df -h' },
       ],
       onConfirm: ({ name, command }) => addSnippet(name, command),
@@ -443,8 +443,10 @@ function App() {
   const handleSaveWorkspace = () => {
     if (openTabs.length === 0) return;
     setPromptConfig({
-      title: 'Save Workspace',
-      fields: [{ key: 'name', label: 'Workspace Name', placeholder: 'e.g. Production checks' }],
+      title: t('app.saveWorkspaceTitle'),
+      fields: [
+        { key: 'name', label: t('app.workspaceName'), placeholder: t('app.workspacePlaceholder') },
+      ],
       onConfirm: ({ name }) => addWorkspace(name),
     });
   };
@@ -482,7 +484,7 @@ function App() {
               color: mainView === 'dashboard' ? 'brand.500' : 'fg',
             }}
             onClick={() => setMainView('dashboard')}
-            title="Dashboard"
+            title={t('app.viewDashboard')}
           >
             <LuLayoutDashboard size={22} />
           </Flex>
@@ -497,7 +499,7 @@ function App() {
               color: mainView === 'terminals' ? 'brand.500' : 'fg',
             }}
             onClick={() => setMainView('terminals')}
-            title="Terminals"
+            title={t('app.viewTerminals')}
           >
             <LuTerminal size={22} />
           </Flex>
@@ -508,7 +510,7 @@ function App() {
             cursor="pointer"
             color="fg.muted"
             _hover={{ bg: 'bg.muted', color: 'fg' }}
-            title="Settings"
+            title={t('app.viewSettings')}
             onClick={() => setSettingsOpen(true)}
           >
             <LuSettings size={22} />
@@ -621,7 +623,7 @@ function App() {
             <>
               <ContextMenuItem
                 icon={LuPlus}
-                label="New Session"
+                label={t('sidebar.newSession')}
                 onClick={() => {
                   setSidebarMenu(null);
                   handleNewSession();
@@ -629,7 +631,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuFolderPlus}
-                label="New Folder"
+                label={t('sidebar.newFolder')}
                 onClick={() => {
                   setSidebarMenu(null);
                   handleAddFolder();
@@ -637,7 +639,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuCode}
-                label="New Snippet"
+                label={t('sidebar.newSnippet')}
                 onClick={() => {
                   setSidebarMenu(null);
                   handleAddSnippet();
@@ -649,32 +651,32 @@ function App() {
             <>
               <ContextMenuItem
                 icon={LuPencil}
-                label="Rename Folder"
+                label={t('app.renameFolderTitle')}
                 onClick={() => {
                   const id = sidebarMenu.id!;
                   const old = sidebarMenu.name;
                   setSidebarMenu(null);
                   setPromptConfig({
-                    title: 'Rename Folder',
-                    fields: [{ key: 'name', label: 'Folder Name', placeholder: old }],
+                    title: t('app.renameFolderTitle'),
+                    fields: [{ key: 'name', label: t('app.folderName'), placeholder: old }],
                     onConfirm: ({ name }) => renameFolder(id, name),
                   });
                 }}
               />
               <ContextMenuItem
                 icon={LuX}
-                label="Delete Folder"
+                label={t('common.delete')}
                 color="red.fg"
                 onClick={async () => {
                   const id = sidebarMenu.id!;
                   setSidebarMenu(null);
-                  if (await ask('Delete?')) deleteFolder(id);
+                  if (await ask(t('common.delete'))) deleteFolder(id);
                 }}
               />
               <ContextMenuSeparator />
               <ContextMenuItem
                 icon={LuDownload}
-                label="Export Folder"
+                label={t('app.exportFolder')}
                 onClick={() => {
                   const id = sidebarMenu.id!;
                   const name = sidebarMenu.name ?? 'folder';
@@ -688,7 +690,7 @@ function App() {
             <>
               <ContextMenuItem
                 icon={LuPencil}
-                label="Edit Session"
+                label={t('app.editSession')}
                 onClick={() => {
                   const id = sidebarMenu.id!;
                   setSidebarMenu(null);
@@ -709,7 +711,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuCopy}
-                label="Duplicate Session"
+                label={t('app.duplicateSession')}
                 onClick={() => {
                   const id = sidebarMenu.id!;
                   setSidebarMenu(null);
@@ -720,7 +722,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuTag}
-                label="Tag: Prod"
+                label={t('app.tagProd')}
                 color="red.400"
                 onClick={() => {
                   const id = sidebarMenu.id!;
@@ -730,7 +732,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuTag}
-                label="Tag: Staging"
+                label={t('app.tagStaging')}
                 color="orange.400"
                 onClick={() => {
                   const id = sidebarMenu.id!;
@@ -740,7 +742,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuTag}
-                label="Tag: Dev"
+                label={t('app.tagDev')}
                 color="green.400"
                 onClick={() => {
                   const id = sidebarMenu.id!;
@@ -750,7 +752,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuTag}
-                label="Tag: None"
+                label={t('app.tagNone')}
                 color="fg.muted"
                 onClick={() => {
                   const id = sidebarMenu.id!;
@@ -761,7 +763,7 @@ function App() {
               <ContextMenuSeparator />
               <ContextMenuItem
                 icon={LuDownload}
-                label="Export Session"
+                label={t('app.exportSession')}
                 onClick={() => {
                   const id = sidebarMenu.id!;
                   const name = sidebarMenu.name ?? 'session';
@@ -771,12 +773,12 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuX}
-                label="Delete Session"
+                label={t('app.deleteSession')}
                 color="red.fg"
                 onClick={async () => {
                   const id = sidebarMenu.id!;
                   setSidebarMenu(null);
-                  if (await ask('Delete?')) deleteSession(id);
+                  if (await ask(t('common.delete'))) deleteSession(id);
                 }}
               />
             </>
@@ -785,16 +787,16 @@ function App() {
             <>
               <ContextMenuItem
                 icon={LuPencil}
-                label="Edit Snippet"
+                label={t('app.editSnippet')}
                 onClick={() => {
                   const id = sidebarMenu.id!;
                   const oldN = sidebarMenu.name;
                   const oldC = sidebarMenu.command;
                   setSidebarMenu(null);
                   setPromptConfig({
-                    title: 'Edit Snippet',
+                    title: t('app.editSnippet'),
                     fields: [
-                      { key: 'name', label: 'Snippet Name', placeholder: oldN },
+                      { key: 'name', label: t('app.snippetName'), placeholder: oldN },
                       { key: 'command', label: 'Command', placeholder: oldC },
                     ],
                     onConfirm: ({ name, command }) => updateSnippet(id, { name, command }),
@@ -803,7 +805,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuX}
-                label="Delete Snippet"
+                label={t('app.deleteSnippet')}
                 color="red.fg"
                 onClick={() => {
                   const id = sidebarMenu.id!;
@@ -817,7 +819,7 @@ function App() {
             <>
               <ContextMenuItem
                 icon={LuScissors}
-                label="Cut"
+                label={t('app.cut')}
                 onClick={() => {
                   setSidebarMenu(null);
                   handleCut();
@@ -825,7 +827,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuCopy}
-                label="Copy"
+                label={t('app.copy')}
                 onClick={() => {
                   setSidebarMenu(null);
                   handleCopy();
@@ -833,7 +835,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuClipboard}
-                label="Paste"
+                label={t('app.paste')}
                 onClick={() => {
                   setSidebarMenu(null);
                   handlePaste();
@@ -842,7 +844,7 @@ function App() {
               <ContextMenuSeparator />
               <ContextMenuItem
                 icon={LuMousePointer2}
-                label="Select All"
+                label={t('app.selectAll')}
                 onClick={() => {
                   setSidebarMenu(null);
                   handleSelectAll();
@@ -854,7 +856,7 @@ function App() {
             <>
               <ContextMenuItem
                 icon={LuCode}
-                label="Import MobaXTauri Backup (JSON)"
+                label={t('app.importBackup')}
                 onClick={() => {
                   setSidebarMenu(null);
                   handleImportJSON();
@@ -862,7 +864,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuTerminal}
-                label="Import SSH Config File"
+                label={t('app.importSshConfig')}
                 onClick={() => {
                   setSidebarMenu(null);
                   handleImportSSHConfig();
@@ -870,7 +872,7 @@ function App() {
               />
               <ContextMenuItem
                 icon={LuMonitor}
-                label="Import MobaXterm Bookmarks"
+                label={t('app.importMobaXterm')}
                 onClick={() => {
                   setSidebarMenu(null);
                   handleImportMobaXterm();

@@ -3,6 +3,7 @@ import { HStack, Box, Text, IconButton, Icon } from '@chakra-ui/react';
 import { LuBell, LuChevronLeft, LuChevronRight, LuColumns2, LuPlus, LuX } from 'react-icons/lu';
 import { Session, useSessionStore } from '../store/useSessionStore';
 import { buildTabDisplayNames } from '../utils/sessionTabs';
+import { useTranslation } from '../store/useLocaleStore';
 import { ask } from '@tauri-apps/plugin-dialog';
 
 interface TabBarProps {
@@ -31,6 +32,7 @@ const TabBar: React.FC<TabBarProps> = ({
   onToggleSplit,
   onActivateSession,
 }) => {
+  const { t } = useTranslation();
   const { sessions, openTabs, activeSessionId, closeTab, reorderTabs } = useSessionStore();
   const [checkedTabs, setCheckedTabs] = useState<string[]>([]);
 
@@ -47,8 +49,8 @@ const TabBar: React.FC<TabBarProps> = ({
     const session = sessions.find((s) => s.id === id);
     // Show confirmation dialog only for SSH sessions to avoid accidental disconnect
     if (session?.type === 'ssh' && session.status === 'connected') {
-      const confirmed = await ask(`Disconnect "${session.name}" and close the tab?`, {
-        title: 'Close Session',
+      const confirmed = await ask(t('tabs.closeConfirm', { name: session.name }), {
+        title: t('tabs.closeTitle'),
         kind: 'warning',
       });
       if (!confirmed) return;
@@ -61,8 +63,8 @@ const TabBar: React.FC<TabBarProps> = ({
       e.preventDefault();
       const session = sessions.find((s) => s.id === id);
       if (session?.type === 'ssh' && session.status === 'connected') {
-        const confirmed = await ask(`Disconnect "${session.name}" and close the tab?`, {
-          title: 'Close Session',
+        const confirmed = await ask(t('tabs.closeConfirm', { name: session.name }), {
+          title: t('tabs.closeTitle'),
           kind: 'warning',
         });
         if (!confirmed) return;
@@ -97,8 +99,8 @@ const TabBar: React.FC<TabBarProps> = ({
     }).length;
     if (
       connectedCount > 0 &&
-      !(await ask(`Disconnect and close ${selectedTabs.length} selected tabs?`, {
-        title: 'Close Selected Sessions',
+      !(await ask(t('tabs.closeSelectedConfirm', { count: selectedTabs.length }), {
+        title: t('tabs.closeSelectedTitle'),
         kind: 'warning',
       }))
     )
@@ -137,6 +139,8 @@ const TabBar: React.FC<TabBarProps> = ({
     >
       {/* Scrollable tab area */}
       <HStack
+        role="tablist"
+        aria-label={t('tabs.list')}
         className="tabbar-scroll"
         flex={1}
         gap={0}
@@ -157,6 +161,32 @@ const TabBar: React.FC<TabBarProps> = ({
             <Box
               key={session.id}
               data-tab
+              data-tab-id={session.id}
+              role="tab"
+              aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
+              onKeyDown={(event) => {
+                const ids = openSessions.map((entry) => entry.id);
+                const index = ids.indexOf(session.id);
+                if (event.key === 'Delete') {
+                  event.preventDefault();
+                  closeTab(session.id);
+                  return;
+                }
+                let nextIndex: number | null = null;
+                if (event.key === 'ArrowRight') nextIndex = (index + 1) % ids.length;
+                else if (event.key === 'ArrowLeft')
+                  nextIndex = (index - 1 + ids.length) % ids.length;
+                else if (event.key === 'Home') nextIndex = 0;
+                else if (event.key === 'End') nextIndex = ids.length - 1;
+                if (nextIndex === null) return;
+                event.preventDefault();
+                const nextId = ids[nextIndex];
+                onActivateSession(nextId);
+                requestAnimationFrame(() => {
+                  document.querySelector<HTMLElement>(`[data-tab-id="${nextId}"]`)?.focus();
+                });
+              }}
               onClick={(event) => handleTabClick(event, session.id)}
               onMouseDown={(e) => handleMiddleClick(e, session.id)}
               display="flex"
@@ -247,7 +277,7 @@ const TabBar: React.FC<TabBarProps> = ({
                   boxSize="12px"
                   color="orange.fg"
                   flexShrink={0}
-                  aria-label="Terminal bell notification"
+                  aria-label={t('tabs.bell')}
                 />
               )}
 
@@ -293,8 +323,8 @@ const TabBar: React.FC<TabBarProps> = ({
               {selectedTabs.length}
             </Text>
             <IconButton
-              aria-label="Move selected tabs left"
-              title="Move selected tabs left"
+              aria-label={t('tabs.moveLeft')}
+              title={t('tabs.moveLeft')}
               size="xs"
               variant="ghost"
               onClick={() => moveSelectedTabs(-1)}
@@ -302,8 +332,8 @@ const TabBar: React.FC<TabBarProps> = ({
               <LuChevronLeft />
             </IconButton>
             <IconButton
-              aria-label="Move selected tabs right"
-              title="Move selected tabs right"
+              aria-label={t('tabs.moveRight')}
+              title={t('tabs.moveRight')}
               size="xs"
               variant="ghost"
               onClick={() => moveSelectedTabs(1)}
@@ -311,8 +341,8 @@ const TabBar: React.FC<TabBarProps> = ({
               <LuChevronRight />
             </IconButton>
             <IconButton
-              aria-label="Close selected tabs"
-              title="Close selected tabs"
+              aria-label={t('tabs.closeSelected')}
+              title={t('tabs.closeSelected')}
               size="xs"
               variant="ghost"
               color="red.fg"
@@ -338,7 +368,7 @@ const TabBar: React.FC<TabBarProps> = ({
           <LuColumns2 />
         </IconButton>
         <IconButton
-          aria-label="New Session"
+          aria-label={t('tabs.newSession')}
           size="xs"
           variant="ghost"
           color="blue.fg"

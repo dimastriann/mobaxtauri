@@ -5,6 +5,7 @@ import { LuTerminal, LuMonitor } from 'react-icons/lu';
 import { ColorModeButton } from './ui/color-mode';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useSessionStore } from '../store/useSessionStore';
+import { useTranslation } from '../store/useLocaleStore';
 
 interface TitleBarProps {
   quickConnectRef: React.RefObject<HTMLInputElement | null>;
@@ -21,6 +22,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
   onQuickConnect,
   onContextMenu,
 }) => {
+  const { t } = useTranslation();
   return (
     <Box
       h="38px"
@@ -57,7 +59,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
         <Input
           ref={quickConnectRef}
           size="xs"
-          placeholder="Quick Connect (user@host:port)"
+          placeholder={t('title.quickConnect')}
           w="200px"
           value={quickConnectStr}
           onChange={(e) => setQuickConnectStr(e.target.value)}
@@ -66,21 +68,18 @@ const TitleBar: React.FC<TitleBarProps> = ({
         />
 
         <HStack gap={1} pr={2} borderRight="1px solid" borderColor="border.subtle">
-          <Tooltip content="Shutdown all active sessions" showArrow>
+          <Tooltip content={t('title.shutdown')} showArrow>
             <IconButton
-              aria-label="Shutdown all sessions"
+              aria-label={t('title.shutdownAria')}
               size="xs"
               variant="ghost"
               color="red.fg"
               _hover={{ bg: 'red.subtle' }}
               onClick={async () => {
-                const confirmed = await ask(
-                  'Shutdown all active sessions? ALL terminal data will be lost.',
-                  {
-                    title: 'MobaXTauri',
-                    kind: 'warning',
-                  },
-                );
+                const confirmed = await ask(t('title.shutdownConfirm'), {
+                  title: 'MobaXTauri',
+                  kind: 'warning',
+                });
                 if (confirmed) {
                   useSessionStore.getState().shutdownAll();
                 }
@@ -90,7 +89,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
             </IconButton>
           </Tooltip>
 
-          <Tooltip content="Toggle Dark/Light Mode" showArrow>
+          <Tooltip content={t('title.toggleTheme')} showArrow>
             <ColorModeButton
               size="xs"
               zIndex={20}

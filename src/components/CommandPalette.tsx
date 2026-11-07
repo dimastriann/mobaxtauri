@@ -12,6 +12,7 @@ import {
 import type { IconType } from 'react-icons';
 import type { Session, Snippet } from '../store/useSessionStore';
 import { DialogBody, DialogContent, DialogRoot } from './ui/dialog';
+import { useTranslation } from '../store/useLocaleStore';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -31,7 +32,7 @@ interface PaletteItem {
   id: string;
   label: string;
   detail?: string;
-  category: 'Sessions' | 'Snippets' | 'Settings' | 'Actions';
+  category: string;
   icon: IconType;
   keywords: string;
   run: () => void;
@@ -50,6 +51,7 @@ const CommandPalette = ({
   onShowDashboard,
   onShowTerminals,
 }: CommandPaletteProps) => {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -60,8 +62,8 @@ const CommandPalette = ({
       ...sessions.map((session) => ({
         id: `session-${session.id}`,
         label: session.name,
-        detail: session.host ?? 'Local terminal',
-        category: 'Sessions' as const,
+        detail: session.host ?? t('palette.localTerminal'),
+        category: t('palette.category.sessions'),
         icon: LuTerminal,
         keywords: `${session.name} ${session.host ?? ''} ${session.user ?? ''} ${session.tag ?? ''}`,
         run: () => onOpenSession(session.id),
@@ -71,7 +73,7 @@ const CommandPalette = ({
             id: `snippet-${snippet.id}`,
             label: snippet.name,
             detail: snippet.command,
-            category: 'Snippets' as const,
+            category: t('palette.category.snippets'),
             icon: LuCode,
             keywords: `${snippet.name} ${snippet.command}`,
             run: () => onExecuteSnippet(snippet.command),
@@ -79,34 +81,34 @@ const CommandPalette = ({
         : []),
       {
         id: 'settings',
-        label: 'Open Settings',
-        detail: 'Appearance, terminal, and SSH preferences',
-        category: 'Settings',
+        label: t('palette.settings'),
+        detail: t('palette.settingsDetail'),
+        category: t('palette.category.settings'),
         icon: LuSettings,
         keywords: 'open settings preferences appearance theme terminal ssh',
         run: onOpenSettings,
       },
       {
         id: 'new-session',
-        label: 'New Session',
-        detail: 'Create an SSH connection',
-        category: 'Actions',
+        label: t('palette.newSession'),
+        detail: t('palette.newSessionDetail'),
+        category: t('palette.category.actions'),
         icon: LuPlus,
         keywords: 'new create session ssh connection',
         run: onNewSession,
       },
       {
         id: 'dashboard',
-        label: 'Show Dashboard',
-        category: 'Actions',
+        label: t('palette.dashboard'),
+        category: t('palette.category.actions'),
         icon: LuMonitor,
         keywords: 'show open dashboard home',
         run: onShowDashboard,
       },
       {
         id: 'terminals',
-        label: 'Show Terminals',
-        category: 'Actions',
+        label: t('palette.terminals'),
+        category: t('palette.category.actions'),
         icon: LuCommand,
         keywords: 'show open terminals console',
         run: onShowTerminals,
@@ -122,6 +124,7 @@ const CommandPalette = ({
       onNewSession,
       onShowDashboard,
       onShowTerminals,
+      t,
     ],
   );
 
@@ -201,8 +204,8 @@ const CommandPalette = ({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Search sessions, snippets, settings, and actions"
-              aria-label="Command palette search"
+              placeholder={t('palette.placeholder')}
+              aria-label={t('palette.search')}
               variant="flushed"
               border="none"
               h="52px"
@@ -250,7 +253,7 @@ const CommandPalette = ({
             ))}
             {!filteredItems.length && (
               <Text p={6} textAlign="center" fontSize="12px" color="fg.muted">
-                No commands found
+                {t('palette.noResults')}
               </Text>
             )}
           </VStack>

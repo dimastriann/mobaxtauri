@@ -21,6 +21,7 @@ import HostKeyModal from './HostKeyModal';
 import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
 import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore';
+import { useTranslation } from '../store/useLocaleStore';
 import { resolveTerminalTheme, toXtermTheme } from '../utils/terminalAppearance';
 import { toaster } from './ui/toaster';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
@@ -114,6 +115,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const connectionAttemptRef = useRef(false);
   const recordingRef = useRef(false);
   const recordingStartLineRef = useRef(0);
+  const { t } = useTranslation();
   const { colorMode } = useColorMode();
   const themes = useTerminalAppearanceStore((state) => state.themes);
   const selectedThemeId = useTerminalAppearanceStore((state) => state.selectedThemeId);
@@ -160,7 +162,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       recordingRef.current = true;
       setIsRecording(true);
       toaster.create({
-        title: 'Recording started',
+        title: t('terminal.recordingStarted'),
         description: 'Capturing terminal output from this point.',
         type: 'info',
       });
@@ -188,12 +190,16 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         lines: recordedLines,
       });
       toaster.create({
-        title: 'Recording saved',
+        title: t('terminal.recordingSaved'),
         description: path.split(/[\\/]/).pop() ?? path,
         type: 'success',
       });
     } catch (error) {
-      toaster.create({ title: 'Export failed', description: String(error), type: 'error' });
+      toaster.create({
+        title: t('terminal.recordingExportFailed'),
+        description: String(error),
+        type: 'error',
+      });
     }
   };
 
@@ -259,16 +265,19 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   // ── Private-key passphrase prompt inside terminal ────────────
   // Reuses the masked-intake machinery of the password prompt: keystrokes
   // stay in refs, backend only ever receives the final attempt payload.
-  const promptPassphrase = useCallback((hint: string | null) => {
-    const term = xtermRef.current;
-    if (!term) return;
-    isPassphraseModeRef.current = true;
-    passphraseBufRef.current = '';
-    if (hint) {
-      term.write(`\x1b[33m${hint}\x1b[0m\r\n`);
-    }
-    term.write('\x1b[33mPrivate key passphrase: \x1b[0m');
-  }, []);
+  const promptPassphrase = useCallback(
+    (hint: string | null) => {
+      const term = xtermRef.current;
+      if (!term) return;
+      isPassphraseModeRef.current = true;
+      passphraseBufRef.current = '';
+      if (hint) {
+        term.write(`\x1b[33m${hint}\x1b[0m\r\n`);
+      }
+      term.write(`\x1b[33m${t('terminal.privateKeyPassphrase')}\x1b[0m`);
+    },
+    [t],
+  );
 
   // ── Password prompt inside terminal ─────────────────────────
   const promptPassword = useCallback(() => {
@@ -282,22 +291,23 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     isPasswordModeRef.current = true;
     passwordBufRef.current = '';
     term.write(
-      `\x1b[33mPassword for ${session?.user || 'user'}@${session?.host || 'host'}: \x1b[0m`,
+      `\x1b[33m${t('terminal.passwordFor', { user: session?.user || 'user', host: session?.host || 'host' })}\x1b[0m`,
     );
-  }, [getSession]);
+  }, [getSession, t]);
 
   // ── Reconnect / disconnect banner ────────────────────────────
-  const showReconnectBanner = useCallback((term: XTerm) => {
-    if (isDisconnectedRef.current) return;
-    isDisconnectedRef.current = true;
-    term.writeln('');
-    term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
-    term.writeln('\x1b[33m  ⚠  Session disconnected.\x1b[0m');
-    term.writeln(
-      '\x1b[33m  Press \x1b[1mr\x1b[22m to reconnect  •  \x1b[1mq\x1b[22m to close tab\x1b[0m',
-    );
-    term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
-  }, []);
+  const showReconnectBanner = useCallback(
+    (term: XTerm) => {
+      if (isDisconnectedRef.current) return;
+      isDisconnectedRef.current = true;
+      term.writeln('');
+      term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
+      term.writeln(`\x1b[33m  ⚠  ${t('terminal.disconnected')}\x1b[0m`);
+      term.writeln(`\x1b[33m  ${t('terminal.reconnectHint')}\x1b[0m`);
+      term.writeln('\x1b[33m──────────────────────────────────────────────────────\x1b[0m');
+    },
+    [t],
+  );
 
   // ── Reconnect logic ────────────────────────────────────────────────────────
   const doConnect = useCallback(
@@ -387,13 +397,13 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         if (errMsg.includes('passphrase is incorrect')) {
           if (++passphraseRetryRef.current >= 3) {
             term.writeln(
-              `\x1b[33mPassphrase attempted ${passphraseRetryRef.current} times. Review the key file outside this app if it still fails.\x1b[0m`,
+              `\x1b[33m${t('terminal.passphraseAttempts', { count: passphraseRetryRef.current })}\x1b[0m`,
             );
             passphraseRetryRef.current = 0;
             showReconnectBanner(term);
             return;
           }
-          promptPassphrase('The key passphrase was rejected. Try again or Ctrl+C to cancel.');
+          promptPassphrase(t('terminal.passphraseRejected'));
           return;
         }
         showReconnectBanner(term);
@@ -401,7 +411,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         connectionAttemptRef.current = false;
       }
     },
-    [sessionId, getSession, updateStatus, promptPassword, promptPassphrase, showReconnectBanner],
+    [sessionId, getSession, updateStatus, promptPassword, promptPassphrase, showReconnectBanner, t],
   );
 
   // Store the presented key and retry the connection (Trust and connect).
@@ -637,7 +647,9 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         `  Session: \x1b[32m${session.name}\x1b[0m  → \x1b[36m${session.user}@${session.host}:${session.port || 22}\x1b[0m`,
       );
     } else {
-      term.writeln(`  Session: \x1b[32m${session?.name || 'Local Terminal'}\x1b[0m`);
+      term.writeln(
+        `  ${t('terminal.session')}: \x1b[32m${session?.name || t('terminal.localTerminal')}\x1b[0m`,
+      );
     }
     term.writeln('');
 
@@ -718,7 +730,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           }
         } else if (data === '\x03') {
           // Ctrl+C: cancel prompting, return to the reconnect state
-          term.writeln('\r\n\x1b[90mCancelled.\x1b[0m');
+          term.writeln(`\r\n\x1b[90m${t('terminal.cancelled')}\x1b[0m`);
           isPassphraseModeRef.current = false;
           passphraseBufRef.current = '';
           showReconnectBanner(term);
@@ -746,7 +758,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           }
         } else if (data === '\x03') {
           // Ctrl+C: cancel
-          term.writeln('\r\n\x1b[90mCancelled.\x1b[0m');
+          term.writeln(`\r\n\x1b[90m${t('terminal.cancelled')}\x1b[0m`);
           isPasswordModeRef.current = false;
           passwordBufRef.current = '';
           showReconnectBanner(term);
@@ -1032,7 +1044,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
               }}
             />
             <IconButton
-              aria-label="Previous"
+              aria-label={t('terminal.previous')}
               size="xs"
               variant="ghost"
               onClick={() => searchAddonRef.current?.findPrevious(searchText)}
@@ -1040,7 +1052,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
               <LuChevronUp />
             </IconButton>
             <IconButton
-              aria-label="Next"
+              aria-label={t('terminal.next')}
               size="xs"
               variant="ghost"
               onClick={() => searchAddonRef.current?.findNext(searchText)}
@@ -1048,7 +1060,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
               <LuChevronDown />
             </IconButton>
             <IconButton
-              aria-label="Close"
+              aria-label={t('terminal.closeSearch')}
               size="xs"
               variant="ghost"
               onClick={() => {
@@ -1087,6 +1099,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({
   secondarySessionId = null,
   onActivateSession,
 }) => {
+  const { t } = useTranslation();
   const openTabs = useSessionStore((state) => state.openTabs);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const visibleIds = [activeSessionId, secondarySessionId].filter(
@@ -1140,10 +1153,10 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({
               ⌨
             </Box>
             <Box fontSize="14px" fontWeight="500">
-              No open sessions
+              {t('terminal.noOpenSessions')}
             </Box>
             <Box fontSize="12px" mt={1} opacity={0.6}>
-              Click + or double-click the tab bar to create a new session
+              {t('terminal.noOpenHint')}
             </Box>
           </Box>
         </Box>
