@@ -391,7 +391,8 @@ export const en = {
   'session.unlockVault': 'Unlock credential vault',
   'session.vaultPassword': 'Vault master password',
   'session.allowKbi': 'Allow keyboard-interactive (MFA) prompts',
-  'session.allowKbiHelper': 'Useful for OTP, 2FA, and servers that do not accept plain password auth.',
+  'session.allowKbiHelper':
+    'Useful for OTP, 2FA, and servers that do not accept plain password auth.',
   'session.new': 'New SSH Session',
   'session.openNewConnection': 'Open New Connection',
   'session.edit': 'Edit SSH Session',

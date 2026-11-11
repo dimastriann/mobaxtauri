@@ -387,7 +387,8 @@ export const id: Record<TranslationKey, string> = {
   'session.unlockVault': 'Buka vault kredensial',
   'session.vaultPassword': 'Kata sandi utama vault',
   'session.allowKbi': 'Izinkan prompt keyboard-interactive (MFA)',
-  'session.allowKbiHelper': 'Berguna untuk OTP, 2FA, dan server yang tidak menerima autentikasi kata sandi biasa.',
+  'session.allowKbiHelper':
+    'Berguna untuk OTP, 2FA, dan server yang tidak menerima autentikasi kata sandi biasa.',
   'session.new': 'Sesi SSH Baru',
   'session.openNewConnection': 'Buka Koneksi Baru',
   'session.edit': 'Edit Sesi SSH',

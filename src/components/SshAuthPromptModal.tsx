@@ -17,11 +17,7 @@ interface SshAuthPromptModalProps {
   onCancel: () => void;
 }
 
-const SshAuthPromptModal: React.FC<SshAuthPromptModalProps> = ({
-  prompt,
-  onSubmit,
-  onCancel,
-}) => {
+const SshAuthPromptModal: React.FC<SshAuthPromptModalProps> = ({ prompt, onSubmit, onCancel }) => {
   const { t } = useTranslation();
   const [values, setValues] = useState<string[]>(() => prompt?.prompts.map(() => '') ?? []);
   const firstInputRef = useRef<HTMLInputElement>(null);
