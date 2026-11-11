@@ -52,6 +52,11 @@ import {
   ShortcutAction,
   SHORTCUT_LABELS,
 } from '../utils/keyboardShortcuts';
+import {
+  loadReconnectSettings,
+  saveReconnectSettings,
+  type ReconnectSettings,
+} from '../utils/reconnectPolicy';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -598,6 +603,7 @@ const SshSettings: React.FC = () => {
   const [healthInterval, setHealthInterval] = useState(
     () => localStorage.getItem('health-interval') || '5',
   );
+  const [reconnect, setReconnect] = useState<ReconnectSettings>(loadReconnectSettings);
 
   const saveDefaultPort = (val: string) => {
     setDefaultPort(val);
@@ -613,6 +619,11 @@ const SshSettings: React.FC = () => {
     setHealthInterval(val);
     localStorage.setItem('health-interval', val);
     void invoke('set_health_interval', { seconds: Number(val) });
+  };
+
+  const updateReconnect = (next: ReconnectSettings) => {
+    setReconnect(next);
+    saveReconnectSettings(next);
   };
 
   return (
@@ -666,6 +677,49 @@ const SshSettings: React.FC = () => {
             {t('ssh.seconds')}
           </Text>
         </HStack>
+      </Box>
+      <Box borderTop="1px solid" borderColor="border.subtle" pt={3}>
+        <HStack gap={2}>
+          <input
+            type="checkbox"
+            id="auto-reconnect"
+            checked={reconnect.enabled}
+            onChange={(event) => updateReconnect({ ...reconnect, enabled: event.target.checked })}
+          />
+          <label htmlFor="auto-reconnect" style={{ fontSize: '13px', cursor: 'pointer' }}>
+            {t('ssh.autoReconnect')}
+          </label>
+        </HStack>
+        <Text fontSize="11px" color="fg.muted" mt={1}>
+          {t('ssh.autoReconnectHelper')}
+        </Text>
+        <HStack gap={2} mt={2} align="center">
+          <Text fontSize="12px" color="fg.muted">
+            {t('ssh.autoReconnectMax')}
+          </Text>
+          <Input
+            size="sm"
+            w="80px"
+            type="number"
+            min={5}
+            max={300}
+            value={reconnect.maxDelaySecs}
+            disabled={!reconnect.enabled}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (Number.isInteger(value) && value >= 1 && value <= 300) {
+                updateReconnect({ ...reconnect, maxDelaySecs: value });
+              }
+            }}
+            variant="subtle"
+          />
+          <Text fontSize="12px" color="fg.muted">
+            {t('ssh.seconds')}
+          </Text>
+        </HStack>
+        <Text fontSize="11px" color="fg.muted" mt={1}>
+          {t('ssh.autoReconnectMaxHelper')}
+        </Text>
       </Box>
       <TrustedHostsSettings />
     </Stack>

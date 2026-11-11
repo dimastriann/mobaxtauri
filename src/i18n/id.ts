@@ -9,6 +9,10 @@ export const id: Record<TranslationKey, string> = {
   'common.close': 'Tutup',
 
   'settings.title': 'Pengaturan',
+  'ssh.autoReconnect': 'Hubungkan ulang sesi yang terputus otomatis',
+  'ssh.autoReconnectHelper': 'Coba lagi otomatis saat kredensial tersedia tanpa prompt.',
+  'ssh.autoReconnectMax': 'Batas waktu tunggu koneksi ulang',
+  'ssh.autoReconnectMaxHelper': 'Jeda dimulai dari 1 detik dan berlipat hingga batas ini.',
   'ssh.defaults': 'Default SSH',
   'ssh.healthInterval': 'Interval Monitor Kesehatan',
   'ssh.health.off': 'Mati',
@@ -110,6 +114,10 @@ export const id: Record<TranslationKey, string> = {
   'tabs.moveRight': 'Pindahkan tab terpilih ke kanan',
   'tabs.closeSelected': 'Tutup tab terpilih',
   'tabs.newSession': 'Sesi Baru',
+  'terminal.autoReconnectIn': 'Koneksi terputus. Menghubungkan ulang dalam {seconds} detik?',
+  'terminal.autoReconnectCancelHint':
+    'Tekan tombol apa saja untuk membatalkan koneksi ulang otomatis.',
+  'terminal.autoReconnectCancelled': 'Koneksi ulang otomatis dibatalkan.',
   'terminal.privateKeyPassphrase': 'Frasa sandi kunci privat: ',
   'terminal.passwordFor': 'Kata sandi untuk {user}@{host}: ',
   'terminal.disconnected': 'Sesi terputus.',

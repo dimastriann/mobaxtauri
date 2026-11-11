@@ -26,6 +26,7 @@ import { useColorMode } from './ui/color-mode';
 import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore';
 import { useTranslation } from '../store/useLocaleStore';
 import { resolveTerminalTheme, toXtermTheme } from '../utils/terminalAppearance';
+import { loadReconnectSettings, reconnectDelayMs } from '../utils/reconnectPolicy';
 import { toaster } from './ui/toaster';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
 import '@xterm/xterm/css/xterm.css';
@@ -116,6 +117,10 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const wasOfflineRef = useRef(!navigator.onLine);
   const networkReconnectRef = useRef(false);
   const connectionAttemptRef = useRef(false);
+  const closedRef = useRef(false);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const autoReconnectRef = useRef<(term: XTerm) => boolean>(() => false);
   const recordingRef = useRef(false);
   const recordingStartLineRef = useRef(0);
   const { t } = useTranslation();
@@ -266,6 +271,13 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     [sessionId],
   );
 
+  const cancelAutoReconnect = useCallback(() => {
+    if (reconnectTimerRef.current !== null) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
   // ── Private-key passphrase prompt inside terminal ────────────
   // Reuses the masked-intake machinery of the password prompt: keystrokes
   // stay in refs, backend only ever receives the final attempt payload.
@@ -368,6 +380,8 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         updateStatus('connected');
         useSessionStore.getState().recordConnection(sessionId, 'connected');
         isDisconnectedRef.current = false;
+        reconnectAttemptRef.current = 0;
+        cancelAutoReconnect();
         passphraseRetryRef.current = 0;
         term.writeln(`\x1b[32m✔ Connected.\x1b[0m\r\n`);
 
@@ -399,6 +413,14 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           promptPassphrase(null);
           return;
         }
+        if (
+          errMsg.includes('Authentication prompt cancelled') ||
+          errMsg.includes('Authentication prompt timed out') ||
+          errMsg.includes('Keyboard-interactive authentication was rejected')
+        ) {
+          showReconnectBanner(term);
+          return;
+        }
         if (errMsg.includes('passphrase is incorrect')) {
           if (++passphraseRetryRef.current >= 3) {
             term.writeln(
@@ -411,13 +433,52 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           promptPassphrase(t('terminal.passphraseRejected'));
           return;
         }
-        showReconnectBanner(term);
+        if (!autoReconnectRef.current(term)) showReconnectBanner(term);
       } finally {
         connectionAttemptRef.current = false;
       }
     },
-    [sessionId, getSession, updateStatus, promptPassword, promptPassphrase, showReconnectBanner, t],
+    [
+      sessionId,
+      getSession,
+      updateStatus,
+      promptPassword,
+      promptPassphrase,
+      showReconnectBanner,
+      cancelAutoReconnect,
+      t,
+    ],
   );
+
+  const scheduleAutoReconnect = useCallback(
+    (term: XTerm): boolean => {
+      if (closedRef.current) return false;
+      const session = getSession();
+      if (!session || session.type !== 'ssh' || !canConnectDirectly(session)) return false;
+      const settings = loadReconnectSettings();
+      if (!settings.enabled || wasOfflineRef.current) return false;
+      if (reconnectTimerRef.current !== null) return true;
+
+      isDisconnectedRef.current = true;
+      reconnectAttemptRef.current += 1;
+      const delay = reconnectDelayMs(reconnectAttemptRef.current, settings.maxDelaySecs);
+      const seconds = Math.max(1, Math.round(delay / 1000));
+      term.writeln(`\x1b[33m${t('terminal.autoReconnectIn', { seconds })}\x1b[0m`);
+      term.writeln(`\x1b[90m${t('terminal.autoReconnectCancelHint')}\x1b[0m`);
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
+        if (!useSessionStore.getState().sessions.some((entry) => entry.id === sessionId)) return;
+        void doConnect();
+      }, delay);
+      return true;
+    },
+    [doConnect, getSession, sessionId, t],
+  );
+
+  useEffect(() => {
+    autoReconnectRef.current = scheduleAutoReconnect;
+    return () => cancelAutoReconnect();
+  }, [scheduleAutoReconnect, cancelAutoReconnect]);
 
   // Store the presented key and retry the connection (Trust and connect).
   const acceptHostKey = useCallback(
@@ -446,6 +507,8 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       if (session?.type !== 'ssh') return;
       wasOfflineRef.current = true;
       networkReconnectRef.current = false;
+      reconnectAttemptRef.current = 0;
+      cancelAutoReconnect();
       isDisconnectedRef.current = true;
       updateStatus('disconnected', 'Network unavailable');
       xtermRef.current?.writeln('\r\n\x1b[33m● Network unavailable. Waiting to reconnect…\x1b[0m');
@@ -471,7 +534,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
     };
-  }, [doConnect, getSession, sessionId, updateStatus]);
+  }, [doConnect, getSession, sessionId, updateStatus, cancelAutoReconnect]);
 
   // ── Mount: create XTerm, wire up SSH events ──────────────────
   useEffect(() => {
@@ -676,7 +739,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           updateStatus('disconnected');
           useSessionStore.getState().recordConnection(sessionId, 'disconnected');
           if (event.payload.reason === 'requested') return;
-          showReconnectBanner(term);
+          if (!autoReconnectRef.current(term)) showReconnectBanner(term);
           invoke('ssh_disconnect', { sessionId }).catch(() => {});
         }),
         listen<SshHostKeyEvent>(SSH_HOST_KEY_EVENT, (event) => {
@@ -784,6 +847,10 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       // Handle stale/disconnected sessions even if the backend event arrived
       // before this terminal finished attaching its listener.
       if (isDisconnectedRef.current || currentSession?.status !== 'connected') {
+        if (reconnectTimerRef.current !== null) {
+          cancelAutoReconnect();
+          term.writeln(`\r\n\x1b[90m${t('terminal.autoReconnectCancelled')}\x1b[0m`);
+        }
         if (data === '\x03' && currentSession?.status === 'connecting') {
           invoke('ssh_disconnect', { sessionId }).catch(() => {});
           updateStatus('disconnected', 'Connection cancelled');
@@ -792,6 +859,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         }
         if (data === 'r' || data === 'R') {
           isDisconnectedRef.current = false;
+          reconnectAttemptRef.current = 0;
           if (currentSession && canConnectDirectly(currentSession)) {
             doConnect();
           } else {
@@ -858,10 +926,12 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       unlistenSnippet.then((fn) => fn());
       unlistenDataRef.current?.();
 
+      closedRef.current = true;
       if (bellTimerRef.current) {
         clearTimeout(bellTimerRef.current);
         bellTimerRef.current = null;
       }
+      cancelAutoReconnect();
 
       // Disconnect SSH when tab is closed
       const sess = getSession();
