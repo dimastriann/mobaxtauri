@@ -36,10 +36,10 @@ In particular, upgrading from a 0.3.x release prompts once for saved credentials
 | Area | Current capability |
 | :--- | :--- |
 | SSH terminal | Multiple Xterm.js terminal tabs backed by asynchronous Rust SSH sessions |
-| Authentication | Password, OpenSSH private-key, and SSH agent authentication |
-| SFTP | Browse, filter, multi-select, upload, download, copy, rename, edit, create, delete, and change permissions on remote files and directories |
+| Authentication | Password, OpenSSH private-key, SSH agent, and keyboard-interactive/MFA (OTP) authentication |
+| SFTP | Browse, filter, multi-select, upload, download, copy, rename, edit, create, delete, change permissions, resume interrupted transfers, and retry failures |
 | SSH keys | Generate Ed25519/RSA keys, register existing keys, copy public keys, export keys, and deploy them to `authorized_keys` |
-| Session management | Folders, drag and drop, environment tags, saved tab workspaces, quick connect, multiple tabs from one saved profile, and optional per-session startup commands |
+| Session management | Folders, drag and drop, environment tags, saved tab workspaces, quick connect, multiple tabs from one saved profile, optional per-session startup commands, and automatic reconnect with backoff |
 | Productivity | Command snippets, command palette, configurable shortcuts, terminal search, and recording export |
 | Import and export | Application backup/restore, OpenSSH config import, and MobaXterm bookmark import |
 | Host information | Linux-focused OS detection and CPU, memory, swap, and disk health display |

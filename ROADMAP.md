@@ -54,8 +54,8 @@ This roadmap communicates direction rather than fixed deadlines. Priorities may 
 ## v0.11.0: enterprise auth + resilient sessions
 
 - [x] Keyboard-interactive / MFA authentication
-- [ ] Auto-reconnect with exponential backoff
-- [ ] Resume and retry interrupted SFTP transfers
+- [x] Auto-reconnect with exponential backoff
+- [x] Resume and retry interrupted SFTP transfers
 
 ## Later: broader workflows
 
