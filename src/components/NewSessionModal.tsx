@@ -42,6 +42,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const [usePrivateKey, setUsePrivateKey] = useState(false);
   const [privateKeyPath, setPrivateKeyPath] = useState('');
   const [useAgent, setUseAgent] = useState(false);
+  const [allowKeyboardInteractive, setAllowKeyboardInteractive] = useState(true);
   const [jumpSessionId, setJumpSessionId] = useState<string | null>(null);
   const [startupCommand, setStartupCommand] = useState('');
   const [port, setPort] = useState(() => {
@@ -85,6 +86,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         setFolderId(source.folderId || null);
         setTag(source.tag);
         setUseAgent(source.useAgent ?? false);
+        setAllowKeyboardInteractive(source.allowKeyboardInteractive ?? true);
         setUsePrivateKey(!!source.privateKeyPath);
         setPrivateKeyPath(source.privateKeyPath || '');
         setStartupCommand(source.startupCommand || '');
@@ -99,6 +101,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         setFolderId(null);
         setTag(undefined);
         setUseAgent(false);
+        setAllowKeyboardInteractive(true);
         setUsePrivateKey(false);
         setPrivateKeyPath('');
         setStartupCommand('');
@@ -143,6 +146,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         tag,
         useAgent,
         jumpSessionId: jumpSessionId ?? undefined,
+        allowKeyboardInteractive,
         privateKeyPath: !useAgent && usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
         startupCommand: startupCommand.trim() || undefined,
         savePassword: shouldSavePassword,
@@ -188,6 +192,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
       tag,
       useAgent,
       jumpSessionId: jumpSessionId ?? undefined,
+      allowKeyboardInteractive,
       privateKeyPath: !useAgent && usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
       startupCommand: startupCommand.trim() || undefined,
       savePassword: shouldSavePassword,
@@ -504,6 +509,24 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                   )}
                 </>
               )}
+
+              <HStack gap={2} mt={2}>
+                <input
+                  type="checkbox"
+                  id="allow-keyboard-interactive"
+                  checked={allowKeyboardInteractive}
+                  onChange={(event) => setAllowKeyboardInteractive(event.target.checked)}
+                />
+                <label
+                  htmlFor="allow-keyboard-interactive"
+                  style={{ fontSize: '14px', cursor: 'pointer' }}
+                >
+                  {t('session.allowKbi')}
+                </label>
+              </HStack>
+              <Text fontSize="12px" color="fg.muted" pl={6}>
+                {t('session.allowKbiHelper')}
+              </Text>
 
               <Field label={t('session.startup')} helperText={t('session.startupHelper')}>
                 <Input

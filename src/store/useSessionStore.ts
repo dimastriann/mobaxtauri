@@ -16,6 +16,8 @@ export interface Session {
   password?: string;
   privateKeyPath?: string;
   useAgent?: boolean;
+  /** Allow keyboard-interactive/OTP prompts after password auth fails. */
+  allowKeyboardInteractive?: boolean;
   /** Saved profile this runtime instance was opened from. */
   configId?: string;
   /** Connected bastion profile used as a ProxyJump transport. */

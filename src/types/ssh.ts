@@ -22,6 +22,8 @@ export interface SshConnectRequest {
   keyPassphrase?: string | null;
   useSavedCredential: boolean;
   useAgent?: boolean;
+  /** Allow keyboard-interactive/OTP prompts after password auth fails. */
+  allowKeyboardInteractive?: boolean;
   /** Saved profile id for vault lookups; absent means `sessionId`. */
   credentialSessionId?: string | null;
   jumpSessionId?: string | null;
@@ -60,6 +62,20 @@ export interface SshHealthEvent {
 export const SSH_HEALTH_EVENT = 'ssh-health';
 
 export const SSH_HOST_KEY_EVENT = 'ssh-host-key';
+export const SSH_AUTH_PROMPT_EVENT = 'ssh-auth-prompt';
+
+/** One keyboard-interactive prompt field (mirrors Rust auth_prompts). */
+export interface SshAuthPromptField {
+  prompt: string;
+  echo: boolean;
+}
+
+export interface SshAuthPromptEvent {
+  sessionId: string;
+  name: string;
+  instructions: string;
+  prompts: SshAuthPromptField[];
+}
 
 /** One trusted host key (mirrors Rust known_hosts::KnownHost). */
 export interface KnownHost {

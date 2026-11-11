@@ -11,13 +11,16 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
 import {
   getSshConnectionTimeoutSeconds,
+  SSH_AUTH_PROMPT_EVENT,
   SSH_HOST_KEY_EVENT,
   SSH_SESSION_STATE_EVENT,
+  type SshAuthPromptEvent,
   type SshConnectRequest,
   type SshHostKeyEvent,
   type SshSessionStateEvent,
 } from '../types/ssh';
 import HostKeyModal from './HostKeyModal';
+import SshAuthPromptModal from './SshAuthPromptModal';
 import { Box, HStack, Input, IconButton, Icon, Text } from '@chakra-ui/react';
 import { useColorMode } from './ui/color-mode';
 import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore';
@@ -124,6 +127,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const [showSearch, setShowSearch] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [hostKeyPrompt, setHostKeyPrompt] = useState<SshHostKeyEvent | null>(null);
+  const [authPrompt, setAuthPrompt] = useState<SshAuthPromptEvent | null>(null);
   const [showBellFlash, setShowBellFlash] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
 
@@ -353,6 +357,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
             privateKeyPath: session.privateKeyPath ?? null,
             keyPassphrase: keyPassphrase ?? null,
             useAgent: session.useAgent ?? false,
+            allowKeyboardInteractive: session.allowKeyboardInteractive ?? true,
             credentialSessionId: session.configId ?? session.id,
             jumpSessionId: jumpInstance?.id ?? session.jumpSessionId ?? null,
             startupCommand: session.startupCommand ?? null,
@@ -655,7 +660,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
     // ── SSH data listener (from backend) ───────────────────
     const setupListeners = async () => {
-      const [unData, unState, unHostKey] = await Promise.all([
+      const [unData, unState, unHostKey, unAuthPrompt] = await Promise.all([
         listen<string>(`ssh-data-${sessionId}`, (event) => {
           queueOutput(event.payload);
           const now = Date.now();
@@ -678,11 +683,16 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           if (event.payload.sessionId !== sessionId) return;
           setHostKeyPrompt(event.payload);
         }),
+        listen<SshAuthPromptEvent>(SSH_AUTH_PROMPT_EVENT, (event) => {
+          if (event.payload.sessionId !== sessionId) return;
+          setAuthPrompt(event.payload);
+        }),
       ]);
       unlistenDataRef.current = () => {
         unData();
         unState();
         unHostKey();
+        unAuthPrompt();
       };
       if (disposed) unlistenDataRef.current();
     };
@@ -856,6 +866,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       // Disconnect SSH when tab is closed
       const sess = getSession();
       if (sess?.type === 'ssh') {
+        invoke('ssh_auth_cancel', { sessionId }).catch(() => {});
         invoke('ssh_disconnect', { sessionId }).catch(() => {});
       }
 
@@ -929,6 +940,20 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     // Font metrics changed: refit, which also resizes the PTY.
     fitRef.current?.fit();
   }, [colorMode, themes, selectedThemeId, fontPreferences]);
+
+  const submitAuthPrompt = (responses: string[]) => {
+    const prompt = authPrompt;
+    setAuthPrompt(null);
+    if (!prompt) return;
+    void invoke('ssh_auth_respond', { sessionId, responses }).catch((error) => {
+      xtermRef.current?.writeln(`\r\n\x1b[31mAuthentication prompt failed: ${error}\x1b[0m`);
+    });
+  };
+
+  const cancelAuthPrompt = () => {
+    setAuthPrompt(null);
+    void invoke('ssh_auth_cancel', { sessionId }).catch(() => {});
+  };
 
   return (
     <Box
@@ -1073,6 +1098,12 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
           </HStack>
         </Box>
       )}
+      <SshAuthPromptModal
+        prompt={authPrompt}
+        onSubmit={submitAuthPrompt}
+        onCancel={cancelAuthPrompt}
+      />
+
       <HostKeyModal
         prompt={hostKeyPrompt}
         onAccept={acceptHostKey}
