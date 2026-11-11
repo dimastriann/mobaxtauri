@@ -51,6 +51,12 @@ This roadmap communicates direction rather than fixed deadlines. Priorities may 
 - [x] Windows, macOS, and Linux smoke-test checklists
 - [x] Release verification checklist and version-consistency CI guard
 
+## v0.11.0: enterprise auth + resilient sessions
+
+- [x] Keyboard-interactive / MFA authentication
+- [ ] Auto-reconnect with exponential backoff
+- [ ] Resume and retry interrupted SFTP transfers
+
 ## Later: broader workflows
 
 - [x] SSH agent support
