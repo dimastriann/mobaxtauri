@@ -1,3 +1,4 @@
+pub mod auth_prompts;
 mod credentials;
 mod health;
 pub mod known_hosts;
@@ -17,6 +18,7 @@ pub mod terminal_theme;
 pub mod transfers;
 mod vault_key;
 
+use crate::auth_prompts::AuthPromptService;
 use crate::credentials::CredentialService;
 use crate::health::{collect_health, HealthSnapshot};
 use crate::known_hosts::KnownHostsService;
@@ -175,6 +177,23 @@ async fn ssh_key_deploy(
         }
     };
     crate::ssh_keys::deploy_public_key(&sftp, &home, &public_key).await
+}
+
+#[tauri::command]
+async fn ssh_auth_respond(
+    auth_prompts: State<'_, AuthPromptService>,
+    session_id: String,
+    responses: Vec<String>,
+) -> Result<(), String> {
+    auth_prompts.respond(&session_id, responses).await
+}
+
+#[tauri::command]
+async fn ssh_auth_cancel(
+    auth_prompts: State<'_, AuthPromptService>,
+    session_id: String,
+) -> Result<(), String> {
+    auth_prompts.cancel(&session_id).await
 }
 
 #[tauri::command]
@@ -419,8 +438,10 @@ async fn ssh_disconnect(
     state: State<'_, AppState>,
     transfers: State<'_, TransferManager>,
     forwards: State<'_, ForwardManager>,
+    auth_prompts: State<'_, AuthPromptService>,
     session_id: String,
 ) -> Result<(), String> {
+    let _ = auth_prompts.cancel(&session_id).await;
     state.ssh_sessions.remove(&session_id).await;
     transfers.cancel_session(&session_id).await;
     forwards.remove_session(&session_id).await;
@@ -1292,6 +1313,7 @@ pub fn run() {
         .manage(PersistenceService::default())
         .manage(CredentialService::default())
         .manage(KnownHostsService::default())
+        .manage(AuthPromptService::default())
         .manage(SshKeyService::default())
         .manage(TransferManager::default())
         .manage(ForwardManager::default())
@@ -1333,6 +1355,8 @@ pub fn run() {
             ssh_trust_host_key,
             known_hosts_list,
             known_hosts_remove,
+            ssh_auth_respond,
+            ssh_auth_cancel,
             ssh_key_list,
             ssh_key_generate,
             ssh_key_register,
