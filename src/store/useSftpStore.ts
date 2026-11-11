@@ -30,6 +30,14 @@ export interface SftpBatchDownloadResult {
   failures: { name: string; message: string }[];
 }
 
+interface TransferRetryRequest {
+  kind: 'upload' | 'download' | 'copy' | 'folder_upload' | 'folder_download';
+  sessionId: string;
+  sourcePath: string;
+  destPath: string;
+  conflictPolicy?: SftpConflictPolicy;
+}
+
 export interface SftpConflictPrompt {
   kind: 'upload' | 'copy' | 'create-file' | 'folder-download' | 'folder-upload';
   sessionId: string;
@@ -71,12 +79,18 @@ interface SftpState {
   createDir: (sessionId: string, dirName: string) => Promise<void>;
   createFile: (sessionId: string, fileName: string) => Promise<void>;
   updateTransfer: (transfer: SftpTransferEvent) => void;
+  retryTransfer: (transferId: string) => Promise<void>;
   cancelTransfer: (transferId: string) => Promise<void>;
   resolveConflict: (policy: SftpConflictPolicy) => Promise<void>;
   dismissConflict: () => void;
 }
 
 export const useSftpStore = create<SftpState>((set, get) => {
+  const transferRequests = new Map<string, TransferRetryRequest>();
+  const rememberTransfer = (id: string, request: TransferRetryRequest) => {
+    transferRequests.set(id, request);
+  };
+
   // Shared bodies for the dialog flows and the drag & drop dispatcher:
   // destination paths derive from the remote directory being viewed.
   const uploadOneFile = async (sessionId: string, localPath: string): Promise<void> => {
@@ -89,6 +103,12 @@ export const useSftpStore = create<SftpState>((set, get) => {
     try {
       set({ isLoading: true, error: null });
       const transferId = `upload-${Date.now()}`;
+      rememberTransfer(transferId, {
+        kind: 'upload',
+        sessionId,
+        sourcePath: localPath,
+        destPath,
+      });
       await invoke('sftp_upload_file', {
         sessionId,
         localPath,
@@ -129,6 +149,12 @@ export const useSftpStore = create<SftpState>((set, get) => {
     try {
       set({ isLoading: true, error: null });
       const transferId = `folder-upload-${Date.now()}`;
+      rememberTransfer(transferId, {
+        kind: 'folder_upload',
+        sessionId,
+        sourcePath: localPath,
+        destPath,
+      });
       await invoke('sftp_upload_folder', {
         sessionId,
         localPath,
@@ -177,6 +203,9 @@ export const useSftpStore = create<SftpState>((set, get) => {
         set({ isLoading: true });
         return;
       }
+      if (transfer.status !== 'failed') {
+        transferRequests.delete(transfer.transferId);
+      }
       set({
         isLoading: false,
         error: transfer.status === 'failed' ? transfer.message || 'Transfer failed' : null,
@@ -201,6 +230,13 @@ export const useSftpStore = create<SftpState>((set, get) => {
         }
         if (prompt.kind === 'upload') {
           const transferId = `upload-${Date.now()}`;
+          rememberTransfer(transferId, {
+            kind: 'upload',
+            sessionId: prompt.sessionId,
+            sourcePath: prompt.localPath ?? '',
+            destPath: prompt.destPath,
+            conflictPolicy: policy,
+          });
           await invoke('sftp_upload_file', {
             sessionId: prompt.sessionId,
             localPath: prompt.localPath,
@@ -210,6 +246,13 @@ export const useSftpStore = create<SftpState>((set, get) => {
           });
         } else if (prompt.kind === 'copy') {
           const transferId = `copy-${Date.now()}`;
+          rememberTransfer(transferId, {
+            kind: 'copy',
+            sessionId: prompt.sessionId,
+            sourcePath: prompt.sourcePath ?? '',
+            destPath: prompt.destPath,
+            conflictPolicy: policy,
+          });
           await invoke('sftp_copy_file', {
             sessionId: prompt.sessionId,
             sourcePath: prompt.sourcePath,
@@ -225,6 +268,13 @@ export const useSftpStore = create<SftpState>((set, get) => {
           });
         } else if (prompt.kind === 'folder-upload') {
           const transferId = `folder-upload-${Date.now()}`;
+          rememberTransfer(transferId, {
+            kind: 'folder_upload',
+            sessionId: prompt.sessionId,
+            sourcePath: prompt.localPath ?? '',
+            destPath: prompt.destPath,
+            conflictPolicy: policy,
+          });
           await invoke('sftp_upload_folder', {
             sessionId: prompt.sessionId,
             localPath: prompt.localPath,
@@ -234,6 +284,13 @@ export const useSftpStore = create<SftpState>((set, get) => {
           });
         } else {
           const transferId = `folder-${Date.now()}`;
+          rememberTransfer(transferId, {
+            kind: 'folder_download',
+            sessionId: prompt.sessionId,
+            sourcePath: prompt.destPath,
+            destPath: prompt.localPath ?? '',
+            conflictPolicy: policy,
+          });
           await invoke('sftp_download_folder', {
             sessionId: prompt.sessionId,
             remotePath: prompt.destPath,
@@ -255,6 +312,59 @@ export const useSftpStore = create<SftpState>((set, get) => {
 
     dismissConflict: () => {
       set({ conflictPrompt: null });
+    },
+
+    retryTransfer: async (transferId) => {
+      const request = transferRequests.get(transferId);
+      if (!request) return;
+      const nextId = `${request.kind}-retry-${Date.now()}`;
+      transferRequests.set(nextId, request);
+      set({ isLoading: true, error: null });
+      try {
+        if (request.kind === 'upload') {
+          await invoke('sftp_upload_file', {
+            sessionId: request.sessionId,
+            localPath: request.sourcePath,
+            remotePath: request.destPath,
+            transferId: nextId,
+            conflictPolicy: request.conflictPolicy,
+          });
+        } else if (request.kind === 'download') {
+          await invoke('sftp_download_file', {
+            sessionId: request.sessionId,
+            remotePath: request.sourcePath,
+            localPath: request.destPath,
+            transferId: nextId,
+          });
+        } else if (request.kind === 'copy') {
+          await invoke('sftp_copy_file', {
+            sessionId: request.sessionId,
+            sourcePath: request.sourcePath,
+            destPath: request.destPath,
+            transferId: nextId,
+            conflictPolicy: request.conflictPolicy,
+          });
+        } else if (request.kind === 'folder_upload') {
+          await invoke('sftp_upload_folder', {
+            sessionId: request.sessionId,
+            localPath: request.sourcePath,
+            remotePath: request.destPath,
+            transferId: nextId,
+            conflictPolicy: request.conflictPolicy,
+          });
+        } else {
+          await invoke('sftp_download_folder', {
+            sessionId: request.sessionId,
+            remotePath: request.sourcePath,
+            localPath: request.destPath,
+            transferId: nextId,
+            conflictPolicy: request.conflictPolicy,
+          });
+        }
+        await get().fetchDirectory(request.sessionId);
+      } catch (err) {
+        set({ error: String(err), isLoading: false });
+      }
     },
 
     cancelTransfer: async (transferId) => {
@@ -344,6 +454,12 @@ export const useSftpStore = create<SftpState>((set, get) => {
 
         set({ isLoading: true, error: null });
         const transferId = `download-${Date.now()}`;
+        rememberTransfer(transferId, {
+          kind: 'download',
+          sessionId,
+          sourcePath,
+          destPath: localPath,
+        });
         await invoke('sftp_download_file', {
           sessionId,
           remotePath: sourcePath,
@@ -373,6 +489,12 @@ export const useSftpStore = create<SftpState>((set, get) => {
 
         set({ isLoading: true, error: null });
         const transferId = `folder-${Date.now()}`;
+        rememberTransfer(transferId, {
+          kind: 'folder_download',
+          sessionId,
+          sourcePath: remotePath,
+          destPath: localPath,
+        });
         await invoke('sftp_download_folder', {
           sessionId,
           remotePath,
@@ -417,19 +539,34 @@ export const useSftpStore = create<SftpState>((set, get) => {
         const localPath = joinLocalPath(picked, file.name);
         try {
           if (file.is_dir) {
+            const transferId = `folder-${Date.now()}-${index}`;
+            rememberTransfer(transferId, {
+              kind: 'folder_download',
+              sessionId,
+              sourcePath: remotePath,
+              destPath: localPath,
+              conflictPolicy: 'rename',
+            });
             await invoke('sftp_download_folder', {
               sessionId,
               remotePath,
               localPath,
-              transferId: `folder-${Date.now()}-${index}`,
+              transferId,
               conflictPolicy: 'rename',
             });
           } else {
+            const transferId = `download-${Date.now()}-${index}`;
+            rememberTransfer(transferId, {
+              kind: 'download',
+              sessionId,
+              sourcePath: remotePath,
+              destPath: localPath,
+            });
             await invoke('sftp_download_file', {
               sessionId,
               remotePath,
               localPath,
-              transferId: `download-${Date.now()}-${index}`,
+              transferId,
             });
           }
           result.downloaded += 1;
@@ -485,6 +622,12 @@ export const useSftpStore = create<SftpState>((set, get) => {
       try {
         set({ isLoading: true, error: null });
         const transferId = `copy-${Date.now()}`;
+        rememberTransfer(transferId, {
+          kind: 'copy',
+          sessionId,
+          sourcePath,
+          destPath,
+        });
         await invoke('sftp_copy_file', {
           sessionId,
           sourcePath,

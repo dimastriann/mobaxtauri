@@ -188,6 +188,7 @@ const SftpSidebar: React.FC = () => {
     transfers,
     updateTransfer,
     cancelTransfer,
+    retryTransfer,
     conflictPrompt,
     resolveConflict,
     dismissConflict,
@@ -992,8 +993,22 @@ const SftpSidebar: React.FC = () => {
                     >
                       {t('sftp.transfer.cancel')}
                     </Button>
+                  ) : failed ? (
+                    <HStack gap={1}>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        colorPalette="blue"
+                        onClick={() => void retryTransfer(entry.transferId)}
+                      >
+                        {t('sftp.transfer.retry')}
+                      </Button>
+                      <Text fontSize="10px" color="red.fg">
+                        {entry.status}
+                      </Text>
+                    </HStack>
                   ) : (
-                    <Text fontSize="10px" color={failed ? 'red.fg' : 'green.fg'}>
+                    <Text fontSize="10px" color="green.fg">
                       {entry.status}
                     </Text>
                   )}

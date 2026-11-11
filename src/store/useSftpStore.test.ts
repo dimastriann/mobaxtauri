@@ -15,6 +15,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 
 describe('useSftpStore', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     useSftpStore.getState().reset();
   });
 
@@ -88,6 +89,35 @@ describe('useSftpStore', () => {
     const state = useSftpStore.getState();
     expect(state.error).toContain('Connection lost');
     expect(state.isLoading).toBe(false);
+  });
+
+  it('retries a failed transfer using its remembered request', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    vi.mocked(save).mockResolvedValueOnce('/tmp/report.bin');
+    vi.mocked(invoke).mockRejectedValueOnce(new Error('network down'));
+
+    await useSftpStore.getState().downloadFile('session-1', 'report.bin');
+    const firstCall = vi.mocked(invoke).mock.calls[0];
+    const firstArgs = firstCall[1] as { transferId: string };
+
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    await useSftpStore.getState().retryTransfer(firstArgs.transferId);
+
+    const retryCall = vi
+      .mocked(invoke)
+      .mock.calls.find(
+        ([command, args]) =>
+          command === 'sftp_download_file' &&
+          String((args as { transferId?: string }).transferId).includes('download-retry'),
+      );
+    expect(retryCall?.[1]).toEqual(
+      expect.objectContaining({
+        sessionId: 'session-1',
+        remotePath: '/report.bin',
+        localPath: '/tmp/report.bin',
+      }),
+    );
   });
 
   it('queues concurrent transfers and delegates cancellation per id', async () => {

@@ -76,6 +76,10 @@ struct ServerConfig {
     keyboard_interactive_code: Option<String>,
     /// Number of challenge rounds the server requires.
     keyboard_interactive_rounds: usize,
+    /// Offset of the first SFTP read, used to prove resume behavior.
+    first_read_offset: Arc<tokio::sync::Mutex<Option<u64>>>,
+    /// Offset of the first SFTP write, used to prove resume behavior.
+    first_write_offset: Arc<tokio::sync::Mutex<Option<u64>>>,
 }
 
 /// One connected client's handler: remembers the shell channel for the
@@ -253,7 +257,12 @@ impl ServerHandler for ClientSessions {
         // wrapper itself must be awaited for the spawn to happen.
         russh_sftp::server::run(
             channel.into_stream(),
-            SftpTestHandler::new(self.cfg.sftp_root.clone(), self.cfg.setstat_attrs.clone()),
+            SftpTestHandler::new(
+                self.cfg.sftp_root.clone(),
+                self.cfg.setstat_attrs.clone(),
+                self.cfg.first_read_offset.clone(),
+                self.cfg.first_write_offset.clone(),
+            ),
         )
         .await;
         Ok(())
@@ -364,16 +373,25 @@ struct SftpTestHandler {
     files: HashMap<String, std::fs::File>,
     directories: HashMap<String, Vec<File>>,
     setstat_attrs: Arc<tokio::sync::Mutex<Option<FileAttributes>>>,
+    first_read_offset: Arc<tokio::sync::Mutex<Option<u64>>>,
+    first_write_offset: Arc<tokio::sync::Mutex<Option<u64>>>,
 }
 
 impl SftpTestHandler {
-    fn new(root: PathBuf, setstat_attrs: Arc<tokio::sync::Mutex<Option<FileAttributes>>>) -> Self {
+    fn new(
+        root: PathBuf,
+        setstat_attrs: Arc<tokio::sync::Mutex<Option<FileAttributes>>>,
+        first_read_offset: Arc<tokio::sync::Mutex<Option<u64>>>,
+        first_write_offset: Arc<tokio::sync::Mutex<Option<u64>>>,
+    ) -> Self {
         Self {
             root,
             next_handle: 0,
             files: HashMap::new(),
             directories: HashMap::new(),
             setstat_attrs,
+            first_read_offset,
+            first_write_offset,
         }
     }
 
@@ -440,6 +458,12 @@ impl SftpHandler for SftpTestHandler {
         len: u32,
     ) -> Result<Data, Self::Error> {
         use std::io::{Read, Seek, SeekFrom};
+        {
+            let mut first = self.first_read_offset.lock().await;
+            if first.is_none() {
+                *first = Some(offset);
+            }
+        }
         let file = self
             .files
             .get_mut(&handle)
@@ -465,6 +489,12 @@ impl SftpHandler for SftpTestHandler {
         data: Vec<u8>,
     ) -> Result<Status, Self::Error> {
         use std::io::{Seek, SeekFrom, Write};
+        {
+            let mut first = self.first_write_offset.lock().await;
+            if first.is_none() {
+                *first = Some(offset);
+            }
+        }
         let file = self
             .files
             .get_mut(&handle)
@@ -601,6 +631,8 @@ struct TestContext {
     remote_targets: mobaxtauri_lib::ssh::RemoteForwardTargets,
     remote_probe: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
     setstat_attrs: Arc<tokio::sync::Mutex<Option<FileAttributes>>>,
+    first_read_offset: Arc<tokio::sync::Mutex<Option<u64>>>,
+    first_write_offset: Arc<tokio::sync::Mutex<Option<u64>>>,
 }
 
 /// How the test server treats the client's public key.
@@ -656,12 +688,16 @@ impl TestContext {
         };
         let remote_probe = Arc::new(tokio::sync::Mutex::new(None));
         let setstat_attrs = Arc::new(tokio::sync::Mutex::new(None));
+        let first_read_offset = Arc::new(tokio::sync::Mutex::new(None));
+        let first_write_offset = Arc::new(tokio::sync::Mutex::new(None));
         let cfg = Arc::new(ServerConfig {
             password: PASSWORD.to_string(),
             authorized_fingerprint,
             sftp_root: sftp_root.clone(),
             remote_probe: remote_probe.clone(),
             setstat_attrs: setstat_attrs.clone(),
+            first_read_offset: first_read_offset.clone(),
+            first_write_offset: first_write_offset.clone(),
             keyboard_interactive_code: keyboard_interactive_code.map(str::to_string),
             keyboard_interactive_rounds: keyboard_interactive_rounds.max(1),
         });
@@ -715,6 +751,8 @@ impl TestContext {
             remote_targets: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             remote_probe,
             setstat_attrs,
+            first_read_offset,
+            first_write_offset,
         }
     }
 
@@ -927,6 +965,104 @@ async fn password_auth_connects_and_shell_echoes_over_the_wire() {
     let expected = format!("{SHELL_BANNER}ping\u{e9}").into_bytes();
     let collected = collect_until(&mut echo_rx, &expected).await;
     assert_eq!(collected, expected, "echo must be byte-exact");
+}
+
+#[tokio::test]
+async fn download_resumes_from_the_partial_file() {
+    let ctx = TestContext::start("resume-download", HostTrust::Trusted, AuthorizedKey::None).await;
+    let payload: Vec<u8> = (0..200_000).map(|index| (index % 251) as u8).collect();
+    std::fs::write(ctx.sftp_root.join("resume.bin"), &payload).expect("seed remote file");
+    let sftp = ctx.connected_sftp().await;
+    let metadata = sftp.metadata("/resume.bin").await.expect("remote metadata");
+    let local_path = temp_dir("resume-download-out").join("out.bin");
+    let local_string = local_path.to_string_lossy().into_owned();
+    let partial_path = format!("{local_string}.mobaxtauri-part");
+    std::fs::write(&partial_path, &payload[..70_000]).expect("seed partial file");
+    mobaxtauri_lib::sftp_resume::write_local_sidecar(
+        &partial_path,
+        &mobaxtauri_lib::sftp_resume::remote_source("/resume.bin", metadata.len(), metadata.mtime),
+    )
+    .await
+    .expect("write sidecar");
+
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+    mobaxtauri_lib::sftp_transfer::download_file(
+        &ctx.handle,
+        &sftp,
+        &transfers,
+        "it-resume-download".into(),
+        "/resume.bin".into(),
+        local_string,
+        "download-resume".into(),
+    )
+    .await
+    .expect("download resumes");
+
+    assert_eq!(
+        std::fs::read(&local_path).expect("downloaded file"),
+        payload
+    );
+    assert_eq!(
+        *ctx.first_read_offset.lock().await,
+        Some(70_000),
+        "download resumed from the partial offset"
+    );
+    assert!(
+        !std::path::Path::new(&format!("{}.json", partial_path)).exists(),
+        "resume sidecar is removed after success"
+    );
+    let _ = std::fs::remove_dir_all(local_path.parent().unwrap());
+}
+
+#[tokio::test]
+async fn upload_resumes_from_the_remote_partial() {
+    let ctx = TestContext::start("resume-upload", HostTrust::Trusted, AuthorizedKey::None).await;
+    let payload: Vec<u8> = (0..200_000).map(|index| (index % 239) as u8).collect();
+    let source_dir = temp_dir("resume-upload-src");
+    let local_path = source_dir.join("resume-up.bin");
+    std::fs::write(&local_path, &payload).expect("seed local file");
+    let partial_name = "resume-up.bin.mobaxtauri-part";
+    std::fs::write(ctx.sftp_root.join(partial_name), &payload[..60_000])
+        .expect("seed remote partial");
+    let sftp = ctx.connected_sftp().await;
+    let local_metadata = std::fs::metadata(&local_path).expect("local metadata");
+    mobaxtauri_lib::sftp_resume::write_remote_sidecar(
+        &sftp,
+        &format!("/{partial_name}"),
+        &mobaxtauri_lib::sftp_resume::local_source(&local_path.to_string_lossy(), &local_metadata),
+    )
+    .await
+    .expect("write remote sidecar");
+    *ctx.first_write_offset.lock().await = None;
+
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+    mobaxtauri_lib::sftp_transfer::upload_file(
+        &ctx.handle,
+        &sftp,
+        &transfers,
+        "it-resume-upload".into(),
+        local_path.to_string_lossy().into_owned(),
+        "/resume-up.bin".into(),
+        "upload-resume".into(),
+        None,
+    )
+    .await
+    .expect("upload resumes");
+
+    assert_eq!(
+        std::fs::read(ctx.sftp_root.join("resume-up.bin")).expect("uploaded file"),
+        payload
+    );
+    assert_eq!(
+        *ctx.first_write_offset.lock().await,
+        Some(60_000),
+        "upload resumed from the remote partial offset"
+    );
+    assert!(
+        !ctx.sftp_root.join(format!("{partial_name}.json")).exists(),
+        "remote resume sidecar is removed after success"
+    );
+    let _ = std::fs::remove_dir_all(&source_dir);
 }
 
 #[tokio::test]

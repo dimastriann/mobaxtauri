@@ -3,14 +3,16 @@
 //! policies, cancellation, and progress events. Commands stay thin; the
 //! flows only need an SFTP session, a transfer manager, and an event sink.
 
+use crate::sftp_resume;
 use crate::sftp_utils;
 use crate::transfers::{
     calculate_eta, calculate_percentage, calculate_transfer_rate, emit_transfer, is_cancelled,
     TransferEvent, TransferManager, TransferStatus,
 };
 use russh_sftp::client::SftpSession;
+use russh_sftp::protocol::OpenFlags;
 use tauri::{AppHandle, Runtime};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
 pub async fn download_file<R: Runtime>(
     app_handle: &AppHandle<R>,
@@ -28,20 +30,50 @@ pub async fn download_file<R: Runtime>(
         .open(&remote_path)
         .await
         .map_err(|e| format!("Failed to open remote file: {e:?}"))?;
-    let total = remote_file
-        .metadata()
-        .await
-        .ok()
-        .map(|metadata| metadata.len());
+    let remote_metadata = sftp.metadata(&remote_path).await.ok();
+    let total = remote_metadata.as_ref().map(|metadata| metadata.len());
+    let source = sftp_resume::remote_source(
+        &remote_path,
+        total.unwrap_or(0),
+        remote_metadata.as_ref().and_then(|metadata| metadata.mtime),
+    );
     let partial_path = format!("{local_path}.mobaxtauri-part");
-    let mut local_file = tokio::fs::File::create(&partial_path)
+    let partial_size = tokio::fs::metadata(&partial_path)
         .await
-        .map_err(|e| format!("Failed to create local file: {e:?}"))?;
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+    let resuming = sftp_resume::can_resume(
+        sftp_resume::read_local_sidecar(&partial_path).await,
+        &source,
+        partial_size,
+    );
+    let mut local_file = if resuming {
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(&partial_path)
+            .await
+            .map_err(|e| format!("Failed to reopen local file: {e:?}"))?
+    } else {
+        let file = tokio::fs::File::create(&partial_path)
+            .await
+            .map_err(|e| format!("Failed to create local file: {e:?}"))?;
+        if let Err(error) = sftp_resume::write_local_sidecar(&partial_path, &source).await {
+            log::warn!("Resume metadata unavailable for {partial_path}: {error}");
+        }
+        file
+    };
+    let mut transferred = if resuming { partial_size } else { 0 };
+    if resuming {
+        remote_file
+            .seek(SeekFrom::Start(transferred))
+            .await
+            .map_err(|e| format!("Failed to seek remote file: {e:?}"))?;
+        log::info!("Resuming download {remote_path} at {transferred} bytes");
+    }
     let cancellation = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
     let mut buffer = vec![0_u8; 64 * 1024];
-    let mut transferred = 0_u64;
     let started = std::time::Instant::now();
 
     emit_transfer(
@@ -114,13 +146,20 @@ pub async fn download_file<R: Runtime>(
         }
         tokio::fs::rename(&partial_path, &local_path)
             .await
-            .map_err(|e| format!("Failed to finalize local file: {e:?}"))
+            .map_err(|e| format!("Failed to finalize local file: {e:?}"))?;
+        sftp_resume::remove_local_sidecar(&partial_path).await;
+        Ok(())
     }
     .await;
 
     transfers.finish(&transfer_id).await;
-    if result.is_err() {
+    if result
+        .as_ref()
+        .err()
+        .is_some_and(|error| error == "Transfer cancelled")
+    {
         let _ = tokio::fs::remove_file(&partial_path).await;
+        sftp_resume::remove_local_sidecar(&partial_path).await;
     }
     emit_transfer(
         app_handle,
@@ -178,21 +217,57 @@ pub async fn upload_file<R: Runtime>(
     let mut local_file = tokio::fs::File::open(&local_path)
         .await
         .map_err(|e| sftp_utils::local_file_error("Failed to read local file", &local_path, &e))?;
-    let total = local_file
+    let local_metadata = local_file
         .metadata()
         .await
-        .ok()
-        .map(|metadata| metadata.len());
+        .map_err(|e| format!("Failed to read local file metadata: {e:?}"))?;
+    let total = Some(local_metadata.len());
+    let source = sftp_resume::local_source(&local_path, &local_metadata);
     let partial_path = format!("{target_path}.mobaxtauri-part");
-    let mut remote_file = sftp
-        .create(&partial_path)
+    let remote_partial_size = sftp
+        .metadata(&partial_path)
         .await
-        .map_err(|e| format!("Failed to create remote file: {e:?}"))?;
+        .ok()
+        .filter(|metadata| metadata.is_regular())
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+    let resuming = sftp_resume::can_resume(
+        sftp_resume::read_remote_sidecar(sftp, &partial_path).await,
+        &source,
+        remote_partial_size,
+    );
+    let mut remote_file = if resuming {
+        let file = sftp
+            .open_with_flags(&partial_path, OpenFlags::WRITE)
+            .await
+            .map_err(|e| format!("Failed to reopen remote file: {e:?}"))?;
+        local_file
+            .seek(SeekFrom::Start(remote_partial_size))
+            .await
+            .map_err(|e| format!("Failed to seek local file: {e:?}"))?;
+        log::info!("Resuming upload {local_path} at {remote_partial_size} bytes");
+        file
+    } else {
+        let file = sftp
+            .create(&partial_path)
+            .await
+            .map_err(|e| format!("Failed to create remote file: {e:?}"))?;
+        if let Err(error) = sftp_resume::write_remote_sidecar(sftp, &partial_path, &source).await {
+            log::warn!("Resume metadata unavailable for {partial_path}: {error}");
+        }
+        file
+    };
+    let mut transferred = if resuming { remote_partial_size } else { 0 };
+    if resuming {
+        remote_file
+            .seek(SeekFrom::Start(transferred))
+            .await
+            .map_err(|e| format!("Failed to seek remote file: {e:?}"))?;
+    }
     let cancellation = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
     let mut buffer = vec![0_u8; 64 * 1024];
-    let mut transferred = 0_u64;
     let started = std::time::Instant::now();
 
     let result = async {
@@ -243,13 +318,20 @@ pub async fn upload_file<R: Runtime>(
         let _ = sftp.remove_file(&target_path).await;
         sftp.rename(&partial_path, &target_path)
             .await
-            .map_err(|e| format!("Failed to finalize remote file: {e:?}"))
+            .map_err(|e| format!("Failed to finalize remote file: {e:?}"))?;
+        sftp_resume::remove_remote_sidecar(sftp, &partial_path).await;
+        Ok(())
     }
     .await;
 
     transfers.finish(&transfer_id).await;
-    if result.is_err() {
+    if result
+        .as_ref()
+        .err()
+        .is_some_and(|error| error == "Transfer cancelled")
+    {
         let _ = sftp.remove_file(&partial_path).await;
+        sftp_resume::remove_remote_sidecar(sftp, &partial_path).await;
     }
     emit_transfer(
         app_handle,
