@@ -74,6 +74,8 @@ struct ServerConfig {
     setstat_attrs: Arc<tokio::sync::Mutex<Option<FileAttributes>>>,
     /// Expected OTP for keyboard-interactive auth, when enabled.
     keyboard_interactive_code: Option<String>,
+    /// Number of challenge rounds the server requires.
+    keyboard_interactive_rounds: usize,
 }
 
 /// One connected client's handler: remembers the shell channel for the
@@ -82,6 +84,7 @@ struct ClientSessions {
     cfg: Arc<ServerConfig>,
     shell_channel: Option<ChannelId>,
     open_channels: HashMap<ChannelId, russh::Channel<russh::server::Msg>>,
+    keyboard_interactive_round: usize,
 }
 
 impl ClientSessions {
@@ -90,6 +93,7 @@ impl ClientSessions {
             cfg,
             shell_channel: None,
             open_channels: HashMap::new(),
+            keyboard_interactive_round: 0,
         }
     }
 }
@@ -125,10 +129,18 @@ impl ServerHandler for ClientSessions {
                     .next()
                     .map(|value| String::from_utf8_lossy(&value).to_string())
                     .unwrap_or_default();
-                if code == expected {
+                if code != expected {
+                    return Ok(Auth::reject());
+                }
+                self.keyboard_interactive_round += 1;
+                if self.keyboard_interactive_round >= self.cfg.keyboard_interactive_rounds {
                     Ok(Auth::Accept)
                 } else {
-                    Ok(Auth::reject())
+                    Ok(Auth::Partial {
+                        name: "MFA".into(),
+                        instructions: "Enter the test verification code again".into(),
+                        prompts: Cow::Owned(vec![(Cow::Borrowed("Verification code: "), false)]),
+                    })
                 }
             }
         }
@@ -623,6 +635,17 @@ impl TestContext {
         authorized: AuthorizedKey,
         keyboard_interactive_code: Option<&str>,
     ) -> Self {
+        Self::start_with_keyboard_interactive(name, trust, authorized, keyboard_interactive_code, 1)
+            .await
+    }
+
+    async fn start_with_keyboard_interactive(
+        name: &str,
+        trust: HostTrust,
+        authorized: AuthorizedKey,
+        keyboard_interactive_code: Option<&str>,
+        keyboard_interactive_rounds: usize,
+    ) -> Self {
         let app = tauri::test::mock_app();
         let handle = app.handle().clone();
         let sftp_root = temp_dir(name);
@@ -640,6 +663,7 @@ impl TestContext {
             remote_probe: remote_probe.clone(),
             setstat_attrs: setstat_attrs.clone(),
             keyboard_interactive_code: keyboard_interactive_code.map(str::to_string),
+            keyboard_interactive_rounds: keyboard_interactive_rounds.max(1),
         });
         let host_fingerprint = fixture_fingerprint("plain_test_key");
 
@@ -748,21 +772,27 @@ impl TestContext {
     async fn connect_keyboard_interactive(
         &self,
         session_id: &str,
-        code: &str,
+        codes: &[&str],
     ) -> Result<russh_sftp::client::SftpSession, Box<dyn std::error::Error>> {
         let prompts = AuthPromptService::default();
-        let responder = {
+        let responder: tokio::task::JoinHandle<Result<(), String>> = {
             let prompts = prompts.clone();
             let session_id = session_id.to_string();
-            let code = code.to_string();
+            let codes: Vec<String> = codes.iter().map(|code| code.to_string()).collect();
             tokio::spawn(async move {
-                for _ in 0..500 {
+                let mut index = 0;
+                loop {
                     if prompts.is_pending(&session_id).await {
-                        return prompts.respond(&session_id, vec![code]).await;
+                        let Some(code) = codes.get(index) else {
+                            return Err(
+                                "authentication prompt has no scripted response".to_string()
+                            );
+                        };
+                        prompts.respond(&session_id, vec![code.clone()]).await?;
+                        index += 1;
                     }
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
-                Err("authentication prompt never arrived".to_string())
             })
         };
 
@@ -789,7 +819,7 @@ impl TestContext {
         .await
         .expect("connect within timeout");
 
-        let _ = responder.await;
+        responder.abort();
         result.map(|(_handle, _channel_id, _channel, sftp)| sftp)
     }
 
@@ -910,9 +940,28 @@ async fn keyboard_interactive_accepts_a_valid_otp() {
     .await;
 
     let sftp = ctx
-        .connect_keyboard_interactive("it-kbi", "123456")
+        .connect_keyboard_interactive("it-kbi", &["123456"])
         .await
         .expect("keyboard-interactive auth succeeds");
+
+    sftp.read_dir("/").await.expect("sftp session is live");
+}
+
+#[tokio::test]
+async fn keyboard_interactive_supports_multiple_challenge_rounds() {
+    let ctx = TestContext::start_with_keyboard_interactive(
+        "keyboard-interactive-rounds",
+        HostTrust::Trusted,
+        AuthorizedKey::None,
+        Some("123456"),
+        2,
+    )
+    .await;
+
+    let sftp = ctx
+        .connect_keyboard_interactive("it-kbi-rounds", &["123456", "123456"])
+        .await
+        .expect("two keyboard-interactive rounds succeed");
 
     sftp.read_dir("/").await.expect("sftp session is live");
 }
@@ -928,7 +977,7 @@ async fn keyboard_interactive_rejects_a_wrong_otp() {
     .await;
 
     let error = match ctx
-        .connect_keyboard_interactive("it-kbi-bad", "000000")
+        .connect_keyboard_interactive("it-kbi-bad", &["000000"])
         .await
     {
         Ok(_) => panic!("wrong OTP must fail"),
