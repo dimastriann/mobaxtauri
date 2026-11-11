@@ -1,3 +1,4 @@
+use crate::auth_prompts::{AuthPromptService, SshAuthPromptField};
 use crate::known_hosts::{HostKeyAction, KnownHostsService};
 use crate::session_types::{
     emit_ssh_host_key, emit_ssh_session_state, SshDisconnectReason, SshHostKeyEvent,
@@ -301,6 +302,68 @@ where
     false
 }
 
+const MAX_KEYBOARD_INTERACTIVE_ROUNDS: usize = 10;
+
+/// Drives the keyboard-interactive challenge loop. Each `InfoRequest`
+/// becomes a UI prompt; password/OTP responses stay in the webview until
+/// the user submits them, and are never logged.
+async fn authenticate_keyboard_interactive<R: Runtime>(
+    session: &mut russh::client::Handle<ClientHandler<R>>,
+    user: &str,
+    app_handle: &AppHandle<R>,
+    session_id: &str,
+    auth_prompts: &AuthPromptService,
+) -> Result<bool, String> {
+    let mut response = session
+        .authenticate_keyboard_interactive_start(user.to_string(), None::<String>)
+        .await
+        .map_err(|error| format!("Keyboard-interactive authentication failed: {error}"))?;
+
+    for _ in 0..MAX_KEYBOARD_INTERACTIVE_ROUNDS {
+        match response {
+            russh::client::KeyboardInteractiveAuthResponse::Success => return Ok(true),
+            russh::client::KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(false),
+            russh::client::KeyboardInteractiveAuthResponse::InfoRequest {
+                name,
+                instructions,
+                prompts,
+            } => {
+                if prompts.is_empty() {
+                    response = session
+                        .authenticate_keyboard_interactive_respond(Vec::new())
+                        .await
+                        .map_err(|error| {
+                            format!("Keyboard-interactive authentication failed: {error}")
+                        })?;
+                    continue;
+                }
+
+                let fields: Vec<SshAuthPromptField> = prompts
+                    .iter()
+                    .map(|prompt| SshAuthPromptField {
+                        prompt: prompt.prompt.clone(),
+                        echo: prompt.echo,
+                    })
+                    .collect();
+                let responses = auth_prompts
+                    .request(app_handle, session_id, name, instructions, fields)
+                    .await?;
+                if responses.len() != prompts.len() {
+                    return Err("Keyboard-interactive authentication returned the wrong number of responses".into());
+                }
+                response = session
+                    .authenticate_keyboard_interactive_respond(responses)
+                    .await
+                    .map_err(|error| {
+                        format!("Keyboard-interactive authentication failed: {error}")
+                    })?;
+            }
+        }
+    }
+
+    Err("Keyboard-interactive authentication exceeded the maximum number of rounds".into())
+}
+
 /// Parses and decrypts an OpenSSH private key, failing with distinct,
 /// user-actionable errors instead of the auth-failure fallthrough:
 ///
@@ -351,6 +414,9 @@ impl SshSession {
         private_key_path: Option<String>,
         key_passphrase: Option<String>,
         use_agent: bool,
+        // Try keyboard-interactive auth after password auth fails.
+        allow_keyboard_interactive: bool,
+        auth_prompts: AuthPromptService,
         // Optional command typed into the shell after it opens.
         startup_command: Option<String>,
         // Pre-connected transport through a bastion session (ProxyJump).
@@ -378,6 +444,8 @@ impl SshSession {
         let shell_channel_id = Arc::new(std::sync::OnceLock::new());
         let (terminal_output, terminal_output_rx) = mpsc::unbounded_channel();
         spawn_terminal_output(app_handle.clone(), session_id.clone(), terminal_output_rx);
+        let prompt_app_handle = app_handle.clone();
+        let prompt_session_id = session_id.clone();
         let sh = ClientHandler {
             app_handle,
             session_id,
@@ -458,11 +526,31 @@ impl SshSession {
             }
         }
 
+        let mut keyboard_interactive_attempted = false;
+        if !authenticated && allow_keyboard_interactive {
+            keyboard_interactive_attempted = true;
+            log::info!("Attempting keyboard-interactive authentication...");
+            match authenticate_keyboard_interactive(
+                &mut session,
+                &user,
+                &prompt_app_handle,
+                &prompt_session_id,
+                &auth_prompts,
+            )
+            .await
+            {
+                Ok(true) => authenticated = true,
+                Ok(false) => log::info!("Keyboard-interactive authentication was rejected"),
+                Err(error) => return Err(error.into()),
+            }
+        }
+
         if !authenticated {
             return Err(describe_auth_failure(
                 agent_attempted,
                 key_attempted,
                 password_attempted,
+                keyboard_interactive_attempted,
                 &user,
                 &host,
             )
@@ -511,11 +599,17 @@ fn describe_auth_failure(
     agent_attempted: bool,
     key_attempted: bool,
     password_attempted: bool,
+    keyboard_interactive_attempted: bool,
     user: &str,
     host: &str,
 ) -> String {
     let target = format!("{user}@{host}");
-    let base = match (key_attempted, password_attempted) {
+    let base = if keyboard_interactive_attempted && !key_attempted && !password_attempted {
+        format!(
+            "Keyboard-interactive authentication was rejected by {target}; check the OTP or challenge response and try again"
+        )
+    } else {
+        match (key_attempted, password_attempted) {
         (true, true) => {
             format!(
                 "Public key and password authentication were rejected by {target}; check the key and password configured for this session"
@@ -530,6 +624,7 @@ fn describe_auth_failure(
         (false, false) => format!(
             "No credential was available when connecting to {target}; configure a password, save one in the vault, or select a private key"
         ),
+    }
     };
     if agent_attempted {
         let hint = "If the agent should authenticate this session, load the key into the \
@@ -692,20 +787,20 @@ mod tests {
 
     #[test]
     fn auth_failure_names_what_was_attempted() {
-        let message = describe_auth_failure(false, false, true, "ops", "prod.example.com");
+        let message = describe_auth_failure(false, false, true, false, "ops", "prod.example.com");
         assert!(message.starts_with("Password authentication"), "{message}");
         assert!(message.contains("ops@prod.example.com"), "{message}");
     }
 
     #[test]
     fn auth_failure_combines_key_and_password() {
-        let message = describe_auth_failure(false, true, true, "ops", "host");
+        let message = describe_auth_failure(false, true, true, false, "ops", "host");
         assert!(message.starts_with("Public key and password"), "{message}");
     }
 
     #[test]
     fn auth_failure_key_only_does_not_offer_password_prompt() {
-        let message = describe_auth_failure(false, true, false, "ops", "host");
+        let message = describe_auth_failure(false, true, false, false, "ops", "host");
         assert!(
             message.starts_with("Public key authentication"),
             "{message}"
@@ -714,7 +809,7 @@ mod tests {
 
     #[test]
     fn auth_failure_without_credentials_is_a_configuration_error() {
-        let message = describe_auth_failure(false, false, false, "ops", "host");
+        let message = describe_auth_failure(false, false, false, false, "ops", "host");
         assert!(message.contains("No credential was available"), "{message}");
     }
 
@@ -723,7 +818,7 @@ mod tests {
         // The agent prefix is prepended; the "Password authentication was
         // rejected" substring the terminal re-prompt flow matches on must
         // stay intact.
-        let message = describe_auth_failure(true, false, true, "ops", "host");
+        let message = describe_auth_failure(true, false, true, false, "ops", "host");
         assert!(message.starts_with("The SSH agent's keys"), "{message}");
         assert!(
             message.contains("Password authentication was rejected"),

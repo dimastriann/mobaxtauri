@@ -250,6 +250,7 @@ async fn ssh_connect(
     credentials: State<'_, CredentialService>,
     known_hosts: State<'_, KnownHostsService>,
     forwards: State<'_, ForwardManager>,
+    auth_prompts: State<'_, AuthPromptService>,
     request: SshConnectRequest,
 ) -> Result<String, String> {
     let connection_timeout = request.connection_timeout()?;
@@ -264,6 +265,7 @@ async fn ssh_connect(
         use_saved_credential,
         credential_session_id,
         use_agent,
+        allow_keyboard_interactive,
         jump_session_id,
         startup_command,
         connection_timeout_secs: _,
@@ -344,6 +346,8 @@ async fn ssh_connect(
         private_key_path,
         key_passphrase,
         use_agent,
+        allow_keyboard_interactive,
+        auth_prompts.inner().clone(),
         startup_command,
         jump_stream,
         Arc::new(known_hosts.inner().clone()),

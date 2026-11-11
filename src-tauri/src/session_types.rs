@@ -14,6 +14,10 @@ fn default_connection_timeout_secs() -> u64 {
     DEFAULT_CONNECTION_TIMEOUT_SECS
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshConnectRequest {
@@ -33,6 +37,9 @@ pub struct SshConnectRequest {
     pub credential_session_id: Option<String>,
     #[serde(default)]
     pub use_agent: bool,
+    /// Allow keyboard-interactive authentication after password auth fails.
+    #[serde(default = "default_true")]
+    pub allow_keyboard_interactive: bool,
     /// Session id of a connected bastion to tunnel through (ProxyJump).
     #[serde(default)]
     pub jump_session_id: Option<String>,
@@ -162,6 +169,7 @@ mod tests {
             use_saved_credential: false,
             credential_session_id: None,
             use_agent: false,
+            allow_keyboard_interactive: true,
             jump_session_id: None,
             startup_command: None,
             connection_timeout_secs: timeout,
@@ -194,6 +202,7 @@ mod tests {
         assert_eq!(request.connection_timeout(), Ok(Duration::from_secs(15)));
         assert_eq!(request.startup_command, None);
         assert_eq!(request.credential_session_id, None);
+        assert!(request.allow_keyboard_interactive);
     }
 
     #[test]

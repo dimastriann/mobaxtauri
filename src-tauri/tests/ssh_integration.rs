@@ -4,17 +4,20 @@
 //! server host key and the authorized client key; nothing here touches the
 //! network beyond loopback.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use mobaxtauri_lib::auth_prompts::AuthPromptService;
 use mobaxtauri_lib::known_hosts::KnownHostsService;
 use mobaxtauri_lib::ssh::{authenticate_with_agent, ClientHandler, SshSession};
 use russh::keys::agent::client::AgentClient;
 use russh::keys::ssh_key::{self, HashAlg, PrivateKey};
 use russh::server::{
-    Auth, ChannelOpenHandle, Handler as ServerHandler, Server as _, Session as ServerSession,
+    Auth, ChannelOpenHandle, Handler as ServerHandler, Response, Server as _,
+    Session as ServerSession,
 };
 use russh::ChannelId;
 use russh_sftp::protocol::{
@@ -69,6 +72,8 @@ struct ServerConfig {
     remote_probe: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
     /// Attributes received by the most recent SFTP SETSTAT request.
     setstat_attrs: Arc<tokio::sync::Mutex<Option<FileAttributes>>>,
+    /// Expected OTP for keyboard-interactive auth, when enabled.
+    keyboard_interactive_code: Option<String>,
 }
 
 /// One connected client's handler: remembers the shell channel for the
@@ -97,6 +102,35 @@ impl ServerHandler for ClientSessions {
             Ok(Auth::Accept)
         } else {
             Ok(Auth::reject())
+        }
+    }
+
+    async fn auth_keyboard_interactive(
+        &mut self,
+        _user: &str,
+        _submethods: &str,
+        response: Option<Response<'_>>,
+    ) -> Result<Auth, Self::Error> {
+        let Some(expected) = self.cfg.keyboard_interactive_code.as_deref() else {
+            return Ok(Auth::reject());
+        };
+        match response {
+            None => Ok(Auth::Partial {
+                name: "MFA".into(),
+                instructions: "Enter the test verification code".into(),
+                prompts: Cow::Owned(vec![(Cow::Borrowed("Verification code: "), false)]),
+            }),
+            Some(mut responses) => {
+                let code = responses
+                    .next()
+                    .map(|value| String::from_utf8_lossy(&value).to_string())
+                    .unwrap_or_default();
+                if code == expected {
+                    Ok(Auth::Accept)
+                } else {
+                    Ok(Auth::reject())
+                }
+            }
         }
     }
 
@@ -580,6 +614,15 @@ enum HostTrust {
 impl TestContext {
     /// Starts the server and prepares the store per the given scenarios.
     async fn start(name: &str, trust: HostTrust, authorized: AuthorizedKey) -> Self {
+        Self::start_with(name, trust, authorized, None).await
+    }
+
+    async fn start_with(
+        name: &str,
+        trust: HostTrust,
+        authorized: AuthorizedKey,
+        keyboard_interactive_code: Option<&str>,
+    ) -> Self {
         let app = tauri::test::mock_app();
         let handle = app.handle().clone();
         let sftp_root = temp_dir(name);
@@ -596,6 +639,7 @@ impl TestContext {
             sftp_root: sftp_root.clone(),
             remote_probe: remote_probe.clone(),
             setstat_attrs: setstat_attrs.clone(),
+            keyboard_interactive_code: keyboard_interactive_code.map(str::to_string),
         });
         let host_fingerprint = fixture_fingerprint("plain_test_key");
 
@@ -676,6 +720,8 @@ impl TestContext {
             private_key_path.map(|p| fixture_path(p).to_string_lossy().to_string()),
             key_passphrase.map(str::to_string),
             false,
+            true,
+            AuthPromptService::default(),
             None,
             None,
             known_hosts,
@@ -695,6 +741,56 @@ impl TestContext {
         .await
         .expect("connect within timeout")
         .expect("trusted password session connects")
+    }
+
+    /// Keyboard-interactive (OTP) session. The prompt bridge is answered by
+    /// a helper task while the real connect flow waits.
+    async fn connect_keyboard_interactive(
+        &self,
+        session_id: &str,
+        code: &str,
+    ) -> Result<russh_sftp::client::SftpSession, Box<dyn std::error::Error>> {
+        let prompts = AuthPromptService::default();
+        let responder = {
+            let prompts = prompts.clone();
+            let session_id = session_id.to_string();
+            let code = code.to_string();
+            tokio::spawn(async move {
+                for _ in 0..500 {
+                    if prompts.is_pending(&session_id).await {
+                        return prompts.respond(&session_id, vec![code]).await;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                Err("authentication prompt never arrived".to_string())
+            })
+        };
+
+        let result = tokio::time::timeout(
+            TEST_TIMEOUT,
+            SshSession::connect(
+                self.handle.clone(),
+                session_id.to_string(),
+                "127.0.0.1".to_string(),
+                self.port,
+                USER.to_string(),
+                None,
+                None,
+                None,
+                false,
+                true,
+                prompts,
+                None,
+                None,
+                self.trusted_known_hosts(),
+                self.remote_targets.clone(),
+            ),
+        )
+        .await
+        .expect("connect within timeout");
+
+        let _ = responder.await;
+        result.map(|(_handle, _channel_id, _channel, sftp)| sftp)
     }
 
     /// Password-authenticated session returning the SSH handle (needed by
@@ -718,6 +814,8 @@ impl TestContext {
                 None,
                 None,
                 false,
+                true,
+                AuthPromptService::default(),
                 None,
                 None,
                 self.trusted_known_hosts(),
@@ -799,6 +897,48 @@ async fn password_auth_connects_and_shell_echoes_over_the_wire() {
     let expected = format!("{SHELL_BANNER}ping\u{e9}").into_bytes();
     let collected = collect_until(&mut echo_rx, &expected).await;
     assert_eq!(collected, expected, "echo must be byte-exact");
+}
+
+#[tokio::test]
+async fn keyboard_interactive_accepts_a_valid_otp() {
+    let ctx = TestContext::start_with(
+        "keyboard-interactive",
+        HostTrust::Trusted,
+        AuthorizedKey::None,
+        Some("123456"),
+    )
+    .await;
+
+    let sftp = ctx
+        .connect_keyboard_interactive("it-kbi", "123456")
+        .await
+        .expect("keyboard-interactive auth succeeds");
+
+    sftp.read_dir("/").await.expect("sftp session is live");
+}
+
+#[tokio::test]
+async fn keyboard_interactive_rejects_a_wrong_otp() {
+    let ctx = TestContext::start_with(
+        "keyboard-interactive-bad",
+        HostTrust::Trusted,
+        AuthorizedKey::None,
+        Some("123456"),
+    )
+    .await;
+
+    let error = match ctx
+        .connect_keyboard_interactive("it-kbi-bad", "000000")
+        .await
+    {
+        Ok(_) => panic!("wrong OTP must fail"),
+        Err(error) => error,
+    };
+    let message = error.to_string();
+    assert!(
+        message.contains("Keyboard-interactive authentication was rejected"),
+        "unexpected message: {message}"
+    );
 }
 
 #[tokio::test]
@@ -1495,6 +1635,8 @@ async fn connects_through_a_bastion_session() {
         None,
         None,
         false,
+        true,
+        AuthPromptService::default(),
         None,
         Some(channel.into_stream()),
         target.trusted_known_hosts(),
