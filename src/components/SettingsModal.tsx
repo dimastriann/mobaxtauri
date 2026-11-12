@@ -40,6 +40,7 @@ import { ask } from '@tauri-apps/plugin-dialog';
 import type { KnownHost } from '../types/ssh';
 import SshKeyManager from './SshKeyManager';
 import { useSessionStore } from '../store/useSessionStore';
+import { useCredentialStore } from '../store/useCredentialStore';
 import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore';
 import { useTranslation } from '../store/useLocaleStore';
 import { LOCALES, type Locale } from '../i18n';
@@ -57,6 +58,7 @@ import {
   saveReconnectSettings,
   type ReconnectSettings,
 } from '../utils/reconnectPolicy';
+import { AUTO_LOCK_OPTIONS, loadAutoLockMinutes, saveAutoLockMinutes } from '../utils/idleLock';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -604,6 +606,9 @@ const SshSettings: React.FC = () => {
     () => localStorage.getItem('health-interval') || '5',
   );
   const [reconnect, setReconnect] = useState<ReconnectSettings>(loadReconnectSettings);
+  const [autoLockMinutes, setAutoLockMinutes] = useState(loadAutoLockMinutes);
+  const isVaultUnlocked = useCredentialStore((state) => state.isUnlocked);
+  const lockVault = useCredentialStore((state) => state.lock);
 
   const saveDefaultPort = (val: string) => {
     setDefaultPort(val);
@@ -624,6 +629,10 @@ const SshSettings: React.FC = () => {
   const updateReconnect = (next: ReconnectSettings) => {
     setReconnect(next);
     saveReconnectSettings(next);
+  };
+
+  const updateAutoLock = (value: string) => {
+    setAutoLockMinutes(saveAutoLockMinutes(Number(value)));
   };
 
   return (
@@ -720,6 +729,38 @@ const SshSettings: React.FC = () => {
         <Text fontSize="11px" color="fg.muted" mt={1}>
           {t('ssh.autoReconnectMaxHelper')}
         </Text>
+      </Box>
+      <Box borderTop="1px solid" borderColor="border.subtle" pt={3}>
+        <Text fontSize="14px" fontWeight="bold" color="fg" mb={1}>
+          {t('ssh.vault.heading')}
+        </Text>
+        <Text fontSize="11px" color="fg.muted" mb={2}>
+          {t('ssh.vault.helper')}
+        </Text>
+        <Box>
+          <Text fontSize="13px" color="fg" mb={1}>
+            {t('ssh.vault.autoLock')}
+          </Text>
+          <select
+            aria-label={t('ssh.vault.autoLock')}
+            value={autoLockMinutes}
+            onChange={(event) => updateAutoLock(event.target.value)}
+          >
+            {AUTO_LOCK_OPTIONS.map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {minutes === 0 ? t('ssh.vault.never') : t('ssh.vault.minutes', { minutes })}
+              </option>
+            ))}
+          </select>
+        </Box>
+        <HStack gap={3} mt={3} align="center">
+          <Text fontSize="12px" color={isVaultUnlocked ? 'green.fg' : 'fg.muted'}>
+            {isVaultUnlocked ? t('ssh.vault.unlocked') : t('ssh.vault.locked')}
+          </Text>
+          <Button size="xs" variant="subtle" onClick={() => void lockVault()}>
+            {t('ssh.vault.lockNow')}
+          </Button>
+        </HStack>
       </Box>
       <TrustedHostsSettings />
     </Stack>
