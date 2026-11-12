@@ -1609,6 +1609,223 @@ async fn folder_upload_conflict_policy_renames_the_target() {
     );
 }
 
+fn modified_seconds(metadata: &std::fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs())
+}
+
+#[tokio::test]
+async fn folder_upload_resumes_completed_and_partial_files() {
+    use mobaxtauri_lib::sftp_folder_resume::{
+        append_remote_journal, write_remote_snapshot, FolderDirection, FolderFile, FolderSnapshot,
+    };
+
+    let ctx = TestContext::start(
+        "folder-resume-upload",
+        HostTrust::Trusted,
+        AuthorizedKey::None,
+    )
+    .await;
+    let sftp = ctx.connected_sftp().await;
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+
+    let source = temp_dir("folder-resume-upload-src");
+    std::fs::write(source.join("done.txt"), b"already copied").expect("write done file");
+    let payload: Vec<u8> = (0..200_000).map(|index| (index % 241) as u8).collect();
+    std::fs::write(source.join("partial.bin"), &payload).expect("write partial source");
+
+    let target_root = "/resume-upload-folder";
+    std::fs::create_dir_all(ctx.sftp_root.join("resume-upload-folder")).expect("create target");
+    std::fs::write(
+        ctx.sftp_root.join("resume-upload-folder").join("done.txt"),
+        b"already copied",
+    )
+    .expect("seed completed remote file");
+    std::fs::write(
+        ctx.sftp_root
+            .join("resume-upload-folder")
+            .join("partial.bin.mobaxtauri-part"),
+        &payload[..60_000],
+    )
+    .expect("seed remote partial");
+
+    let files = ["done.txt", "partial.bin"]
+        .into_iter()
+        .map(|relative| {
+            let metadata = std::fs::metadata(source.join(relative)).expect("source metadata");
+            FolderFile {
+                relative_path: relative.to_string(),
+                size: metadata.len(),
+                modified: modified_seconds(&metadata),
+            }
+        })
+        .collect();
+    let snapshot = FolderSnapshot::new(
+        FolderDirection::Upload,
+        source.to_string_lossy().to_string(),
+        target_root.to_string(),
+        files,
+    )
+    .expect("snapshot");
+    write_remote_snapshot(&sftp, target_root, &snapshot)
+        .await
+        .expect("write snapshot");
+    append_remote_journal(&sftp, target_root, "done.txt")
+        .await
+        .expect("write journal");
+    let local_metadata = std::fs::metadata(source.join("partial.bin")).expect("partial metadata");
+    mobaxtauri_lib::sftp_resume::write_remote_sidecar(
+        &sftp,
+        &format!("{target_root}/partial.bin.mobaxtauri-part"),
+        &mobaxtauri_lib::sftp_resume::local_source(
+            &source.join("partial.bin").to_string_lossy(),
+            &local_metadata,
+        ),
+    )
+    .await
+    .expect("write sidecar");
+    *ctx.first_write_offset.lock().await = None;
+
+    mobaxtauri_lib::sftp_transfer::upload_folder(
+        &ctx.handle,
+        &sftp,
+        &transfers,
+        "it-session".to_string(),
+        source.to_string_lossy().to_string(),
+        target_root.to_string(),
+        "it-folder-resume-upload".to_string(),
+        Some("overwrite".to_string()),
+    )
+    .await
+    .expect("folder upload resumes");
+
+    assert_eq!(
+        std::fs::read(
+            ctx.sftp_root
+                .join("resume-upload-folder")
+                .join("partial.bin")
+        )
+        .expect("uploaded partial"),
+        payload
+    );
+    assert_eq!(
+        *ctx.first_write_offset.lock().await,
+        Some(60_000),
+        "only the partial file should be written, starting at its offset"
+    );
+    assert!(
+        !ctx.sftp_root
+            .join("resume-upload-folder")
+            .join(mobaxtauri_lib::sftp_folder_resume::FOLDER_MANIFEST_FILE)
+            .exists(),
+        "resume snapshot is removed after success"
+    );
+}
+
+#[tokio::test]
+async fn folder_download_resumes_completed_and_partial_files() {
+    use mobaxtauri_lib::sftp_folder_resume::{
+        append_local_journal, write_local_snapshot, FolderDirection, FolderFile, FolderSnapshot,
+    };
+
+    let ctx = TestContext::start(
+        "folder-resume-download",
+        HostTrust::Trusted,
+        AuthorizedKey::None,
+    )
+    .await;
+    let sftp = ctx.connected_sftp().await;
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+
+    let remote = ctx.sftp_root.join("resume-download-folder");
+    std::fs::create_dir_all(&remote).expect("create remote folder");
+    std::fs::write(remote.join("done.txt"), b"already copied").expect("seed done");
+    let payload: Vec<u8> = (0..200_000).map(|index| (index % 229) as u8).collect();
+    std::fs::write(remote.join("partial.bin"), &payload).expect("seed partial");
+
+    let target = temp_dir("folder-resume-download-dst").join("out");
+    std::fs::create_dir_all(&target).expect("create target");
+    std::fs::write(target.join("done.txt"), b"already copied").expect("seed done target");
+    std::fs::write(
+        target.join("partial.bin.mobaxtauri-part"),
+        &payload[..70_000],
+    )
+    .expect("seed local partial");
+
+    let mut files = Vec::new();
+    for relative in ["done.txt", "partial.bin"] {
+        let metadata = sftp
+            .metadata(format!("/resume-download-folder/{relative}"))
+            .await
+            .expect("remote metadata");
+        files.push(FolderFile {
+            relative_path: relative.to_string(),
+            size: metadata.len(),
+            modified: metadata.mtime.map(u64::from),
+        });
+    }
+    let snapshot = FolderSnapshot::new(
+        FolderDirection::Download,
+        "/resume-download-folder".to_string(),
+        target.to_string_lossy().to_string(),
+        files,
+    )
+    .expect("snapshot");
+    write_local_snapshot(&target, &snapshot)
+        .await
+        .expect("write snapshot");
+    append_local_journal(&target, "done.txt")
+        .await
+        .expect("write journal");
+    let partial_metadata = sftp
+        .metadata("/resume-download-folder/partial.bin")
+        .await
+        .expect("partial metadata");
+    mobaxtauri_lib::sftp_resume::write_local_sidecar(
+        &format!("{}.mobaxtauri-part", target.join("partial.bin").display()),
+        &mobaxtauri_lib::sftp_resume::remote_source(
+            "/resume-download-folder/partial.bin",
+            partial_metadata.len(),
+            partial_metadata.mtime,
+        ),
+    )
+    .await
+    .expect("write sidecar");
+
+    mobaxtauri_lib::sftp_transfer::download_folder(
+        &ctx.handle,
+        &sftp,
+        &transfers,
+        "it-session".to_string(),
+        "/resume-download-folder".to_string(),
+        target.to_string_lossy().to_string(),
+        "it-folder-resume-download".to_string(),
+        Some("overwrite".to_string()),
+    )
+    .await
+    .expect("folder download resumes");
+
+    assert_eq!(
+        std::fs::read(target.join("partial.bin")).expect("downloaded partial"),
+        payload
+    );
+    assert_eq!(
+        *ctx.first_read_offset.lock().await,
+        Some(70_000),
+        "only the partial file should be read, starting at its offset"
+    );
+    assert!(
+        !target
+            .join(mobaxtauri_lib::sftp_folder_resume::FOLDER_MANIFEST_FILE)
+            .exists(),
+        "resume snapshot is removed after success"
+    );
+    let _ = std::fs::remove_dir_all(target.parent().expect("target parent"));
+}
+
 /// Loopback echo service: every accepted connection is echoed back.
 async fn spawn_echo_server() -> (u16, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

@@ -3,6 +3,7 @@
 //! policies, cancellation, and progress events. Commands stay thin; the
 //! flows only need an SFTP session, a transfer manager, and an event sink.
 
+use crate::sftp_folder_resume::{self, FolderDirection, FolderFile, FolderSnapshot};
 use crate::sftp_resume;
 use crate::sftp_utils;
 use crate::transfers::{
@@ -487,6 +488,13 @@ pub async fn copy_file<R: Runtime>(
     result
 }
 
+struct RemoteFile {
+    path: String,
+    relative_path: String,
+    size: u64,
+    modified: Option<u64>,
+}
+
 // Tauri commands receive named keyword arguments over IPC, so a params
 // struct would change the wire contract; the argument list mirrors the
 // event/transfer contract instead.
@@ -521,8 +529,8 @@ pub async fn download_folder<R: Runtime>(
     async fn collect_files(
         sftp: &SftpSession,
         root: &str,
-    ) -> Result<(Vec<(String, u64)>, Vec<String>), String> {
-        let mut files: Vec<(String, u64)> = Vec::new();
+    ) -> Result<(Vec<RemoteFile>, Vec<String>), String> {
+        let mut files: Vec<RemoteFile> = Vec::new();
         let mut dirs: Vec<String> = vec![String::new()];
         let mut stack: Vec<(String, String)> = vec![(root.to_string(), String::new())];
         while let Some((dir, rel)) = stack.pop() {
@@ -546,7 +554,12 @@ pub async fn download_folder<R: Runtime>(
                     dirs.push(child_rel.clone());
                     stack.push((child, child_rel));
                 } else if metadata.is_regular() {
-                    files.push((child, metadata.len()));
+                    files.push(RemoteFile {
+                        path: child,
+                        relative_path: child_rel,
+                        size: metadata.len(),
+                        modified: metadata.mtime.map(u64::from),
+                    });
                 }
             }
         }
@@ -560,10 +573,12 @@ pub async fn download_folder<R: Runtime>(
     let mut transferred = 0_u64;
     let started = std::time::Instant::now();
     let mut final_total: Option<u64> = None;
+    let mut partial_paths: Vec<String> = Vec::new();
+    let mut resumed = false;
 
     let result = async {
         let (files, dirs) = collect_files(sftp, &remote_root).await?;
-        let total = files.iter().map(|(_, size)| *size).sum::<u64>();
+        let total = files.iter().map(|file| file.size).sum::<u64>();
         final_total = Some(total);
 
         // The sorted dir list guarantees each parent exists before its
@@ -578,21 +593,112 @@ pub async fn download_folder<R: Runtime>(
                 .map_err(|e| format!("Failed to create local directory: {e}"))?;
         }
 
-        for (remote_file_path, _size) in &files {
+        let snapshot = FolderSnapshot::new(
+            FolderDirection::Download,
+            remote_root.clone(),
+            target_root.to_string_lossy().to_string(),
+            files
+                .iter()
+                .map(|file| FolderFile {
+                    relative_path: file.relative_path.clone(),
+                    size: file.size,
+                    modified: file.modified,
+                })
+                .collect(),
+        )?;
+        let stored = sftp_folder_resume::read_local_snapshot(&target_root).await;
+        let stored_matches = stored
+            .as_ref()
+            .is_some_and(|stored| stored.matches(&snapshot));
+        let mut completed = if stored_matches {
+            let journal = sftp_folder_resume::read_local_journal(&target_root).await;
+            if snapshot.supports_completed_skip() {
+                snapshot.completed_paths(&journal)
+            } else {
+                std::collections::HashSet::new()
+            }
+        } else {
+            sftp_folder_resume::remove_local_resume_artifacts(&target_root).await;
+            if let Err(error) =
+                sftp_folder_resume::write_local_snapshot(&target_root, &snapshot).await
+            {
+                log::warn!(
+                    "Folder resume state unavailable for {}: {error}",
+                    target_root.display()
+                );
+            }
+            std::collections::HashSet::new()
+        };
+
+        // A journal entry is only trusted when the destination still exists
+        // with the recorded size; otherwise the file is copied again.
+        let mut verified = std::collections::HashSet::new();
+        for file in &snapshot.files {
+            if !completed.contains(&file.relative_path) {
+                continue;
+            }
+            let local_file_path = target_root.join(&file.relative_path);
+            if let Ok(metadata) = tokio::fs::metadata(&local_file_path).await {
+                if metadata.is_file() && metadata.len() == file.size {
+                    verified.insert(file.relative_path.clone());
+                }
+            }
+        }
+        completed = verified;
+        transferred = snapshot.completed_bytes(&completed);
+        resumed = !completed.is_empty();
+
+        for file in &files {
             if is_cancelled(&cancellation) {
                 return Err("Transfer cancelled".to_string());
             }
-            let relative = sftp_utils::relative_remote_path(&remote_root, remote_file_path);
-            let local_file_path = target_root.join(&relative);
+            if completed.contains(&file.relative_path) {
+                continue;
+            }
+
+            let local_file_path = target_root.join(&file.relative_path);
+            let partial_path = format!("{}.mobaxtauri-part", local_file_path.display());
+            let partial_size = tokio::fs::metadata(&partial_path)
+                .await
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            let source = sftp_resume::remote_source(
+                &file.path,
+                file.size,
+                file.modified.map(|value| value as u32),
+            );
+            let resuming_file = sftp_resume::can_resume(
+                sftp_resume::read_local_sidecar(&partial_path).await,
+                &source,
+                partial_size,
+            );
 
             let mut remote_file = sftp
-                .open(remote_file_path)
+                .open(&file.path)
                 .await
-                .map_err(|e| format!("Failed to open remote file {remote_file_path}: {e:?}"))?;
-            let partial_path = format!("{}.mobaxtauri-part", local_file_path.display());
-            let mut local_file = tokio::fs::File::create(&partial_path)
-                .await
-                .map_err(|e| format!("Failed to create local file: {e}"))?;
+                .map_err(|e| format!("Failed to open remote file {}: {e:?}", file.path))?;
+            let mut local_file = if resuming_file {
+                remote_file
+                    .seek(SeekFrom::Start(partial_size))
+                    .await
+                    .map_err(|e| format!("Failed to seek remote file: {e:?}"))?;
+                transferred += partial_size;
+                resumed = true;
+                tokio::fs::OpenOptions::new()
+                    .append(true)
+                    .open(&partial_path)
+                    .await
+                    .map_err(|e| format!("Failed to reopen local file: {e}"))?
+            } else {
+                let file = tokio::fs::File::create(&partial_path)
+                    .await
+                    .map_err(|e| format!("Failed to create local file: {e}"))?;
+                if let Err(error) = sftp_resume::write_local_sidecar(&partial_path, &source).await {
+                    log::warn!("Resume metadata unavailable for {partial_path}: {error}");
+                }
+                file
+            };
+            partial_paths.push(partial_path.clone());
             let mut buffer = vec![0_u8; 64 * 1024];
 
             let mut file_error = None;
@@ -604,7 +710,7 @@ pub async fn download_folder<R: Runtime>(
                 let count = match remote_file.read(&mut buffer).await {
                     Ok(count) => count,
                     Err(e) => {
-                        file_error = Some(format!("Read failed for {remote_file_path}: {e:?}"));
+                        file_error = Some(format!("Read failed for {}: {e:?}", file.path));
                         break;
                     }
                 };
@@ -612,7 +718,7 @@ pub async fn download_folder<R: Runtime>(
                     break;
                 }
                 if let Err(e) = local_file.write_all(&buffer[..count]).await {
-                    file_error = Some(format!("Write failed for {remote_file_path}: {e}"));
+                    file_error = Some(format!("Write failed for {}: {e}", file.path));
                     break;
                 }
                 transferred += count as u64;
@@ -633,14 +739,17 @@ pub async fn download_folder<R: Runtime>(
                             transferred,
                             calculate_transfer_rate(transferred, started.elapsed()),
                         ),
-                        message: Some(relative.clone()),
+                        message: Some(file.relative_path.clone()),
                     },
                 );
             }
             let flushed = local_file.flush().await;
             drop(local_file);
             if let Some(error) = file_error {
-                let _ = tokio::fs::remove_file(&partial_path).await;
+                if error == "Transfer cancelled" {
+                    let _ = tokio::fs::remove_file(&partial_path).await;
+                    sftp_resume::remove_local_sidecar(&partial_path).await;
+                }
                 return Err(error);
             }
             flushed.map_err(|e| format!("Failed to flush local file: {e}"))?;
@@ -655,12 +764,33 @@ pub async fn download_folder<R: Runtime>(
             tokio::fs::rename(&partial_path, &local_file_path)
                 .await
                 .map_err(|e| format!("Failed to finalize local file: {e}"))?;
+            sftp_resume::remove_local_sidecar(&partial_path).await;
+            if let Err(error) =
+                sftp_folder_resume::append_local_journal(&target_root, &file.relative_path).await
+            {
+                log::warn!("Folder resume journal unavailable: {error}");
+            }
         }
+        sftp_folder_resume::remove_local_resume_artifacts(&target_root).await;
         Ok(())
     }
     .await;
 
     transfers.finish(&transfer_id).await;
+    if result
+        .as_ref()
+        .err()
+        .is_some_and(|error| error == "Transfer cancelled")
+    {
+        sftp_folder_resume::remove_local_resume_artifacts(&target_root).await;
+        for partial_path in &partial_paths {
+            let _ = tokio::fs::remove_file(partial_path).await;
+            sftp_resume::remove_local_sidecar(partial_path).await;
+        }
+    }
+    if resumed {
+        log::info!("Folder download resumed from saved progress");
+    }
     emit_transfer(
         app_handle,
         TransferEvent {
@@ -727,16 +857,31 @@ pub async fn upload_folder<R: Runtime>(
     }
 
     // Collect the full file list and byte total up front so the progress
-    // percentage is stable for the whole walk. Directories — including
-    // empty ones — are created remotely before the first file is written.
+    // percentage is stable for the whole walk. Directories ? including
+    // empty ones ? are created remotely before the first file is written.
     let tree = sftp_utils::collect_local_tree(&local_root).await?;
-    let total = tree.files.iter().map(|(_, size)| *size).sum::<u64>();
+    let total = tree.files.iter().map(|file| file.size).sum::<u64>();
+    let snapshot = FolderSnapshot::new(
+        FolderDirection::Upload,
+        local_root.to_string_lossy().to_string(),
+        target_root.clone(),
+        tree.files
+            .iter()
+            .map(|file| FolderFile {
+                relative_path: file.relative_path.clone(),
+                size: file.size,
+                modified: file.modified,
+            })
+            .collect(),
+    )?;
 
     let cancellation = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
     let mut transferred = 0_u64;
     let started = std::time::Instant::now();
+    let mut partial_paths: Vec<String> = Vec::new();
+    let mut resumed = false;
 
     emit_transfer(
         app_handle,
@@ -787,21 +932,108 @@ pub async fn upload_folder<R: Runtime>(
                 }
             }
         }
-        for (relative, _size) in &tree.files {
+
+        let stored = sftp_folder_resume::read_remote_snapshot(sftp, &target_root).await;
+        let stored_matches = stored
+            .as_ref()
+            .is_some_and(|stored| stored.matches(&snapshot));
+        let mut completed = if stored_matches {
+            let journal = sftp_folder_resume::read_remote_journal(sftp, &target_root).await;
+            if snapshot.supports_completed_skip() {
+                snapshot.completed_paths(&journal)
+            } else {
+                std::collections::HashSet::new()
+            }
+        } else {
+            sftp_folder_resume::remove_remote_resume_artifacts(sftp, &target_root).await;
+            if let Err(error) =
+                sftp_folder_resume::write_remote_snapshot(sftp, &target_root, &snapshot).await
+            {
+                log::warn!("Folder resume state unavailable for {target_root}: {error}");
+            }
+            std::collections::HashSet::new()
+        };
+
+        // A journal entry is only trusted when the destination still exists
+        // with the recorded size; otherwise the file is copied again.
+        let mut verified = std::collections::HashSet::new();
+        for file in &snapshot.files {
+            if !completed.contains(&file.relative_path) {
+                continue;
+            }
+            let remote_file_path = sftp_utils::join_sftp_path(&target_root, &file.relative_path);
+            if let Ok(metadata) = sftp.metadata(&remote_file_path).await {
+                if metadata.is_regular() && metadata.len() == file.size {
+                    verified.insert(file.relative_path.clone());
+                }
+            }
+        }
+        completed = verified;
+        transferred = snapshot.completed_bytes(&completed);
+        resumed = !completed.is_empty();
+
+        for file in &tree.files {
             if is_cancelled(&cancellation) {
                 return Err("Transfer cancelled".to_string());
             }
-            let remote_file_path = sftp_utils::join_sftp_path(&target_root, relative);
-            let local_file_path = local_root.join(relative);
+            if completed.contains(&file.relative_path) {
+                continue;
+            }
+
+            let remote_file_path = sftp_utils::join_sftp_path(&target_root, &file.relative_path);
+            let local_file_path = local_root.join(&file.relative_path);
             let local_display = local_file_path.display().to_string();
             let mut local_file = tokio::fs::File::open(&local_file_path).await.map_err(|e| {
                 sftp_utils::local_file_error("Failed to open local file", &local_display, &e)
             })?;
+            let local_metadata = local_file.metadata().await.map_err(|e| {
+                sftp_utils::local_file_error(
+                    "Failed to read local file metadata",
+                    &local_display,
+                    &e,
+                )
+            })?;
+            let source = sftp_resume::local_source(&local_display, &local_metadata);
             let partial_path = format!("{remote_file_path}.mobaxtauri-part");
-            let mut remote_file = sftp
-                .create(&partial_path)
+            let remote_partial_size = sftp
+                .metadata(&partial_path)
                 .await
-                .map_err(|e| format!("Failed to create remote file {remote_file_path}: {e:?}"))?;
+                .ok()
+                .filter(|metadata| metadata.is_regular())
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            let resuming_file = sftp_resume::can_resume(
+                sftp_resume::read_remote_sidecar(sftp, &partial_path).await,
+                &source,
+                remote_partial_size,
+            );
+            let mut remote_file = if resuming_file {
+                let mut file = sftp
+                    .open_with_flags(&partial_path, OpenFlags::WRITE)
+                    .await
+                    .map_err(|e| format!("Failed to reopen remote file: {e:?}"))?;
+                file.seek(SeekFrom::Start(remote_partial_size))
+                    .await
+                    .map_err(|e| format!("Failed to seek remote file: {e:?}"))?;
+                local_file
+                    .seek(SeekFrom::Start(remote_partial_size))
+                    .await
+                    .map_err(|e| format!("Failed to seek local file: {e}"))?;
+                transferred += remote_partial_size;
+                resumed = true;
+                file
+            } else {
+                let file = sftp.create(&partial_path).await.map_err(|e| {
+                    format!("Failed to create remote file {remote_file_path}: {e:?}")
+                })?;
+                if let Err(error) =
+                    sftp_resume::write_remote_sidecar(sftp, &partial_path, &source).await
+                {
+                    log::warn!("Resume metadata unavailable for {partial_path}: {error}");
+                }
+                file
+            };
+            partial_paths.push(partial_path.clone());
             let mut buffer = vec![0_u8; 64 * 1024];
 
             let mut file_error = None;
@@ -849,12 +1081,15 @@ pub async fn upload_folder<R: Runtime>(
                             transferred,
                             calculate_transfer_rate(transferred, started.elapsed()),
                         ),
-                        message: Some(relative.clone()),
+                        message: Some(file.relative_path.clone()),
                     },
                 );
             }
             if let Some(error) = file_error {
-                let _ = sftp.remove_file(&partial_path).await;
+                if error == "Transfer cancelled" {
+                    let _ = sftp.remove_file(&partial_path).await;
+                    sftp_resume::remove_remote_sidecar(sftp, &partial_path).await;
+                }
                 return Err(error);
             }
             // Drop the handle before the finalizing rename, mirroring the
@@ -867,12 +1102,34 @@ pub async fn upload_folder<R: Runtime>(
             sftp.rename(&partial_path, &remote_file_path)
                 .await
                 .map_err(|e| format!("Failed to finalize remote file {remote_file_path}: {e:?}"))?;
+            sftp_resume::remove_remote_sidecar(sftp, &partial_path).await;
+            if let Err(error) =
+                sftp_folder_resume::append_remote_journal(sftp, &target_root, &file.relative_path)
+                    .await
+            {
+                log::warn!("Folder resume journal unavailable: {error}");
+            }
         }
+        sftp_folder_resume::remove_remote_resume_artifacts(sftp, &target_root).await;
         Ok(())
     }
     .await;
 
     transfers.finish(&transfer_id).await;
+    if result
+        .as_ref()
+        .err()
+        .is_some_and(|error| error == "Transfer cancelled")
+    {
+        sftp_folder_resume::remove_remote_resume_artifacts(sftp, &target_root).await;
+        for partial_path in &partial_paths {
+            let _ = sftp.remove_file(partial_path).await;
+            sftp_resume::remove_remote_sidecar(sftp, partial_path).await;
+        }
+    }
+    if resumed {
+        log::info!("Folder upload resumed from saved progress");
+    }
     emit_transfer(
         app_handle,
         TransferEvent {
