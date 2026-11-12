@@ -8,6 +8,7 @@ mod recording;
 mod session_manager;
 mod session_types;
 mod sftp_conflict;
+pub mod sftp_folder_resume;
 pub mod sftp_permissions;
 pub mod sftp_remove;
 pub mod sftp_resume;
