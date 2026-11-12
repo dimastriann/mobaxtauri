@@ -16,6 +16,7 @@ export function loadAutoLockMinutes(
   storage: ReadableStorage | undefined = defaultStorage(),
 ): number {
   const raw = storage?.getItem(AUTO_LOCK_STORAGE_KEY);
+  if (raw === null || raw === undefined || raw === '') return DEFAULT_AUTO_LOCK_MINUTES;
   const value = Number(raw);
   return Number.isInteger(value) ? normalize(value) : DEFAULT_AUTO_LOCK_MINUTES;
 }
