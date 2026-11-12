@@ -57,6 +57,16 @@ This roadmap communicates direction rather than fixed deadlines. Priorities may 
 - [x] Auto-reconnect with exponential backoff
 - [x] Resume and retry interrupted SFTP transfers
 
+## v0.12.0: durable workflows
+
+- [x] Resume folder transfers without re-copying completed files
+- [x] Persist failed transfer rows across restarts
+- [x] Mark resumed transfers in the transfer queue
+- [x] Save and restore one-, two-, and four-pane terminal layouts
+- [x] Broadcast input to visible connected panes
+- [x] Lock the credential vault manually or after an idle timeout
+- [x] Export and import trusted hosts
+
 ## Later: broader workflows
 
 - [x] SSH agent support

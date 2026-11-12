@@ -37,13 +37,13 @@ In particular, upgrading from a 0.3.x release prompts once for saved credentials
 | :--- | :--- |
 | SSH terminal | Multiple Xterm.js terminal tabs backed by asynchronous Rust SSH sessions |
 | Authentication | Password, OpenSSH private-key, SSH agent, and keyboard-interactive/MFA (OTP) authentication |
-| SFTP | Browse, filter, multi-select, upload, download, copy, rename, edit, create, delete, change permissions, resume interrupted transfers, and retry failures |
+| SFTP | Browse, filter, multi-select, upload, download, copy, rename, edit, create, delete, change permissions, resume interrupted file and folder transfers, and retry persisted failures |
 | SSH keys | Generate Ed25519/RSA keys, register existing keys, copy public keys, export keys, and deploy them to `authorized_keys` |
-| Session management | Folders, drag and drop, environment tags, saved tab workspaces, quick connect, multiple tabs from one saved profile, optional per-session startup commands, and automatic reconnect with backoff |
+| Session management | Folders, drag and drop, environment tags, saved tab workspaces with 1/2/4-pane layouts, quick connect, multiple tabs from one saved profile, optional per-session startup commands, broadcast input, and automatic reconnect with backoff |
 | Productivity | Command snippets, command palette, configurable shortcuts, terminal search, and recording export |
 | Import and export | Application backup/restore, OpenSSH config import, and MobaXterm bookmark import |
 | Host information | Linux-focused OS detection and CPU, memory, swap, and disk health display |
-| Security | SSH host-key verification with trust prompt (TOFU), a trusted-hosts manager, and saved passwords stored in a local Stronghold vault keyed by a per-install OS keychain key ? with an Argon2id master-password fallback on systems without a Secret Service |
+| Security | SSH host-key verification with trust prompt (TOFU), a trusted-hosts manager with export/import, and saved passwords stored in a local Stronghold vault keyed by a per-install OS keychain key with an Argon2id master-password fallback, manual locking, and idle auto-lock |
 | Interface | Responsive dashboard, dark/light themes, persistent background terminal views, keyboard/screen-reader improvements, and English/Bahasa Indonesia localization across the UI |
 
 ## Architecture
