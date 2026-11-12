@@ -983,6 +983,7 @@ const SftpSidebar: React.FC = () => {
                     {entry.percent !== undefined && entry.percent !== null
                       ? ` (${entry.percent}%)`
                       : ''}
+                    {entry.resumed ? ` | ${t('sftp.transfer.resumed')}` : ''}
                     {speed ? ` | ${speed}` : ''}
                     {eta ? ` | ${t('sftp.eta', { eta })}` : ''}
                   </Text>

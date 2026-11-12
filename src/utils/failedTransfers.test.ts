@@ -15,6 +15,7 @@ const failedEvent: SftpTransferEvent = {
   transferred: 512,
   total: 1024,
   percent: 50,
+  resumed: true,
   bytesPerSec: null,
   etaSeconds: null,
   message: 'network down',

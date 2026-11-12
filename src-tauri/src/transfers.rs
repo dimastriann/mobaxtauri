@@ -43,6 +43,7 @@ pub struct TransferEvent {
     pub status: TransferStatus,
     pub transferred: u64,
     pub total: Option<u64>,
+    pub resumed: bool,
     pub percent: Option<f32>,
     pub bytes_per_sec: Option<f64>,
     pub eta_seconds: Option<u64>,

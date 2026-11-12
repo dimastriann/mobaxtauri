@@ -20,6 +20,8 @@ export interface SftpTransferEvent {
   status: SftpTransferStatus;
   transferred: number;
   total: number | null;
+  /** True when the transfer reused a partial file or completed folder entries. */
+  resumed?: boolean;
   percent?: number | null;
   bytesPerSec?: number | null;
   etaSeconds?: number | null;

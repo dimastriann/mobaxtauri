@@ -87,6 +87,7 @@ pub async fn download_file<R: Runtime>(
             status: TransferStatus::Running,
             transferred,
             total,
+            resumed: resuming,
             percent: calculate_percentage(transferred, total),
             bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
             eta_seconds: calculate_eta(
@@ -125,6 +126,7 @@ pub async fn download_file<R: Runtime>(
                     status: TransferStatus::Running,
                     transferred,
                     total,
+                    resumed: resuming,
                     percent: calculate_percentage(transferred, total),
                     bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
                     eta_seconds: calculate_eta(
@@ -176,6 +178,7 @@ pub async fn download_file<R: Runtime>(
             },
             transferred,
             total,
+            resumed: resuming,
             percent: calculate_percentage(transferred, total),
             bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
             eta_seconds: calculate_eta(
@@ -301,6 +304,7 @@ pub async fn upload_file<R: Runtime>(
                     status: TransferStatus::Running,
                     transferred,
                     total,
+                    resumed: resuming,
                     percent: calculate_percentage(transferred, total),
                     bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
                     eta_seconds: calculate_eta(
@@ -348,6 +352,7 @@ pub async fn upload_file<R: Runtime>(
             },
             transferred,
             total,
+            resumed: resuming,
             percent: calculate_percentage(transferred, total),
             bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
             eta_seconds: calculate_eta(
@@ -435,6 +440,7 @@ pub async fn copy_file<R: Runtime>(
                     status: TransferStatus::Running,
                     transferred,
                     total,
+                    resumed: false,
                     percent: calculate_percentage(transferred, total),
                     bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
                     eta_seconds: calculate_eta(
@@ -475,6 +481,7 @@ pub async fn copy_file<R: Runtime>(
             },
             transferred,
             total,
+            resumed: false,
             percent: calculate_percentage(transferred, total),
             bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
             eta_seconds: calculate_eta(
@@ -732,6 +739,7 @@ pub async fn download_folder<R: Runtime>(
                         status: TransferStatus::Running,
                         transferred,
                         total: Some(total),
+                        resumed,
                         percent: calculate_percentage(transferred, Some(total)),
                         bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
                         eta_seconds: calculate_eta(
@@ -805,6 +813,7 @@ pub async fn download_folder<R: Runtime>(
             },
             transferred,
             total: final_total,
+            resumed,
             percent: calculate_percentage(transferred, final_total),
             bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
             eta_seconds: calculate_eta(
@@ -893,6 +902,7 @@ pub async fn upload_folder<R: Runtime>(
             status: TransferStatus::Running,
             transferred,
             total: Some(total),
+            resumed: false,
             percent: calculate_percentage(transferred, Some(total)),
             bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
             eta_seconds: calculate_eta(
@@ -1074,6 +1084,7 @@ pub async fn upload_folder<R: Runtime>(
                         status: TransferStatus::Running,
                         transferred,
                         total: Some(total),
+                        resumed,
                         percent: calculate_percentage(transferred, Some(total)),
                         bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
                         eta_seconds: calculate_eta(
@@ -1144,6 +1155,7 @@ pub async fn upload_folder<R: Runtime>(
             },
             transferred,
             total: Some(total),
+            resumed,
             percent: calculate_percentage(transferred, Some(total)),
             bytes_per_sec: calculate_transfer_rate(transferred, started.elapsed()),
             eta_seconds: calculate_eta(

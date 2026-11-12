@@ -66,6 +66,7 @@ export const en = {
   'sftp.transfersHeading': 'TRANSFERS ({active} active)',
   'sftp.transfer.retry': 'Retry',
   'sftp.transfer.dismiss': 'Dismiss',
+  'sftp.transfer.resumed': 'Resumed',
   'sftp.transfer.cancel': 'Cancel',
   'sftp.errorPrefix': 'Error: {message}',
   'sftp.copied': 'Copied to clipboard',

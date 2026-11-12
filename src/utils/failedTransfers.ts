@@ -76,6 +76,7 @@ function parseEvent(value: unknown): SftpTransferEvent | null {
     status: 'failed',
     transferred: value.transferred,
     total: value.total ?? null,
+    ...(value.resumed === true ? { resumed: true } : {}),
     percent: value.percent ?? null,
     bytesPerSec: value.bytesPerSec ?? null,
     etaSeconds: value.etaSeconds ?? null,
