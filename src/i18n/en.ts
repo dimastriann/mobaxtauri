@@ -65,6 +65,7 @@ export const en = {
   'sftp.menu.duplicate': 'Duplicate',
   'sftp.transfersHeading': 'TRANSFERS ({active} active)',
   'sftp.transfer.retry': 'Retry',
+  'sftp.transfer.dismiss': 'Dismiss',
   'sftp.transfer.cancel': 'Cancel',
   'sftp.errorPrefix': 'Error: {message}',
   'sftp.copied': 'Copied to clipboard',

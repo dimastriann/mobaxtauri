@@ -62,6 +62,7 @@ export const id: Record<TranslationKey, string> = {
   'sftp.menu.duplicate': 'Duplikat',
   'sftp.transfersHeading': 'TRANSFER ({active} aktif)',
   'sftp.transfer.retry': 'Coba Lagi',
+  'sftp.transfer.dismiss': 'Tutup',
   'sftp.transfer.cancel': 'Batal',
   'sftp.errorPrefix': 'Kesalahan: {message}',
   'sftp.copied': 'Disalin ke clipboard',

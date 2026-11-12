@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useSftpStore } from './useSftpStore';
+import { FAILED_TRANSFERS_STORAGE_KEY } from '../utils/failedTransfers';
 
 // Mock Tauri's invoke
 vi.mock('@tauri-apps/api/core', () => ({
@@ -16,6 +17,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 describe('useSftpStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     useSftpStore.getState().reset();
   });
 
@@ -153,6 +155,48 @@ describe('useSftpStore', () => {
     expect(invoke).toHaveBeenCalledWith('sftp_cancel_transfer', {
       transferId: 'transfer-1',
     });
+  });
+
+  it('keeps failed transfers until dismissed and persists the retry request', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    vi.mocked(save).mockResolvedValueOnce('/tmp/report.bin');
+    vi.mocked(invoke).mockRejectedValueOnce(new Error('network down'));
+
+    await useSftpStore.getState().downloadFile('session-1', 'report.bin');
+    const transferId = String(
+      (vi.mocked(invoke).mock.calls[0][1] as { transferId: string }).transferId,
+    );
+
+    useSftpStore.getState().updateTransfer({
+      transferId,
+      sessionId: 'session-1',
+      kind: 'download',
+      label: 'report.bin',
+      status: 'failed',
+      transferred: 512,
+      total: 1024,
+      message: 'network down',
+    });
+
+    expect(useSftpStore.getState().transfers).toHaveLength(1);
+    const stored = JSON.parse(localStorage.getItem(FAILED_TRANSFERS_STORAGE_KEY) ?? '{}');
+    expect(stored.entries).toHaveLength(1);
+    expect(stored.entries[0].request).toMatchObject({
+      kind: 'download',
+      sessionId: 'session-1',
+      sourcePath: '/report.bin',
+      destPath: '/tmp/report.bin',
+    });
+
+    useSftpStore.getState().reset();
+    expect(useSftpStore.getState().transfers).toHaveLength(1);
+
+    useSftpStore.getState().dismissTransfer(transferId);
+    expect(useSftpStore.getState().transfers).toHaveLength(0);
+    expect(
+      JSON.parse(localStorage.getItem(FAILED_TRANSFERS_STORAGE_KEY) ?? '{}').entries,
+    ).toHaveLength(0);
   });
 
   it('keeps finished transfers briefly and then drops them', async () => {

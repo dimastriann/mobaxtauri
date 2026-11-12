@@ -3,6 +3,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { save, open } from '@tauri-apps/plugin-dialog';
 import { joinLocalPath } from '../utils/localPath';
 import {
+  loadFailedTransfers,
+  saveFailedTransfers,
+  type FailedTransferRequest,
+  type PersistedFailedTransfer,
+} from '../utils/failedTransfers';
+import {
   SFTP_TARGET_EXISTS_MARKER,
   type SftpConflictPolicy,
   type SftpLocalEntryPayload,
@@ -30,13 +36,7 @@ export interface SftpBatchDownloadResult {
   failures: { name: string; message: string }[];
 }
 
-interface TransferRetryRequest {
-  kind: 'upload' | 'download' | 'copy' | 'folder_upload' | 'folder_download';
-  sessionId: string;
-  sourcePath: string;
-  destPath: string;
-  conflictPolicy?: SftpConflictPolicy;
-}
+type TransferRetryRequest = FailedTransferRequest;
 
 export interface SftpConflictPrompt {
   kind: 'upload' | 'copy' | 'create-file' | 'folder-download' | 'folder-upload';
@@ -80,15 +80,28 @@ interface SftpState {
   createFile: (sessionId: string, fileName: string) => Promise<void>;
   updateTransfer: (transfer: SftpTransferEvent) => void;
   retryTransfer: (transferId: string) => Promise<void>;
+  dismissTransfer: (transferId: string) => void;
   cancelTransfer: (transferId: string) => Promise<void>;
   resolveConflict: (policy: SftpConflictPolicy) => Promise<void>;
   dismissConflict: () => void;
 }
 
 export const useSftpStore = create<SftpState>((set, get) => {
-  const transferRequests = new Map<string, TransferRetryRequest>();
+  const hydratedFailedTransfers = loadFailedTransfers();
+  const transferRequests = new Map<string, TransferRetryRequest>(
+    hydratedFailedTransfers.map((entry) => [entry.event.transferId, entry.request]),
+  );
   const rememberTransfer = (id: string, request: TransferRetryRequest) => {
     transferRequests.set(id, request);
+  };
+  const persistFailedTransfers = () => {
+    const entries: PersistedFailedTransfer[] = [];
+    for (const event of get().transfers) {
+      if (event.status !== 'failed') continue;
+      const request = transferRequests.get(event.transferId);
+      if (request) entries.push({ request, event });
+    }
+    saveFailedTransfers(entries);
   };
 
   // Shared bodies for the dialog flows and the drag & drop dispatcher:
@@ -191,7 +204,7 @@ export const useSftpStore = create<SftpState>((set, get) => {
     isLoading: false,
     error: null,
     history: [],
-    transfers: [],
+    transfers: hydratedFailedTransfers.map((entry) => entry.event),
     conflictPrompt: null,
 
     updateTransfer: (transfer) => {
@@ -206,10 +219,16 @@ export const useSftpStore = create<SftpState>((set, get) => {
       if (transfer.status !== 'failed') {
         transferRequests.delete(transfer.transferId);
       }
+      persistFailedTransfers();
       set({
         isLoading: false,
         error: transfer.status === 'failed' ? transfer.message || 'Transfer failed' : null,
       });
+      if (transfer.status === 'failed') {
+        // Failed rows stay until the user retries or dismisses them, and are
+        // re-hydrated on the next launch.
+        return;
+      }
       // Keep the finished row visible briefly, then drop it from the queue.
       setTimeout(() => {
         set({
@@ -317,9 +336,15 @@ export const useSftpStore = create<SftpState>((set, get) => {
     retryTransfer: async (transferId) => {
       const request = transferRequests.get(transferId);
       if (!request) return;
+      transferRequests.delete(transferId);
+      set((state) => ({
+        transfers: state.transfers.filter((entry) => entry.transferId !== transferId),
+        isLoading: true,
+        error: null,
+      }));
+      persistFailedTransfers();
       const nextId = `${request.kind}-retry-${Date.now()}`;
       transferRequests.set(nextId, request);
-      set({ isLoading: true, error: null });
       try {
         if (request.kind === 'upload') {
           await invoke('sftp_upload_file', {
@@ -365,6 +390,14 @@ export const useSftpStore = create<SftpState>((set, get) => {
       } catch (err) {
         set({ error: String(err), isLoading: false });
       }
+    },
+
+    dismissTransfer: (transferId) => {
+      transferRequests.delete(transferId);
+      set((state) => ({
+        transfers: state.transfers.filter((entry) => entry.transferId !== transferId),
+      }));
+      persistFailedTransfers();
     },
 
     cancelTransfer: async (transferId) => {
@@ -432,13 +465,18 @@ export const useSftpStore = create<SftpState>((set, get) => {
     },
 
     reset: () => {
+      const persisted = loadFailedTransfers();
+      transferRequests.clear();
+      for (const entry of persisted) {
+        transferRequests.set(entry.event.transferId, entry.request);
+      }
       set({
         currentPath: '/',
         files: [],
         error: null,
         isLoading: false,
         history: [],
-        transfers: [],
+        transfers: persisted.map((entry) => entry.event),
         conflictPrompt: null,
       });
     },
