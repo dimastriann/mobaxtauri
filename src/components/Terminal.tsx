@@ -27,6 +27,7 @@ import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore'
 import { useTranslation } from '../store/useLocaleStore';
 import { resolveTerminalTheme, toXtermTheme } from '../utils/terminalAppearance';
 import { loadReconnectSettings, reconnectDelayMs } from '../utils/reconnectPolicy';
+import type { WorkspacePaneLayout } from '../utils/workspacePanes';
 import { toaster } from './ui/toaster';
 import { LuSearch, LuChevronUp, LuChevronDown, LuX, LuCircle, LuSquare } from 'react-icons/lu';
 import '@xterm/xterm/css/xterm.css';
@@ -1191,54 +1192,91 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
 
 interface TerminalContainerProps {
   isViewVisible?: boolean;
-  secondarySessionId?: string | null;
+  paneSessionIds: string[];
+  paneLayout: WorkspacePaneLayout;
   onActivateSession: (sessionId: string) => void;
 }
 
+interface PanePlacement {
+  gridColumn: string;
+  gridRow: string;
+}
+
+const panePlacement = (
+  index: number,
+  paneCount: number,
+  layout: WorkspacePaneLayout,
+): PanePlacement => {
+  if (layout === 'rows' && paneCount === 2) {
+    return { gridColumn: '1', gridRow: `${index + 1}` };
+  }
+  if (layout === 'grid' && paneCount >= 3) {
+    return { gridColumn: `${(index % 2) + 1}`, gridRow: `${Math.floor(index / 2) + 1}` };
+  }
+  return { gridColumn: `${index + 1}`, gridRow: '1' };
+};
+
 const TerminalContainer: React.FC<TerminalContainerProps> = ({
   isViewVisible = true,
-  secondarySessionId = null,
+  paneSessionIds,
+  paneLayout,
   onActivateSession,
 }) => {
   const { t } = useTranslation();
   const openTabs = useSessionStore((state) => state.openTabs);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const visibleIds = [activeSessionId, secondarySessionId].filter(
-    (id, index, ids): id is string =>
-      Boolean(id) && openTabs.includes(id as string) && ids.indexOf(id) === index,
-  );
-  const isSplit = visibleIds.length === 2;
+  const visibleIds = paneSessionIds
+    .filter((id, index, ids) => openTabs.includes(id) && ids.indexOf(id) === index)
+    .slice(0, 4);
+  if (visibleIds.length === 0 && activeSessionId && openTabs.includes(activeSessionId)) {
+    visibleIds.push(activeSessionId);
+  }
+  const gridTemplateColumns = paneLayout !== 'rows' && visibleIds.length > 1 ? '1fr 1fr' : '1fr';
+  const gridTemplateRows =
+    paneLayout === 'rows' ? '1fr 1fr' : paneLayout === 'grid' ? '1fr 1fr' : '1fr';
 
   return (
     <Box
       flex={1}
-      display="flex"
+      display="grid"
       position="relative"
       h="full"
       w="full"
-      bg="bg.panel"
+      bg="border.subtle"
+      gap="1px"
       overflow="hidden"
+      gridTemplateColumns={gridTemplateColumns}
+      gridTemplateRows={gridTemplateRows}
     >
-      {openTabs.map((tabId) => (
-        <Box
-          key={tabId}
-          flex="1 1 0"
-          minW={0}
-          h="full"
-          position={visibleIds.includes(tabId) ? 'relative' : 'absolute'}
-          inset={visibleIds.includes(tabId) ? undefined : 0}
-          visibility={visibleIds.includes(tabId) && isViewVisible ? 'visible' : 'hidden'}
-          borderLeft={isSplit && tabId === secondarySessionId ? '1px solid' : undefined}
-          borderColor="border.subtle"
-        >
-          <TerminalInstance
-            sessionId={tabId}
-            isVisible={visibleIds.includes(tabId) && isViewVisible}
-            isFocused={tabId === activeSessionId && isViewVisible}
-            onActivate={() => onActivateSession(tabId)}
-          />
-        </Box>
-      ))}
+      {openTabs.map((tabId) => {
+        const paneIndex = visibleIds.indexOf(tabId);
+        const isPaneVisible = paneIndex >= 0 && isViewVisible;
+        const placement =
+          paneIndex >= 0 ? panePlacement(paneIndex, visibleIds.length, paneLayout) : undefined;
+        return (
+          <Box
+            key={tabId}
+            position={isPaneVisible ? 'relative' : 'absolute'}
+            inset={isPaneVisible ? undefined : 0}
+            visibility={isPaneVisible ? 'visible' : 'hidden'}
+            gridColumn={isPaneVisible ? placement?.gridColumn : undefined}
+            gridRow={isPaneVisible ? placement?.gridRow : undefined}
+            minW={0}
+            minH={0}
+            h="full"
+            w="full"
+            bg="bg.panel"
+            overflow="hidden"
+          >
+            <TerminalInstance
+              sessionId={tabId}
+              isVisible={isPaneVisible}
+              isFocused={tabId === activeSessionId && isViewVisible}
+              onActivate={() => onActivateSession(tabId)}
+            />
+          </Box>
+        );
+      })}
       {openTabs.length === 0 && (
         <Box
           display="flex"
@@ -1251,7 +1289,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({
         >
           <Box textAlign="center">
             <Box fontSize="48px" mb={4} opacity={0.3}>
-              ⌨
+              ?
             </Box>
             <Box fontSize="14px" fontWeight="500">
               {t('terminal.noOpenSessions')}

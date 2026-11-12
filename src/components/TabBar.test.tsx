@@ -32,14 +32,34 @@ describe('TabBar accessibility', () => {
     });
   });
 
+  it('offers pane layout choices and disables four-pane mode with too few tabs', () => {
+    const onSetPaneLayout = vi.fn();
+    render(
+      <Provider>
+        <TabBar
+          onNewSession={vi.fn()}
+          paneCount={1}
+          paneLayout="columns"
+          onSetPaneLayout={onSetPaneLayout}
+          onActivateSession={vi.fn()}
+        />
+      </Provider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Split panes side by side' }));
+    expect(onSetPaneLayout).toHaveBeenCalledWith('columns');
+    expect(screen.getByRole('button', { name: 'Four-pane grid' })).toBeDisabled();
+  });
+
   it('exposes a tablist with selected tabs and arrow navigation', () => {
     const onActivateSession = vi.fn();
     render(
       <Provider>
         <TabBar
           onNewSession={vi.fn()}
-          isSplit={false}
-          onToggleSplit={vi.fn()}
+          paneCount={1}
+          paneLayout="columns"
+          onSetPaneLayout={vi.fn()}
           onActivateSession={onActivateSession}
         />
       </Provider>,

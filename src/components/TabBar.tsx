@@ -1,15 +1,26 @@
 import React, { useState } from 'react';
 import { HStack, Box, Text, IconButton, Icon } from '@chakra-ui/react';
-import { LuBell, LuChevronLeft, LuChevronRight, LuColumns2, LuPlus, LuX } from 'react-icons/lu';
+import {
+  LuBell,
+  LuChevronLeft,
+  LuChevronRight,
+  LuColumns2,
+  LuLayoutGrid,
+  LuPlus,
+  LuRows2,
+  LuX,
+} from 'react-icons/lu';
 import { Session, useSessionStore } from '../store/useSessionStore';
 import { buildTabDisplayNames } from '../utils/sessionTabs';
 import { useTranslation } from '../store/useLocaleStore';
+import type { WorkspacePaneLayout } from '../utils/workspacePanes';
 import { ask } from '@tauri-apps/plugin-dialog';
 
 interface TabBarProps {
   onNewSession: () => void;
-  isSplit: boolean;
-  onToggleSplit: () => void;
+  paneCount: number;
+  paneLayout: WorkspacePaneLayout;
+  onSetPaneLayout: (layout: WorkspacePaneLayout | 'single') => void;
   onActivateSession: (sessionId: string) => void;
 }
 
@@ -28,8 +39,9 @@ const statusColor = (status: Session['status']) => {
 
 const TabBar: React.FC<TabBarProps> = ({
   onNewSession,
-  isSplit,
-  onToggleSplit,
+  paneCount,
+  paneLayout,
+  onSetPaneLayout,
   onActivateSession,
 }) => {
   const { t } = useTranslation();
@@ -353,12 +365,14 @@ const TabBar: React.FC<TabBarProps> = ({
           </HStack>
         )}
         <IconButton
-          aria-label={isSplit ? 'Close split pane' : 'Split terminal pane'}
-          title={isSplit ? 'Close split pane' : 'Split terminal pane'}
+          aria-label={t('tabs.splitColumns')}
+          title={t('tabs.splitColumns')}
           size="xs"
           variant="ghost"
-          color={isSplit ? 'blue.fg' : 'fg.muted'}
-          onClick={onToggleSplit}
+          color={paneCount === 2 && paneLayout === 'columns' ? 'blue.fg' : 'fg.muted'}
+          onClick={() =>
+            onSetPaneLayout(paneCount === 2 && paneLayout === 'columns' ? 'single' : 'columns')
+          }
           disabled={openTabs.length < 2}
           minW="26px"
           h="26px"
@@ -366,6 +380,40 @@ const TabBar: React.FC<TabBarProps> = ({
           _hover={{ bg: 'blue.subtle' }}
         >
           <LuColumns2 />
+        </IconButton>
+        <IconButton
+          aria-label={t('tabs.splitRows')}
+          title={t('tabs.splitRows')}
+          size="xs"
+          variant="ghost"
+          color={paneCount === 2 && paneLayout === 'rows' ? 'blue.fg' : 'fg.muted'}
+          onClick={() =>
+            onSetPaneLayout(paneCount === 2 && paneLayout === 'rows' ? 'single' : 'rows')
+          }
+          disabled={openTabs.length < 2}
+          minW="26px"
+          h="26px"
+          borderRadius="4px"
+          _hover={{ bg: 'blue.subtle' }}
+        >
+          <LuRows2 />
+        </IconButton>
+        <IconButton
+          aria-label={t('tabs.splitGrid')}
+          title={t('tabs.splitGrid')}
+          size="xs"
+          variant="ghost"
+          color={paneCount === 4 && paneLayout === 'grid' ? 'blue.fg' : 'fg.muted'}
+          onClick={() =>
+            onSetPaneLayout(paneCount === 4 && paneLayout === 'grid' ? 'single' : 'grid')
+          }
+          disabled={openTabs.length < 4}
+          minW="26px"
+          h="26px"
+          borderRadius="4px"
+          _hover={{ bg: 'blue.subtle' }}
+        >
+          <LuLayoutGrid />
         </IconButton>
         <IconButton
           aria-label={t('tabs.newSession')}

@@ -5,7 +5,9 @@ import { useCredentialStore } from './useCredentialStore';
 import {
   normalizeActivePaneIndex,
   normalizePaneIndices,
+  normalizePaneLayout,
   removeConfigFromPaneLayout,
+  type WorkspacePaneLayout,
 } from '../utils/workspacePanes';
 import type { SshHealthSnapshot } from '../types/ssh';
 
@@ -115,6 +117,15 @@ export interface Workspace {
   paneIndices: number[];
   /** Index into `paneIndices` that owns keyboard focus. */
   activePaneIndex: number;
+  paneLayout: WorkspacePaneLayout;
+}
+
+export interface RestoredWorkspace {
+  tabIds: string[];
+  activeIndex: number;
+  paneIndices: number[];
+  activePaneIndex: number;
+  paneLayout: WorkspacePaneLayout;
 }
 
 export interface ConnectionHistoryEntry {
@@ -176,9 +187,14 @@ interface SessionState {
 
   // Workspace Management
   workspaces: Workspace[];
-  addWorkspace: (name: string, paneIndices?: number[], activePaneIndex?: number) => void;
+  addWorkspace: (
+    name: string,
+    paneIndices?: number[],
+    activePaneIndex?: number,
+    paneLayout?: WorkspacePaneLayout,
+  ) => void;
   deleteWorkspace: (id: string) => void;
-  restoreWorkspace: (id: string) => void;
+  restoreWorkspace: (id: string) => RestoredWorkspace | null;
 
   // Connection History
   connectionHistory: ConnectionHistoryEntry[];
@@ -226,6 +242,7 @@ const normalizeWorkspace = (workspace: StoredWorkspace): Workspace => {
     activeIndex: boundedActiveIndex,
     paneIndices,
     activePaneIndex: normalizeActivePaneIndex(workspace.activePaneIndex, paneIndices.length),
+    paneLayout: normalizePaneLayout(workspace.paneLayout, paneIndices.length),
   };
 };
 
@@ -539,7 +556,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     get().scheduleSave();
   },
 
-  addWorkspace: (name, paneIndices, activePaneIndex) => {
+  addWorkspace: (name, paneIndices, activePaneIndex, paneLayout) => {
     const { openTabs, activeSessionId, sessions } = get();
     const configIds = openTabs.map((tabId) => {
       const session = sessions.find((entry) => entry.id === tabId);
@@ -559,6 +576,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           activeIndex: boundedActiveIndex,
           paneIndices: normalizedPanes,
           activePaneIndex: normalizeActivePaneIndex(activePaneIndex, normalizedPanes.length),
+          paneLayout: normalizePaneLayout(paneLayout, normalizedPanes.length),
         },
       ],
     }));
@@ -573,10 +591,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   restoreWorkspace: (id) => {
     const state = get();
     const workspace = state.workspaces.find((item) => item.id === id);
-    if (!workspace) return;
+    if (!workspace) return null;
 
     const restoredSessions: Session[] = [];
     const restoredTabs: string[] = [];
+    const configTabs: (string | null)[] = [];
     const openedConfigs = new Set<string>();
     for (const configId of workspace.configIds) {
       const config = state.sessions.find(
@@ -587,21 +606,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           openedConfigs.add('local');
           restoredTabs.push('local');
         }
+        configTabs.push('local');
         continue;
       }
-      if (!config) continue;
+      if (!config) {
+        configTabs.push(null);
+        continue;
+      }
       if (!openedConfigs.has(configId)) {
         openedConfigs.add(configId);
         restoredTabs.push(config.id);
+        configTabs.push(config.id);
         continue;
       }
       const instance = createSessionInstance(config);
       restoredSessions.push(instance);
       restoredTabs.push(instance.id);
+      configTabs.push(instance.id);
     }
 
     const tabs = restoredTabs.length ? restoredTabs : ['local'];
     const activeIndex = Math.min(Math.max(workspace.activeIndex, 0), tabs.length - 1);
+    const mappedPanes = workspace.paneIndices
+      .map((index) => configTabs[index])
+      .filter((tabId): tabId is string => Boolean(tabId))
+      .map((tabId) => tabs.indexOf(tabId))
+      .filter((index) => index >= 0);
+    const paneIndices = normalizePaneIndices(mappedPanes, tabs.length, activeIndex);
+    let activePaneIndex = mappedPanes.indexOf(activeIndex);
+    if (activePaneIndex < 0) activePaneIndex = workspace.activePaneIndex;
+    activePaneIndex = normalizeActivePaneIndex(activePaneIndex, paneIndices.length);
+    const paneLayout = normalizePaneLayout(workspace.paneLayout, paneIndices.length);
+
     disconnectSshInstances(
       state.sessions,
       state.sessions
@@ -616,6 +652,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       openTabs: tabs,
       activeSessionId: tabs[activeIndex],
     }));
+    return { tabIds: tabs, activeIndex, paneIndices, activePaneIndex, paneLayout };
   },
 
   recordConnection: (sessionId, status, message) => {

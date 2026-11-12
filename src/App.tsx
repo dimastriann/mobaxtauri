@@ -31,6 +31,12 @@ import { useExportImport } from './hooks/useExportImport';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './components/ContextMenu';
 import { findOpenInstanceId, Session, useSessionStore } from './store/useSessionStore';
 import { useTerminalAppearanceStore } from './store/useTerminalAppearanceStore';
+import {
+  MAX_WORKSPACE_PANES,
+  normalizePaneLayout,
+  normalizeRuntimePanes,
+  type WorkspacePaneLayout,
+} from './utils/workspacePanes';
 import { useTranslation } from './store/useLocaleStore';
 import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
@@ -68,7 +74,6 @@ function App() {
   const snippets = useSessionStore((state) => state.snippets);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const openTabs = useSessionStore((state) => state.openTabs);
-  const setActiveSession = useSessionStore((state) => state.setActiveSession);
   const openNewInstance = useSessionStore((state) => state.openNewInstance);
   const closeTab = useSessionStore((state) => state.closeTab);
   const deleteSession = useSessionStore((state) => state.deleteSession);
@@ -91,7 +96,9 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(loadKeyboardShortcuts);
-  const [secondarySessionId, setSecondarySessionId] = useState<string | null>(null);
+  const [paneSessionIds, setPaneSessionIds] = useState<string[]>([]);
+  const [paneLayout, setPaneLayout] = useState<WorkspacePaneLayout>('columns');
+  const [paneSyncSource, setPaneSyncSource] = useState({ openTabs, activeSessionId });
 
   const [sidebarMenu, setSidebarMenu] = useState<{
     x: number;
@@ -114,6 +121,21 @@ function App() {
   } = useExportImport();
 
   // ── Connection Logic ───────────────────────────────────────
+  const activateTerminalSession = useCallback((sessionId: string) => {
+    const current = useSessionStore.getState();
+    setPaneSessionIds((panes) => {
+      const visible = panes
+        .filter((id) => current.openTabs.includes(id))
+        .slice(0, MAX_WORKSPACE_PANES);
+      if (visible.includes(sessionId)) return visible;
+      if (visible.length === 0) return [sessionId];
+      const activeIndex = visible.indexOf(current.activeSessionId ?? sessionId);
+      visible[activeIndex >= 0 ? activeIndex : visible.length - 1] = sessionId;
+      return visible;
+    });
+    current.setActiveSession(sessionId);
+  }, []);
+
   const handleQuickConnect = async (
     e: React.KeyboardEvent<HTMLInputElement>,
     valueOverride?: string,
@@ -359,11 +381,7 @@ function App() {
         const currentIndex = Math.max(openTabs.indexOf(activeSessionId ?? ''), 0);
         const offset = action === 'nextTab' ? 1 : -1;
         const nextIndex = (currentIndex + offset + openTabs.length) % openTabs.length;
-        const nextSessionId = openTabs[nextIndex];
-        if (nextSessionId === secondarySessionId && activeSessionId) {
-          setSecondarySessionId(activeSessionId);
-        }
-        setActiveSession(nextSessionId);
+        activateTerminalSession(openTabs[nextIndex]);
       }
     };
     window.addEventListener('keydown', handleShortcut);
@@ -371,11 +389,10 @@ function App() {
   }, [
     shortcuts,
     activeSessionId,
-    secondarySessionId,
     sessions,
     openTabs,
     closeTab,
-    setActiveSession,
+    activateTerminalSession,
     handleNewSession,
     t,
   ]);
@@ -384,27 +401,20 @@ function App() {
     loadSessions();
   }, [loadSessions]);
 
-  // Prune the split-view session during render when its tab closes — the
-  // recognized alternative to state-syncing effects.
-  const [prevOpenTabs, setPrevOpenTabs] = useState(openTabs);
-  if (prevOpenTabs !== openTabs) {
-    setPrevOpenTabs(openTabs);
-    if (secondarySessionId && !openTabs.includes(secondarySessionId)) {
-      setSecondarySessionId(null);
-    }
-  }
-
-  const activateTerminalSession = useCallback(
-    (sessionId: string) => {
-      // Swap pane roles in one event. Never let active and secondary briefly
-      // point at the same terminal, which would collapse and remount the layout.
-      if (sessionId === secondarySessionId && activeSessionId) {
-        setSecondarySessionId(activeSessionId);
+  // Keep the pane grid aligned with open tabs and the active session. This
+  // renders the sync rather than scheduling an effect, so a closed tab never
+  // leaves a stale pane for a frame.
+  if (paneSyncSource.openTabs !== openTabs || paneSyncSource.activeSessionId !== activeSessionId) {
+    setPaneSyncSource({ openTabs, activeSessionId });
+    setPaneSessionIds((current) => {
+      const next = normalizeRuntimePanes(current, openTabs, activeSessionId);
+      if (next.length === current.length && next.every((id, index) => id === current[index])) {
+        return current;
       }
-      setActiveSession(sessionId);
-    },
-    [activeSessionId, secondarySessionId, setActiveSession],
-  );
+      return next;
+    });
+  }
+  const effectivePaneLayout = normalizePaneLayout(paneLayout, paneSessionIds.length);
 
   useEffect(() => {
     const unlisten = listen<SshHealthEvent>(SSH_HEALTH_EVENT, ({ payload }) => {
@@ -440,6 +450,24 @@ function App() {
       onConfirm: ({ name, command }) => addSnippet(name, command),
     });
   };
+  const setPaneLayoutChoice = useCallback((layout: WorkspacePaneLayout | 'single') => {
+    const current = useSessionStore.getState();
+    const active = current.activeSessionId ?? current.openTabs[0];
+    if (!active) return;
+    if (layout === 'single') {
+      setPaneSessionIds([active]);
+      return;
+    }
+    const required = layout === 'grid' ? 4 : 2;
+    const candidates = [active, ...current.openTabs.filter((id) => id !== active)].slice(
+      0,
+      required,
+    );
+    if (candidates.length < required) return;
+    setPaneSessionIds(candidates);
+    setPaneLayout(layout);
+  }, []);
+
   const handleSaveWorkspace = () => {
     if (openTabs.length === 0) return;
     setPromptConfig({
@@ -447,7 +475,12 @@ function App() {
       fields: [
         { key: 'name', label: t('app.workspaceName'), placeholder: t('app.workspacePlaceholder') },
       ],
-      onConfirm: ({ name }) => addWorkspace(name),
+      onConfirm: ({ name }) => {
+        const paneIds = paneSessionIds.filter((id) => openTabs.includes(id));
+        const paneIndices = paneIds.map((id) => openTabs.indexOf(id)).filter((index) => index >= 0);
+        const activePaneIndex = Math.max(paneIds.indexOf(activeSessionId ?? ''), 0);
+        addWorkspace(name, paneIndices, activePaneIndex, effectivePaneLayout);
+      },
     });
   };
 
@@ -545,8 +578,13 @@ function App() {
             onAddFolder={handleAddFolder}
             onSaveWorkspace={handleSaveWorkspace}
             onRestoreWorkspace={(workspaceId) => {
-              setSecondarySessionId(null);
-              restoreWorkspace(workspaceId);
+              const restored = restoreWorkspace(workspaceId);
+              if (!restored) return;
+              const panes = restored.paneIndices
+                .map((index) => restored.tabIds[index])
+                .filter((id): id is string => Boolean(id));
+              setPaneSessionIds(panes.length ? panes : [restored.tabIds[restored.activeIndex]]);
+              setPaneLayout(restored.paneLayout);
             }}
             onAddSnippet={handleAddSnippet}
             onExecuteSnippet={(c) => {
@@ -559,17 +597,15 @@ function App() {
           <Flex flex={1} direction="column" overflow="hidden">
             <TabBar
               onNewSession={handleNewSession}
-              isSplit={Boolean(secondarySessionId)}
-              onToggleSplit={() =>
-                setSecondarySessionId((current) =>
-                  current ? null : (openTabs.find((id) => id !== activeSessionId) ?? null),
-                )
-              }
+              paneCount={paneSessionIds.length}
+              paneLayout={effectivePaneLayout}
+              onSetPaneLayout={setPaneLayoutChoice}
               onActivateSession={activateTerminalSession}
             />
             <TerminalContainer
               isViewVisible={mainView === 'terminals'}
-              secondarySessionId={secondarySessionId}
+              paneSessionIds={paneSessionIds}
+              paneLayout={effectivePaneLayout}
               onActivateSession={activateTerminalSession}
             />
             <HealthBar />

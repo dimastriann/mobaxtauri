@@ -116,6 +116,9 @@ export const id: Record<TranslationKey, string> = {
   'tabs.moveLeft': 'Pindahkan tab terpilih ke kiri',
   'tabs.moveRight': 'Pindahkan tab terpilih ke kanan',
   'tabs.closeSelected': 'Tutup tab terpilih',
+  'tabs.splitColumns': 'Bagi panel berdampingan',
+  'tabs.splitRows': 'Bagi panel atas dan bawah',
+  'tabs.splitGrid': 'Grid empat panel',
   'tabs.newSession': 'Sesi Baru',
   'terminal.autoReconnectIn': 'Koneksi terputus. Menghubungkan ulang dalam {seconds} detik?',
   'terminal.autoReconnectCancelHint':

@@ -3,6 +3,8 @@ import {
   MAX_WORKSPACE_PANES,
   normalizeActivePaneIndex,
   normalizePaneIndices,
+  normalizePaneLayout,
+  normalizeRuntimePanes,
   removeConfigFromPaneLayout,
 } from './workspacePanes';
 
@@ -25,6 +27,25 @@ describe('workspacePanes', () => {
     expect(normalizePaneIndices([0, 1, 2, 3], 5, 0)).toHaveLength(MAX_WORKSPACE_PANES);
   });
 
+  it('keeps runtime panes aligned with open tabs and the active session', () => {
+    expect(normalizeRuntimePanes(['a', 'b'], ['a', 'b', 'c'], 'c')).toEqual(['a', 'b', 'c']);
+    expect(normalizeRuntimePanes(['a', 'b', 'c', 'd'], ['a', 'b', 'c', 'd', 'e'], 'e')).toEqual([
+      'a',
+      'b',
+      'c',
+      'e',
+    ]);
+    expect(normalizeRuntimePanes(['gone'], ['a'], 'a')).toEqual(['a']);
+    expect(normalizeRuntimePanes([], [], null)).toEqual([]);
+  });
+
+  it('normalizes the pane layout mode', () => {
+    expect(normalizePaneLayout('rows', 2)).toBe('rows');
+    expect(normalizePaneLayout('grid', 2)).toBe('columns');
+    expect(normalizePaneLayout('columns', 4)).toBe('grid');
+    expect(normalizePaneLayout('rows', 1)).toBe('columns');
+  });
+
   it('clamps the active pane index', () => {
     expect(normalizeActivePaneIndex(undefined, 2)).toBe(0);
     expect(normalizeActivePaneIndex(1, 2)).toBe(1);
@@ -38,12 +59,14 @@ describe('workspacePanes', () => {
       activeIndex: 2,
       paneIndices: [0, 1, 2, 3],
       activePaneIndex: 2,
+      paneLayout: 'grid' as const,
     };
     expect(removeConfigFromPaneLayout(workspace, 'b')).toMatchObject({
       configIds: ['a', 'c', 'd'],
       activeIndex: 1,
       paneIndices: [0, 1, 2],
       activePaneIndex: 2,
+      paneLayout: 'columns',
     });
   });
 
@@ -53,12 +76,14 @@ describe('workspacePanes', () => {
       activeIndex: 2,
       paneIndices: [1, 2],
       activePaneIndex: 1,
+      paneLayout: 'rows' as const,
     };
     expect(removeConfigFromPaneLayout(workspace, 'c')).toMatchObject({
       configIds: ['a', 'b'],
       activeIndex: 0,
       paneIndices: [1, 0],
       activePaneIndex: 1,
+      paneLayout: 'rows',
     });
   });
 });

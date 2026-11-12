@@ -1,5 +1,7 @@
 export const MAX_WORKSPACE_PANES = 4;
 
+export type WorkspacePaneLayout = 'columns' | 'rows' | 'grid';
+
 const clampIndex = (index: number, length: number): number => {
   if (length <= 0) return 0;
   return Math.min(Math.max(index, 0), length - 1);
@@ -41,11 +43,34 @@ export function normalizeActivePaneIndex(candidate: unknown, paneCount: number):
   return isIndex(candidate, paneCount) ? candidate : 0;
 }
 
+export function normalizeRuntimePanes(
+  current: readonly string[],
+  openTabs: readonly string[],
+  activeSessionId: string | null,
+): string[] {
+  const open = new Set(openTabs);
+  const next = [...new Set(current.filter((id) => open.has(id)))].slice(0, MAX_WORKSPACE_PANES);
+  const active = activeSessionId && open.has(activeSessionId) ? activeSessionId : null;
+  if (active && !next.includes(active)) {
+    if (next.length < MAX_WORKSPACE_PANES) next.push(active);
+    else next[next.length - 1] = active;
+  }
+  if (next.length === 0 && openTabs.length > 0) next.push(openTabs[0]);
+  return next;
+}
+
+export function normalizePaneLayout(candidate: unknown, paneCount: number): WorkspacePaneLayout {
+  if (paneCount >= MAX_WORKSPACE_PANES) return 'grid';
+  if (paneCount === 2 && candidate === 'rows') return 'rows';
+  return 'columns';
+}
+
 interface PaneWorkspace {
   configIds: string[];
   activeIndex: number;
   paneIndices: number[];
   activePaneIndex: number;
+  paneLayout: WorkspacePaneLayout;
 }
 
 /**
@@ -74,5 +99,6 @@ export function removeConfigFromPaneLayout<T extends PaneWorkspace>(
     activeIndex,
     paneIndices,
     activePaneIndex: normalizeActivePaneIndex(workspace.activePaneIndex, paneIndices.length),
+    paneLayout: normalizePaneLayout(workspace.paneLayout, paneIndices.length),
   };
 }

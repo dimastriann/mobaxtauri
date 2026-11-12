@@ -144,6 +144,9 @@ fn migrate_workspace_panes(workspace: &mut Value) {
     if !object.contains_key("activePaneIndex") {
         object.insert("activePaneIndex".to_string(), serde_json::json!(0));
     }
+    if !object.contains_key("paneLayout") {
+        object.insert("paneLayout".to_string(), serde_json::json!("columns"));
+    }
 }
 
 fn read_document(path: &Path) -> Result<AppDataDocument, String> {
@@ -331,7 +334,8 @@ mod tests {
                 "configIds": ["ssh-prod", "ssh-db"],
                 "activeIndex": 1,
                 "paneIndices": [1],
-                "activePaneIndex": 0
+                "activePaneIndex": 0,
+                "paneLayout": "columns"
             })
         );
     }
@@ -357,7 +361,8 @@ mod tests {
                 "configIds": ["ssh-prod", "ssh-db"],
                 "activeIndex": 1,
                 "paneIndices": [1],
-                "activePaneIndex": 0
+                "activePaneIndex": 0,
+                "paneLayout": "columns"
             })
         );
     }
