@@ -40,7 +40,9 @@ describe('TabBar accessibility', () => {
           onNewSession={vi.fn()}
           paneCount={1}
           paneLayout="columns"
+          broadcastInput={false}
           onSetPaneLayout={onSetPaneLayout}
+          onToggleBroadcast={vi.fn()}
           onActivateSession={vi.fn()}
         />
       </Provider>,
@@ -59,7 +61,9 @@ describe('TabBar accessibility', () => {
           onNewSession={vi.fn()}
           paneCount={1}
           paneLayout="columns"
+          broadcastInput={false}
           onSetPaneLayout={vi.fn()}
+          onToggleBroadcast={vi.fn()}
           onActivateSession={onActivateSession}
         />
       </Provider>,

@@ -98,6 +98,7 @@ function App() {
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(loadKeyboardShortcuts);
   const [paneSessionIds, setPaneSessionIds] = useState<string[]>([]);
   const [paneLayout, setPaneLayout] = useState<WorkspacePaneLayout>('columns');
+  const [broadcastInput, setBroadcastInput] = useState(false);
   const [paneSyncSource, setPaneSyncSource] = useState({ openTabs, activeSessionId });
 
   const [sidebarMenu, setSidebarMenu] = useState<{
@@ -415,6 +416,9 @@ function App() {
     });
   }
   const effectivePaneLayout = normalizePaneLayout(paneLayout, paneSessionIds.length);
+  if (broadcastInput && paneSessionIds.length < 2) {
+    setBroadcastInput(false);
+  }
 
   useEffect(() => {
     const unlisten = listen<SshHealthEvent>(SSH_HEALTH_EVENT, ({ payload }) => {
@@ -599,13 +603,16 @@ function App() {
               onNewSession={handleNewSession}
               paneCount={paneSessionIds.length}
               paneLayout={effectivePaneLayout}
+              broadcastInput={broadcastInput && paneSessionIds.length > 1}
               onSetPaneLayout={setPaneLayoutChoice}
+              onToggleBroadcast={() => setBroadcastInput((enabled) => !enabled)}
               onActivateSession={activateTerminalSession}
             />
             <TerminalContainer
               isViewVisible={mainView === 'terminals'}
               paneSessionIds={paneSessionIds}
               paneLayout={effectivePaneLayout}
+              broadcastInput={broadcastInput && paneSessionIds.length > 1}
               onActivateSession={activateTerminalSession}
             />
             <HealthBar />

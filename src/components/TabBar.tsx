@@ -6,6 +6,7 @@ import {
   LuChevronRight,
   LuColumns2,
   LuLayoutGrid,
+  LuMegaphone,
   LuPlus,
   LuRows2,
   LuX,
@@ -20,7 +21,9 @@ interface TabBarProps {
   onNewSession: () => void;
   paneCount: number;
   paneLayout: WorkspacePaneLayout;
+  broadcastInput: boolean;
   onSetPaneLayout: (layout: WorkspacePaneLayout | 'single') => void;
+  onToggleBroadcast: () => void;
   onActivateSession: (sessionId: string) => void;
 }
 
@@ -41,7 +44,9 @@ const TabBar: React.FC<TabBarProps> = ({
   onNewSession,
   paneCount,
   paneLayout,
+  broadcastInput,
   onSetPaneLayout,
+  onToggleBroadcast,
   onActivateSession,
 }) => {
   const { t } = useTranslation();
@@ -363,6 +368,26 @@ const TabBar: React.FC<TabBarProps> = ({
               <LuX />
             </IconButton>
           </HStack>
+        )}
+        <IconButton
+          aria-label={t('tabs.broadcast')}
+          title={t('tabs.broadcast')}
+          size="xs"
+          variant="ghost"
+          color={broadcastInput ? 'red.fg' : 'fg.muted'}
+          onClick={onToggleBroadcast}
+          disabled={paneCount < 2}
+          minW="26px"
+          h="26px"
+          borderRadius="4px"
+          _hover={{ bg: 'red.subtle' }}
+        >
+          <LuMegaphone />
+        </IconButton>
+        {broadcastInput && paneCount > 1 && (
+          <Text fontSize="9px" fontWeight="bold" color="red.fg" mr={1} letterSpacing="0.05em">
+            {t('tabs.broadcastActive')}
+          </Text>
         )}
         <IconButton
           aria-label={t('tabs.splitColumns')}

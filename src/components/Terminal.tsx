@@ -7,6 +7,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { canConnectDirectly } from '../utils/connectEligibility';
+import { connectedBroadcastTargets } from '../utils/broadcastInput';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useSessionStore, Session, SessionStatus } from '../store/useSessionStore';
 import {
@@ -90,6 +91,7 @@ interface TerminalInstanceProps {
   sessionId: string;
   isVisible: boolean;
   isFocused: boolean;
+  broadcastTargets?: string[];
   onActivate: () => void;
 }
 
@@ -97,6 +99,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   sessionId,
   isVisible,
   isFocused,
+  broadcastTargets = [],
   onActivate,
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -115,6 +118,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   const passphraseRetryRef = useRef(0);
   const bellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocusedRef = useRef(isFocused);
+  const broadcastTargetsRef = useRef(broadcastTargets);
   const wasOfflineRef = useRef(!navigator.onLine);
   const networkReconnectRef = useRef(false);
   const connectionAttemptRef = useRef(false);
@@ -160,6 +164,10 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   useEffect(() => {
     isFocusedRef.current = isFocused;
   }, [isFocused]);
+
+  useEffect(() => {
+    broadcastTargetsRef.current = broadcastTargets;
+  }, [broadcastTargets]);
 
   const getSession = useCallback((): Session | undefined => {
     return useSessionStore.getState().sessions.find((s) => s.id === sessionId);
@@ -688,6 +696,26 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
       }
     };
 
+    // Broadcast keystrokes only from the focused pane, and only to visible
+    // panes that are still connected. Authentication input never reaches this
+    // path because password/passphrase modes return earlier.
+    const sendBroadcastData = (data: string, targets: string[]) => {
+      const recipients = [sessionId, ...targets].filter(
+        (id, index, ids) => ids.indexOf(id) === index,
+      );
+      inputChain = inputChain
+        .then(async () => {
+          if (disposed) return;
+          await Promise.all(
+            recipients.map((id) => invoke('ssh_send_data', { sessionId: id, data })),
+          );
+        })
+        .catch((err: unknown) => {
+          if (disposed) return;
+          console.error('Failed to broadcast terminal input:', err);
+        });
+    };
+
     const sendSshData = (data: string, source = 'terminal') => {
       inputChain = inputChain
         .then(async () => {
@@ -875,9 +903,18 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
         return; // Ignore other keys in disconnected mode
       }
 
-      // Normal mode: send data to SSH backend
+      // Normal mode: send data to SSH backend. Broadcast only from the
+      // focused pane and only to visible, connected SSH panes.
       if (currentSession?.type === 'ssh') {
-        sendSshData(data);
+        const targets = isFocusedRef.current
+          ? connectedBroadcastTargets(
+              broadcastTargetsRef.current,
+              sessionId,
+              useSessionStore.getState().sessions,
+            )
+          : [];
+        if (targets.length > 0) sendBroadcastData(data, targets);
+        else sendSshData(data);
       }
     };
     term.onData(handleTerminalData);
@@ -1194,6 +1231,7 @@ interface TerminalContainerProps {
   isViewVisible?: boolean;
   paneSessionIds: string[];
   paneLayout: WorkspacePaneLayout;
+  broadcastInput?: boolean;
   onActivateSession: (sessionId: string) => void;
 }
 
@@ -1220,6 +1258,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({
   isViewVisible = true,
   paneSessionIds,
   paneLayout,
+  broadcastInput = false,
   onActivateSession,
 }) => {
   const { t } = useTranslation();
@@ -1272,6 +1311,11 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({
               sessionId={tabId}
               isVisible={isPaneVisible}
               isFocused={tabId === activeSessionId && isViewVisible}
+              broadcastTargets={
+                broadcastInput && visibleIds.length > 1
+                  ? visibleIds.filter((id) => id !== tabId)
+                  : []
+              }
               onActivate={() => onActivateSession(tabId)}
             />
           </Box>

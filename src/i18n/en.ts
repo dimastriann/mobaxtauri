@@ -119,6 +119,8 @@ export const en = {
   'tabs.moveLeft': 'Move selected tabs left',
   'tabs.moveRight': 'Move selected tabs right',
   'tabs.closeSelected': 'Close selected tabs',
+  'tabs.broadcast': 'Broadcast input to visible panes',
+  'tabs.broadcastActive': 'BROADCAST',
   'tabs.splitColumns': 'Split panes side by side',
   'tabs.splitRows': 'Split panes top and bottom',
   'tabs.splitGrid': 'Four-pane grid',

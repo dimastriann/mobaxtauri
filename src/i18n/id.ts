@@ -116,6 +116,8 @@ export const id: Record<TranslationKey, string> = {
   'tabs.moveLeft': 'Pindahkan tab terpilih ke kiri',
   'tabs.moveRight': 'Pindahkan tab terpilih ke kanan',
   'tabs.closeSelected': 'Tutup tab terpilih',
+  'tabs.broadcast': 'Siarkan input ke panel yang terlihat',
+  'tabs.broadcastActive': 'SIARKAN',
   'tabs.splitColumns': 'Bagi panel berdampingan',
   'tabs.splitRows': 'Bagi panel atas dan bawah',
   'tabs.splitGrid': 'Grid empat panel',
