@@ -512,6 +512,14 @@ export const id: Record<TranslationKey, string> = {
   'ssh.trustedHosts.removeConfirm': 'Hapus kunci tepercaya untuk {host}:{port}?',
   'ssh.trustedHosts.removeHost': 'Hapus kepercayaan untuk {host}',
   'ssh.trustedHosts.firstSeen': 'Pertama terlihat',
+  'ssh.trustedHosts.export': 'Ekspor',
+  'ssh.trustedHosts.import': 'Impor',
+  'ssh.trustedHosts.exported': '{count} host tepercaya diekspor.',
+  'ssh.trustedHosts.imported': '{count} host tepercaya baru diimpor.',
+  'ssh.trustedHosts.importTitle': 'Impor Host Tepercaya',
+  'ssh.trustedHosts.importConfirm':
+    'Mengimpor cadangan ini akan mempercayai semua kunci host di dalamnya. Lanjutkan?',
+  'ssh.trustedHosts.importFilter': 'Cadangan host tepercaya',
 
   'terminal.applyNote':
     'Perubahan tema dan font langsung berlaku. Jumlah baris gulir berlaku untuk sesi terminal baru.',

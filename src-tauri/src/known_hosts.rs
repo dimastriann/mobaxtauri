@@ -70,6 +70,32 @@ pub fn remove_host(entries: &mut Vec<KnownHost>, host: &str, port: u16) -> bool 
     entries.len() != before
 }
 
+/// Merge imported entries without duplicating an identical host/key pair.
+/// Returns how many new entries were added. A malformed entry is skipped so
+/// one bad line cannot block the rest of a backup.
+pub fn merge_known_hosts(entries: &mut Vec<KnownHost>, imported: Vec<KnownHost>) -> usize {
+    let mut added = 0;
+    for host in imported {
+        if host.host.trim().is_empty()
+            || host.key_type.trim().is_empty()
+            || !host.fingerprint.starts_with("SHA256:")
+        {
+            continue;
+        }
+        if entries.iter().any(|entry| {
+            entry.host == host.host
+                && entry.port == host.port
+                && entry.key_type == host.key_type
+                && entry.fingerprint == host.fingerprint
+        }) {
+            continue;
+        }
+        entries.push(host);
+        added += 1;
+    }
+    added
+}
+
 /// Stable display order for the trusted-hosts manager.
 pub fn sorted_hosts(entries: &[KnownHost]) -> Vec<KnownHost> {
     let mut entries = entries.to_vec();
@@ -152,6 +178,41 @@ impl KnownHostsService {
         persist(loaded).await
     }
 
+    pub async fn export<R: Runtime>(
+        &self,
+        app_handle: &AppHandle<R>,
+        path: &str,
+    ) -> Result<usize, String> {
+        self.ensure_loaded(app_handle).await?;
+        let state = self.state.lock().await;
+        let loaded = state.as_ref().ok_or("Known hosts store is locked")?;
+        let hosts = sorted_hosts(&loaded.entries);
+        let json = serialize_known_hosts(&hosts)?;
+        tokio::fs::write(path, json)
+            .await
+            .map_err(|error| format!("Failed to export known hosts: {error}"))?;
+        Ok(hosts.len())
+    }
+
+    pub async fn import<R: Runtime>(
+        &self,
+        app_handle: &AppHandle<R>,
+        path: &str,
+    ) -> Result<usize, String> {
+        self.ensure_loaded(app_handle).await?;
+        let json = tokio::fs::read_to_string(path)
+            .await
+            .map_err(|error| format!("Failed to read known hosts file: {error}"))?;
+        let imported = parse_known_hosts(&json)?;
+        let mut state = self.state.lock().await;
+        let loaded = state.as_mut().ok_or("Known hosts store is locked")?;
+        let added = merge_known_hosts(&mut loaded.entries, imported);
+        if added > 0 {
+            persist(loaded).await?;
+        }
+        Ok(added)
+    }
+
     pub async fn remove<R: Runtime>(
         &self,
         app_handle: &AppHandle<R>,
@@ -231,8 +292,8 @@ fn now_unix_secs() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_known_hosts, remove_host, resolve_host_key, serialize_known_hosts, sorted_hosts,
-        upsert_host, HostKeyAction, KnownHost,
+        merge_known_hosts, parse_known_hosts, remove_host, resolve_host_key, serialize_known_hosts,
+        sorted_hosts, upsert_host, HostKeyAction, KnownHost,
     };
 
     fn entry(host: &str, port: u16, fingerprint: &str) -> KnownHost {
@@ -324,6 +385,41 @@ mod tests {
         let entries = vec![entry("example.com", 22, "SHA256:abc")];
         let json = serialize_known_hosts(&entries).unwrap();
         assert_eq!(parse_known_hosts(&json).unwrap(), entries);
+    }
+
+    #[test]
+    fn merge_skips_duplicates_and_malformed_entries() {
+        let mut entries = vec![KnownHost {
+            host: "a.example".into(),
+            port: 22,
+            key_type: "ssh-ed25519".into(),
+            fingerprint: "SHA256:aaa".into(),
+            first_seen: 1,
+        }];
+        let duplicate = entries[0].clone();
+        let added = merge_known_hosts(
+            &mut entries,
+            vec![
+                duplicate,
+                KnownHost {
+                    host: "b.example".into(),
+                    port: 2222,
+                    key_type: "ssh-ed25519".into(),
+                    fingerprint: "SHA256:bbb".into(),
+                    first_seen: 2,
+                },
+                KnownHost {
+                    host: "bad.example".into(),
+                    port: 22,
+                    key_type: "ssh-ed25519".into(),
+                    fingerprint: "not-a-fingerprint".into(),
+                    first_seen: 3,
+                },
+            ],
+        );
+        assert_eq!(added, 1);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[1].host, "b.example");
     }
 
     #[test]

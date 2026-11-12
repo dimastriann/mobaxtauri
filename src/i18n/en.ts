@@ -515,6 +515,14 @@ export const en = {
   'ssh.trustedHosts.removeConfirm': 'Remove the trusted key for {host}:{port}?',
   'ssh.trustedHosts.removeHost': 'Remove trust for {host}',
   'ssh.trustedHosts.firstSeen': 'First seen',
+  'ssh.trustedHosts.export': 'Export',
+  'ssh.trustedHosts.import': 'Import',
+  'ssh.trustedHosts.exported': 'Exported {count} trusted hosts.',
+  'ssh.trustedHosts.imported': 'Imported {count} new trusted hosts.',
+  'ssh.trustedHosts.importTitle': 'Import Trusted Hosts',
+  'ssh.trustedHosts.importConfirm':
+    'Importing this backup will trust every host key it contains. Continue?',
+  'ssh.trustedHosts.importFilter': 'Trusted hosts backup',
 
   'terminal.applyNote':
     'Theme and font changes apply immediately. Scrollback applies to new terminal sessions.',

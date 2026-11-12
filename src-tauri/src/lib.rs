@@ -87,6 +87,24 @@ async fn known_hosts_list(
 }
 
 #[tauri::command]
+async fn known_hosts_export(
+    app_handle: AppHandle,
+    known_hosts: State<'_, KnownHostsService>,
+    path: String,
+) -> Result<usize, String> {
+    known_hosts.export(&app_handle, &path).await
+}
+
+#[tauri::command]
+async fn known_hosts_import(
+    app_handle: AppHandle,
+    known_hosts: State<'_, KnownHostsService>,
+    path: String,
+) -> Result<usize, String> {
+    known_hosts.import(&app_handle, &path).await
+}
+
+#[tauri::command]
 async fn known_hosts_remove(
     app_handle: AppHandle,
     known_hosts: State<'_, KnownHostsService>,
@@ -1366,6 +1384,8 @@ pub fn run() {
             set_health_visibility,
             ssh_trust_host_key,
             known_hosts_list,
+            known_hosts_export,
+            known_hosts_import,
             known_hosts_remove,
             ssh_auth_respond,
             ssh_auth_cancel,

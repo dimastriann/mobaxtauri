@@ -36,7 +36,7 @@ import {
   LuShieldCheck,
   LuKeyRound,
 } from 'react-icons/lu';
-import { ask } from '@tauri-apps/plugin-dialog';
+import { ask, open, save } from '@tauri-apps/plugin-dialog';
 import type { KnownHost } from '../types/ssh';
 import SshKeyManager from './SshKeyManager';
 import { useSessionStore } from '../store/useSessionStore';
@@ -781,6 +781,7 @@ const TrustedHostsSettings: React.FC = () => {
   const [hosts, setHosts] = useState<KnownHost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -798,6 +799,46 @@ const TrustedHostsSettings: React.FC = () => {
       disposed = true;
     };
   }, []);
+
+  const exportHosts = async () => {
+    const path = await save({
+      defaultPath: 'mobaxtauri-known-hosts.json',
+      filters: [{ name: t('ssh.trustedHosts.importFilter'), extensions: ['json'] }],
+    });
+    if (!path) return;
+    try {
+      const count = await invoke<number>('known_hosts_export', { path });
+      setNotice(t('ssh.trustedHosts.exported', { count }));
+      setError(null);
+    } catch (exportError) {
+      setError(String(exportError));
+    }
+  };
+
+  const importHosts = async () => {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: t('ssh.trustedHosts.importFilter'), extensions: ['json'] }],
+    });
+    if (!path || Array.isArray(path)) return;
+    const confirmed = await ask(t('ssh.trustedHosts.importConfirm'), {
+      title: t('ssh.trustedHosts.importTitle'),
+      kind: 'warning',
+      okLabel: t('ssh.trustedHosts.import'),
+      cancelLabel: t('common.cancel'),
+    });
+    if (!confirmed) return;
+    try {
+      const count = await invoke<number>('known_hosts_import', { path });
+      const entries = await invoke<KnownHost[]>('known_hosts_list');
+      setHosts(entries);
+      setNotice(t('ssh.trustedHosts.imported', { count }));
+      setError(null);
+    } catch (importError) {
+      setError(String(importError));
+    }
+  };
 
   const remove = async (host: KnownHost) => {
     const confirmed = await ask(
@@ -822,15 +863,30 @@ const TrustedHostsSettings: React.FC = () => {
 
   return (
     <Box borderTop="1px solid" borderColor="border.subtle" pt={3}>
-      <HStack gap={2} mb={1}>
-        <Icon as={LuShieldCheck} boxSize="14px" color="green.fg" />
-        <Text fontSize="14px" fontWeight="bold" color="fg">
-          {t('ssh.trustedHosts.heading')}
-        </Text>
+      <HStack gap={2} mb={1} justify="space-between">
+        <HStack gap={2}>
+          <Icon as={LuShieldCheck} boxSize="14px" color="green.fg" />
+          <Text fontSize="14px" fontWeight="bold" color="fg">
+            {t('ssh.trustedHosts.heading')}
+          </Text>
+        </HStack>
+        <HStack gap={1}>
+          <Button size="xs" variant="subtle" onClick={() => void exportHosts()}>
+            {t('ssh.trustedHosts.export')}
+          </Button>
+          <Button size="xs" variant="subtle" onClick={() => void importHosts()}>
+            {t('ssh.trustedHosts.import')}
+          </Button>
+        </HStack>
       </HStack>
       <Text fontSize="11px" color="fg.muted" mb={2}>
         {t('ssh.trustedHosts.helper')}
       </Text>
+      {notice && (
+        <Text fontSize="11px" color="green.fg" mb={2} role="status">
+          {notice}
+        </Text>
+      )}
 
       {isLoading ? (
         <Text fontSize="11px" color="fg.muted">
