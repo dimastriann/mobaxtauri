@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 const APP_DATA_FILE: &str = "mobaxtauri-data.json";
-const CURRENT_SCHEMA_VERSION: u32 = 2;
+const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,15 +83,21 @@ fn validate(document: AppDataDocument) -> Result<AppDataDocument, String> {
 }
 
 /// v2 stores workspace membership as `configIds` plus `activeIndex`,
-/// because multiple tabs may now share one saved profile.
+/// because multiple tabs may now share one saved profile. v3 adds the pane
+/// grid, expressed as indices into `configIds`.
 fn migrate(mut document: AppDataDocument) -> AppDataDocument {
-    if document.schema_version != 1 {
-        return document;
+    if document.schema_version == 1 {
+        for workspace in &mut document.workspaces {
+            migrate_workspace(workspace);
+        }
+        document.schema_version = 2;
     }
-    for workspace in &mut document.workspaces {
-        migrate_workspace(workspace);
+    if document.schema_version == 2 {
+        for workspace in &mut document.workspaces {
+            migrate_workspace_panes(workspace);
+        }
+        document.schema_version = 3;
     }
-    document.schema_version = CURRENT_SCHEMA_VERSION;
     document
 }
 
@@ -122,6 +128,22 @@ fn migrate_workspace(workspace: &mut Value) {
         object.insert("activeIndex".to_string(), serde_json::json!(index));
     }
     object.remove("activeSessionId");
+}
+
+fn migrate_workspace_panes(workspace: &mut Value) {
+    let Some(object) = workspace.as_object_mut() else {
+        return;
+    };
+    if !object.contains_key("paneIndices") {
+        let active_index = object
+            .get("activeIndex")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        object.insert("paneIndices".to_string(), serde_json::json!([active_index]));
+    }
+    if !object.contains_key("activePaneIndex") {
+        object.insert("activePaneIndex".to_string(), serde_json::json!(0));
+    }
 }
 
 fn read_document(path: &Path) -> Result<AppDataDocument, String> {
@@ -284,7 +306,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_schema_versions() {
-        assert!(validate(document(3)).is_err());
+        assert!(validate(document(4)).is_err());
         assert!(validate(document(1)).is_err());
     }
 
@@ -307,7 +329,35 @@ mod tests {
                 "id": "workspace-1",
                 "name": "Production",
                 "configIds": ["ssh-prod", "ssh-db"],
-                "activeIndex": 1
+                "activeIndex": 1,
+                "paneIndices": [1],
+                "activePaneIndex": 0
+            })
+        );
+    }
+
+    #[test]
+    fn migrates_v2_workspaces_to_pane_indices() {
+        let mut doc = document(2);
+        doc.workspaces = vec![json!({
+            "id": "workspace-1",
+            "name": "Production",
+            "configIds": ["ssh-prod", "ssh-db"],
+            "activeIndex": 1
+        })];
+
+        let migrated = migrate(doc);
+        validate(migrated.clone()).expect("migrated document must validate");
+        assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(
+            migrated.workspaces[0],
+            json!({
+                "id": "workspace-1",
+                "name": "Production",
+                "configIds": ["ssh-prod", "ssh-db"],
+                "activeIndex": 1,
+                "paneIndices": [1],
+                "activePaneIndex": 0
             })
         );
     }

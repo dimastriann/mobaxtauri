@@ -88,6 +88,7 @@ describe('session instances', () => {
     useSessionStore.getState().addWorkspace('Production tabs');
     const workspace = useSessionStore.getState().workspaces[0];
     expect(workspace.configIds).toEqual(['local', 'ssh-prod', 'ssh-prod']);
+    expect(workspace.paneIndices).toEqual([workspace.activeIndex]);
 
     useSessionStore.setState({ openTabs: ['local'], activeSessionId: 'local' });
     useSessionStore.getState().restoreWorkspace(workspace.id);
@@ -136,5 +137,61 @@ describe('session health lifecycle', () => {
   it('clears health when its tab closes', () => {
     useSessionStore.getState().closeTab('ssh-test');
     expect(useSessionStore.getState().sessions[0].health).toBeUndefined();
+  });
+});
+
+describe('workspace pane layouts', () => {
+  beforeEach(() => {
+    useSessionStore.setState({
+      sessions: [
+        { id: 'local', name: 'Local Terminal', type: 'local', status: 'connected' },
+        {
+          id: 'ssh-prod',
+          name: 'Production',
+          type: 'ssh',
+          host: 'prod',
+          user: 'root',
+          status: 'disconnected',
+        },
+        {
+          id: 'ssh-db',
+          name: 'Database',
+          type: 'ssh',
+          host: 'db',
+          user: 'root',
+          status: 'disconnected',
+        },
+      ],
+      openTabs: ['local', 'ssh-prod', 'ssh-db'],
+      activeSessionId: 'ssh-db',
+      workspaces: [],
+    });
+  });
+
+  it('stores explicit pane layouts and the active pane', () => {
+    useSessionStore.getState().addWorkspace('Grid', [0, 2, 1], 1);
+    expect(useSessionStore.getState().workspaces[0]).toMatchObject({
+      configIds: ['local', 'ssh-prod', 'ssh-db'],
+      activeIndex: 2,
+      paneIndices: [0, 2, 1],
+      activePaneIndex: 1,
+    });
+  });
+
+  it('normalizes invalid pane data', () => {
+    useSessionStore.getState().addWorkspace('Grid', [9, 2, 2, -1], 9);
+    const workspace = useSessionStore.getState().workspaces[0];
+    expect(workspace.paneIndices).toEqual([2]);
+    expect(workspace.activePaneIndex).toBe(0);
+  });
+
+  it('remaps panes when a saved config is deleted', () => {
+    useSessionStore.getState().addWorkspace('Grid', [0, 1, 2], 2);
+    useSessionStore.getState().deleteSession('ssh-prod');
+    expect(useSessionStore.getState().workspaces[0]).toMatchObject({
+      configIds: ['local', 'ssh-db'],
+      activeIndex: 1,
+      paneIndices: [0, 1],
+    });
   });
 });

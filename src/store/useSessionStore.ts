@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { load } from '@tauri-apps/plugin-store';
 import { invoke } from '@tauri-apps/api/core';
 import { useCredentialStore } from './useCredentialStore';
+import {
+  normalizeActivePaneIndex,
+  normalizePaneIndices,
+  removeConfigFromPaneLayout,
+} from '../utils/workspacePanes';
 import type { SshHealthSnapshot } from '../types/ssh';
 
 export type SessionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -106,6 +111,10 @@ export interface Workspace {
   /** Saved profiles in tab order; duplicates mean multiple instances. */
   configIds: string[];
   activeIndex: number;
+  /** Indices into `configIds` shown in the terminal pane grid. */
+  paneIndices: number[];
+  /** Index into `paneIndices` that owns keyboard focus. */
+  activePaneIndex: number;
 }
 
 export interface ConnectionHistoryEntry {
@@ -167,7 +176,7 @@ interface SessionState {
 
   // Workspace Management
   workspaces: Workspace[];
-  addWorkspace: (name: string) => void;
+  addWorkspace: (name: string, paneIndices?: number[], activePaneIndex?: number) => void;
   deleteWorkspace: (id: string) => void;
   restoreWorkspace: (id: string) => void;
 
@@ -200,21 +209,23 @@ type StoredWorkspace = Partial<Workspace> & {
 };
 
 const normalizeWorkspace = (workspace: StoredWorkspace): Workspace => {
-  if (workspace.configIds) {
-    return {
-      id: workspace.id ?? `workspace-${Date.now()}`,
-      name: workspace.name ?? 'Workspace',
-      configIds: workspace.configIds,
-      activeIndex: workspace.activeIndex ?? 0,
-    };
-  }
-  const configIds = workspace.sessionIds ?? [];
-  const activeSessionId = workspace.activeSessionId ?? null;
+  const configIds = workspace.configIds ?? workspace.sessionIds ?? [];
+  const activeIndex = workspace.configIds
+    ? (workspace.activeIndex ?? 0)
+    : Math.max(configIds.indexOf(workspace.activeSessionId ?? ''), 0);
+  const boundedActiveIndex = Math.min(Math.max(activeIndex, 0), Math.max(configIds.length - 1, 0));
+  const paneIndices = normalizePaneIndices(
+    workspace.paneIndices,
+    configIds.length,
+    boundedActiveIndex,
+  );
   return {
     id: workspace.id ?? `workspace-${Date.now()}`,
     name: workspace.name ?? 'Workspace',
     configIds,
-    activeIndex: Math.max(configIds.indexOf(activeSessionId ?? ''), 0),
+    activeIndex: boundedActiveIndex,
+    paneIndices,
+    activePaneIndex: normalizeActivePaneIndex(workspace.activePaneIndex, paneIndices.length),
   };
 };
 
@@ -270,14 +281,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         sessions: newSessions,
         openTabs: newTabs,
         activeSessionId: newActive,
-        workspaces: state.workspaces.map((workspace) => {
-          const configIds = workspace.configIds.filter((configId) => configId !== id);
-          return {
-            ...workspace,
-            configIds,
-            activeIndex: Math.min(workspace.activeIndex, Math.max(configIds.length - 1, 0)),
-          };
-        }),
+        workspaces: state.workspaces.map((workspace) => removeConfigFromPaneLayout(workspace, id)),
       };
     });
     get().scheduleSave();
@@ -535,16 +539,28 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     get().scheduleSave();
   },
 
-  addWorkspace: (name) => {
+  addWorkspace: (name, paneIndices, activePaneIndex) => {
     const { openTabs, activeSessionId, sessions } = get();
     const configIds = openTabs.map((tabId) => {
       const session = sessions.find((entry) => entry.id === tabId);
       return session ? sessionConfigId(session) : tabId;
     });
     const activeIndex = Math.max(openTabs.indexOf(activeSessionId ?? ''), 0);
+    const boundedActiveIndex = Math.min(activeIndex, Math.max(configIds.length - 1, 0));
+    const normalizedPanes = normalizePaneIndices(paneIndices, configIds.length, boundedActiveIndex);
     const id = `workspace-${Date.now()}`;
     set((state) => ({
-      workspaces: [...state.workspaces, { id, name, configIds, activeIndex }],
+      workspaces: [
+        ...state.workspaces,
+        {
+          id,
+          name,
+          configIds,
+          activeIndex: boundedActiveIndex,
+          paneIndices: normalizedPanes,
+          activePaneIndex: normalizeActivePaneIndex(activePaneIndex, normalizedPanes.length),
+        },
+      ],
     }));
     get().scheduleSave();
   },
@@ -740,7 +756,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         );
       await invoke('save_app_data', {
         document: {
-          schemaVersion: 2,
+          schemaVersion: 3,
           sessions: toSave,
           folders: state.folders,
           snippets: state.snippets,
