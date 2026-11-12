@@ -9,6 +9,7 @@ interface CredentialState {
   requiresMasterPassword: boolean;
 
   unlock: (masterPassword?: string) => Promise<boolean>;
+  lock: () => Promise<void>;
   saveCredential: (sessionId: string, secret: string, masterPassword?: string) => Promise<void>;
   deleteCredential: (sessionId: string, masterPassword?: string) => Promise<void>;
 }
@@ -70,6 +71,20 @@ export const useCredentialStore = create<CredentialState>((set, get) => ({
       return false;
     }
     return result;
+  },
+
+  lock: async () => {
+    try {
+      await invoke('credential_lock');
+      set({
+        isUnlocked: false,
+        isLoading: false,
+        error: null,
+        requiresMasterPassword: false,
+      });
+    } catch (error) {
+      set({ error: String(error) });
+    }
   },
 
   saveCredential: async (sessionId, secret, masterPassword) => {

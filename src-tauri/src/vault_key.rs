@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
-use tokio::sync::OnceCell;
 
 use argon2::{Algorithm, Argon2, Params, Version};
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 /// Sentinel the frontend matches to prompt for the vault master password.
 /// Followed by nothing the client depends on.
@@ -103,8 +103,8 @@ fn write_master_key_file(path: &Path, file: &MasterKeyFile) -> Result<(), String
 pub struct VaultKeyService {
     /// Cached key bytes, or None if not yet loaded/generated.
     key: Mutex<Option<Vec<u8>>>,
-    /// Ensures we only attempt to load/generate the key once per AppHandle.
-    init: OnceCell<()>,
+    /// Whether the key has been loaded since the last lock.
+    initialized: tokio::sync::Mutex<bool>,
 }
 
 impl VaultKeyService {
@@ -119,55 +119,69 @@ impl VaultKeyService {
         master_password: Option<&str>,
         vault_exists: bool,
     ) -> Result<(), String> {
-        self.init
-            .get_or_try_init(|| async {
-                let master_path = master_key_path(app_handle)?;
+        let mut initialized = self.initialized.lock().await;
+        if *initialized {
+            return Ok(());
+        }
 
-                // Master-password mode wins whenever it is configured: the
-                // vault was created while no keychain was available.
-                if let Some(file) = read_master_key_file(&master_path)? {
-                    let Some(password) = master_password else {
-                        return Err(MASTER_PASSWORD_REQUIRED.to_string());
-                    };
-                    let key = derive_master_key(password, &hex_decode(&file.salt)?, file.params)?;
-                    *self.key.lock().unwrap() = Some(key);
-                    log::info!("Vault key derived from the master password");
-                    return Ok::<(), String>(());
-                }
+        let master_path = master_key_path(app_handle)?;
 
-                match self.load_key_from_keychain().await {
-                    Ok(Some(key_bytes)) => {
-                        *self.key.lock().unwrap() = Some(key_bytes);
-                        return Ok(());
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        log::warn!("OS keychain unavailable: {error}");
-                        return self
-                            .master_password_fallback(master_path, master_password, vault_exists)
-                            .await;
-                    }
-                }
+        // Master-password mode wins whenever it is configured: the vault was
+        // created while no keychain was available.
+        if let Some(file) = read_master_key_file(&master_path)? {
+            let Some(password) = master_password else {
+                return Err(MASTER_PASSWORD_REQUIRED.to_string());
+            };
+            let key = derive_master_key(password, &hex_decode(&file.salt)?, file.params)?;
+            *self.key.lock().unwrap() = Some(key);
+            log::info!("Vault key derived from the master password");
+            *initialized = true;
+            return Ok(());
+        }
 
-                // Keychain reachable but empty: generate and persist.
-                let mut key_bytes = [0u8; 32];
-                getrandom::fill(&mut key_bytes)
-                    .map_err(|e| format!("Failed to generate random key: {e}"))?;
-                let key_vec = key_bytes.to_vec();
-                match self.store_key_in_keychain(&key_vec).await {
-                    Ok(()) => {
-                        *self.key.lock().unwrap() = Some(key_vec);
-                        Ok(())
-                    }
-                    Err(error) => {
-                        log::warn!("OS keychain cannot store the vault key: {error}");
-                        self.master_password_fallback(master_path, master_password, vault_exists)
-                            .await
-                    }
-                }
-            })
-            .await?;
+        match self.load_key_from_keychain().await {
+            Ok(Some(key_bytes)) => {
+                *self.key.lock().unwrap() = Some(key_bytes);
+                *initialized = true;
+                return Ok(());
+            }
+            Ok(None) => {}
+            Err(error) => {
+                log::warn!("OS keychain unavailable: {error}");
+                self.master_password_fallback(master_path, master_password, vault_exists)
+                    .await?;
+                *initialized = true;
+                return Ok(());
+            }
+        }
+
+        // Keychain reachable but empty: generate and persist.
+        let mut key_bytes = [0u8; 32];
+        getrandom::fill(&mut key_bytes)
+            .map_err(|e| format!("Failed to generate random key: {e}"))?;
+        let key_vec = key_bytes.to_vec();
+        match self.store_key_in_keychain(&key_vec).await {
+            Ok(()) => {
+                *self.key.lock().unwrap() = Some(key_vec);
+            }
+            Err(error) => {
+                log::warn!("OS keychain cannot store the vault key: {error}");
+                self.master_password_fallback(master_path, master_password, vault_exists)
+                    .await?;
+            }
+        }
+        *initialized = true;
         Ok(())
+    }
+
+    /// Drops the cached key and forces the next unlock to reload or re-derive
+    /// it. Used by the credential-vault lock command.
+    pub async fn lock(&self) {
+        let mut initialized = self.initialized.lock().await;
+        if let Some(mut key) = self.key.lock().unwrap().take() {
+            key.zeroize();
+        }
+        *initialized = false;
     }
 
     /// Uses a master-password-derived key when the keychain is unusable.
@@ -305,6 +319,18 @@ mod tests {
     fn test_vault_key_service_default() {
         let service = VaultKeyService::default();
         assert!(service.key.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn lock_clears_the_key_and_allows_reinitialization() {
+        let service = VaultKeyService::default();
+        *service.key.lock().unwrap() = Some(vec![7_u8; 32]);
+        *service.initialized.lock().await = true;
+
+        service.lock().await;
+
+        assert!(service.key.lock().unwrap().is_none());
+        assert!(!*service.initialized.lock().await);
     }
 
     /// Cheap parameters keep the derivation tests fast; production uses

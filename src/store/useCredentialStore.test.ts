@@ -36,6 +36,17 @@ describe('useCredentialStore', () => {
     expect(useCredentialStore.getState().isUnlocked).toBe(true);
   });
 
+  it('locks the backend vault and clears the unlocked flag', async () => {
+    mocks.invoke.mockResolvedValue(undefined);
+    useCredentialStore.setState({ isUnlocked: true });
+
+    await useCredentialStore.getState().lock();
+
+    expect(mocks.invoke).toHaveBeenCalledWith('credential_lock');
+    expect(useCredentialStore.getState().isUnlocked).toBe(false);
+    expect(useCredentialStore.getState().requiresMasterPassword).toBe(false);
+  });
+
   it('delegates credential writes to Rust after unlocking', async () => {
     mocks.invoke.mockResolvedValue(undefined);
 

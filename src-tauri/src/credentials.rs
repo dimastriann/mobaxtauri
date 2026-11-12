@@ -78,6 +78,15 @@ impl CredentialService {
         Ok(())
     }
 
+    /// Closes the Stronghold handle and clears the cached vault key. Live SSH
+    /// sessions are unaffected; the next credential operation unlocks again.
+    pub async fn lock(&self) {
+        let mut vault = self.vault.lock().await;
+        *vault = None;
+        drop(vault);
+        self.vault_key.lock().await;
+    }
+
     pub async fn save(
         &self,
         app_handle: &AppHandle,

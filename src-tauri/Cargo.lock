@@ -3559,6 +3559,7 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-stronghold",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]

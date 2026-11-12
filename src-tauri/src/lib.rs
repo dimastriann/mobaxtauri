@@ -210,6 +210,12 @@ async fn credential_unlock(
 }
 
 #[tauri::command]
+async fn credential_lock(credentials: State<'_, CredentialService>) -> Result<(), String> {
+    credentials.lock().await;
+    Ok(())
+}
+
+#[tauri::command]
 async fn credential_save(
     app_handle: AppHandle,
     credentials: State<'_, CredentialService>,
@@ -1397,6 +1403,7 @@ pub fn run() {
             save_app_data,
             export_app_data_backup,
             credential_unlock,
+            credential_lock,
             credential_save,
             credential_delete,
             export_terminal_recording,
