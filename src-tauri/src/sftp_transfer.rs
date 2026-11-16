@@ -8,12 +8,39 @@ use crate::sftp_resume;
 use crate::sftp_utils;
 use crate::transfers::{
     calculate_eta, calculate_percentage, calculate_transfer_rate, emit_transfer, TransferEvent,
-    TransferManager, TransferStatus,
+    TransferKind, TransferManager, TransferStatus,
 };
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::OpenFlags;
 use tauri::{AppHandle, Runtime};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+
+fn emit_queued<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    transfer_id: &str,
+    session_id: &str,
+    kind: TransferKind,
+    label: &str,
+    total: Option<u64>,
+) {
+    emit_transfer(
+        app_handle,
+        TransferEvent {
+            transfer_id: transfer_id.to_string(),
+            session_id: session_id.to_string(),
+            kind,
+            label: label.to_string(),
+            status: TransferStatus::Queued,
+            transferred: 0,
+            total,
+            resumed: false,
+            percent: None,
+            bytes_per_sec: None,
+            eta_seconds: None,
+            message: None,
+        },
+    );
+}
 
 /// Checks cancellation and blocks while the transfer is paused. Callers that
 /// keep a per-file error slot use the Result form directly.
@@ -86,6 +113,7 @@ pub async fn download_file<R: Runtime>(
             .map_err(|e| format!("Failed to seek remote file: {e:?}"))?;
         log::info!("Resuming download {remote_path} at {transferred} bytes");
     }
+    emit_queued(app_handle, &transfer_id, &session_id, kind, &label, total);
     let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
@@ -281,6 +309,7 @@ pub async fn upload_file<R: Runtime>(
             .await
             .map_err(|e| format!("Failed to seek remote file: {e:?}"))?;
     }
+    emit_queued(app_handle, &transfer_id, &session_id, kind, &label, total);
     let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
@@ -417,6 +446,7 @@ pub async fn copy_file<R: Runtime>(
         .create(&partial_path)
         .await
         .map_err(|e| format!("Failed to create dest file: {e:?}"))?;
+    emit_queued(app_handle, &transfer_id, &session_id, kind, &label, total);
     let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
@@ -583,6 +613,7 @@ pub async fn download_folder<R: Runtime>(
         Ok((files, dirs))
     }
 
+    emit_queued(app_handle, &transfer_id, &session_id, kind, &label, None);
     let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
@@ -889,6 +920,14 @@ pub async fn upload_folder<R: Runtime>(
             .collect(),
     )?;
 
+    emit_queued(
+        app_handle,
+        &transfer_id,
+        &session_id,
+        kind,
+        &label,
+        Some(total),
+    );
     let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;

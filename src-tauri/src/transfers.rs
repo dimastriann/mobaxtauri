@@ -15,6 +15,7 @@ pub const SFTP_TRANSFER_EVENT: &str = "sftp-transfer";
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferStatus {
+    Queued,
     Running,
     Completed,
     Cancelled,
