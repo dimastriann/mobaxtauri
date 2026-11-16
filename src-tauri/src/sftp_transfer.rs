@@ -7,13 +7,28 @@ use crate::sftp_folder_resume::{self, FolderDirection, FolderFile, FolderSnapsho
 use crate::sftp_resume;
 use crate::sftp_utils;
 use crate::transfers::{
-    calculate_eta, calculate_percentage, calculate_transfer_rate, emit_transfer, is_cancelled,
-    TransferEvent, TransferManager, TransferStatus,
+    calculate_eta, calculate_percentage, calculate_transfer_rate, emit_transfer, TransferEvent,
+    TransferManager, TransferStatus,
 };
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::OpenFlags;
 use tauri::{AppHandle, Runtime};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+
+/// Checks cancellation and blocks while the transfer is paused. Callers that
+/// keep a per-file error slot use the Result form directly.
+async fn wait_for_transfer(handle: &crate::transfers::TransferHandle) -> Result<(), String> {
+    if handle.is_cancelled() {
+        return Err("Transfer cancelled".to_string());
+    }
+    if handle.is_paused() {
+        handle.wait_until_resumed().await;
+        if handle.is_cancelled() {
+            return Err("Transfer cancelled".to_string());
+        }
+    }
+    Ok(())
+}
 
 pub async fn download_file<R: Runtime>(
     app_handle: &AppHandle<R>,
@@ -71,7 +86,7 @@ pub async fn download_file<R: Runtime>(
             .map_err(|e| format!("Failed to seek remote file: {e:?}"))?;
         log::info!("Resuming download {remote_path} at {transferred} bytes");
     }
-    let cancellation = transfers
+    let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
     let mut buffer = vec![0_u8; 64 * 1024];
@@ -101,9 +116,7 @@ pub async fn download_file<R: Runtime>(
 
     let result = async {
         loop {
-            if is_cancelled(&cancellation) {
-                return Err("Transfer cancelled".to_string());
-            }
+            wait_for_transfer(&handle).await?;
             let count = remote_file
                 .read(&mut buffer)
                 .await
@@ -268,7 +281,7 @@ pub async fn upload_file<R: Runtime>(
             .await
             .map_err(|e| format!("Failed to seek remote file: {e:?}"))?;
     }
-    let cancellation = transfers
+    let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
     let mut buffer = vec![0_u8; 64 * 1024];
@@ -276,9 +289,7 @@ pub async fn upload_file<R: Runtime>(
 
     let result = async {
         loop {
-            if is_cancelled(&cancellation) {
-                return Err("Transfer cancelled".to_string());
-            }
+            wait_for_transfer(&handle).await?;
             let count = sftp_utils::read_upload_chunk(
                 &local_path,
                 sftp_utils::CLOUD_RETRY_DELAYS_MS,
@@ -406,7 +417,7 @@ pub async fn copy_file<R: Runtime>(
         .create(&partial_path)
         .await
         .map_err(|e| format!("Failed to create dest file: {e:?}"))?;
-    let cancellation = transfers
+    let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
     let mut buffer = vec![0_u8; 64 * 1024];
@@ -415,9 +426,7 @@ pub async fn copy_file<R: Runtime>(
 
     let result = async {
         loop {
-            if is_cancelled(&cancellation) {
-                return Err("Transfer cancelled".to_string());
-            }
+            wait_for_transfer(&handle).await?;
             let count = source_file
                 .read(&mut buffer)
                 .await
@@ -574,7 +583,7 @@ pub async fn download_folder<R: Runtime>(
         Ok((files, dirs))
     }
 
-    let cancellation = transfers
+    let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
     let mut transferred = 0_u64;
@@ -591,9 +600,7 @@ pub async fn download_folder<R: Runtime>(
         // The sorted dir list guarantees each parent exists before its
         // children are touched; the empty relative path creates the root.
         for relative in &dirs {
-            if is_cancelled(&cancellation) {
-                return Err("Transfer cancelled".to_string());
-            }
+            wait_for_transfer(&handle).await?;
             let local_dir_path = target_root.join(relative);
             tokio::fs::create_dir_all(&local_dir_path)
                 .await
@@ -656,9 +663,7 @@ pub async fn download_folder<R: Runtime>(
         resumed = !completed.is_empty();
 
         for file in &files {
-            if is_cancelled(&cancellation) {
-                return Err("Transfer cancelled".to_string());
-            }
+            wait_for_transfer(&handle).await?;
             if completed.contains(&file.relative_path) {
                 continue;
             }
@@ -710,8 +715,8 @@ pub async fn download_folder<R: Runtime>(
 
             let mut file_error = None;
             loop {
-                if is_cancelled(&cancellation) {
-                    file_error = Some("Transfer cancelled".to_string());
+                if let Err(error) = wait_for_transfer(&handle).await {
+                    file_error = Some(error);
                     break;
                 }
                 let count = match remote_file.read(&mut buffer).await {
@@ -884,7 +889,7 @@ pub async fn upload_folder<R: Runtime>(
             .collect(),
     )?;
 
-    let cancellation = transfers
+    let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
     let mut transferred = 0_u64;
@@ -925,9 +930,7 @@ pub async fn upload_folder<R: Runtime>(
             }
         }
         for relative in &tree.dirs {
-            if is_cancelled(&cancellation) {
-                return Err("Transfer cancelled".to_string());
-            }
+            wait_for_transfer(&handle).await?;
             let remote_dir = sftp_utils::join_sftp_path(&target_root, relative);
             // create_dir is non-recursive; the sorted dir list guarantees
             // each parent exists by the time its children are created.
@@ -983,9 +986,7 @@ pub async fn upload_folder<R: Runtime>(
         resumed = !completed.is_empty();
 
         for file in &tree.files {
-            if is_cancelled(&cancellation) {
-                return Err("Transfer cancelled".to_string());
-            }
+            wait_for_transfer(&handle).await?;
             if completed.contains(&file.relative_path) {
                 continue;
             }
@@ -1048,8 +1049,8 @@ pub async fn upload_folder<R: Runtime>(
 
             let mut file_error = None;
             loop {
-                if is_cancelled(&cancellation) {
-                    file_error = Some("Transfer cancelled".to_string());
+                if let Err(error) = wait_for_transfer(&handle).await {
+                    file_error = Some(error);
                     break;
                 }
                 let count = match sftp_utils::read_upload_chunk(

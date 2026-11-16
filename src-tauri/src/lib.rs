@@ -663,6 +663,22 @@ async fn sftp_cancel_transfer(
 }
 
 #[tauri::command]
+async fn sftp_pause_transfer(
+    transfers: State<'_, TransferManager>,
+    transfer_id: String,
+) -> Result<bool, String> {
+    Ok(transfers.pause(&transfer_id).await)
+}
+
+#[tauri::command]
+async fn sftp_resume_transfer(
+    transfers: State<'_, TransferManager>,
+    transfer_id: String,
+) -> Result<bool, String> {
+    Ok(transfers.resume(&transfer_id).await)
+}
+
+#[tauri::command]
 // Tauri commands receive named keyword arguments over IPC, so a params
 // struct would change the wire contract; the argument list mirrors the
 // event/transfer contract instead.
@@ -1474,7 +1490,9 @@ pub fn run() {
             credential_save,
             credential_delete,
             export_terminal_recording,
-            sftp_cancel_transfer
+            sftp_cancel_transfer,
+            sftp_pause_transfer,
+            sftp_resume_transfer
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

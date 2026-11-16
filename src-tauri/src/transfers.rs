@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 use tauri::{AppHandle, Emitter, Runtime};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 pub const SFTP_TRANSFER_EVENT: &str = "sftp-transfer";
 
@@ -90,6 +90,31 @@ pub fn calculate_eta(
     Some(((total - transferred) as f64 / rate).ceil() as u64)
 }
 
+#[derive(Clone)]
+pub struct TransferHandle {
+    cancellation: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+    wake: Arc<Notify>,
+}
+
+impl TransferHandle {
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation.load(Ordering::Acquire)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Acquire)
+    }
+
+    /// Blocks while the transfer is paused. Cancellation is checked by the
+    /// caller after this returns, so a paused transfer can still be cancelled.
+    pub async fn wait_until_resumed(&self) {
+        while self.is_paused() {
+            self.wake.notified().await;
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct TransferManager {
     transfers: Mutex<HashMap<String, ActiveTransfer>>,
@@ -97,12 +122,16 @@ pub struct TransferManager {
 
 struct ActiveTransfer {
     session_id: String,
-    cancellation: Arc<AtomicBool>,
+    handle: TransferHandle,
 }
 
 impl TransferManager {
-    pub async fn begin(&self, transfer_id: String, session_id: String) -> Arc<AtomicBool> {
-        let cancellation = Arc::new(AtomicBool::new(false));
+    pub async fn begin(&self, transfer_id: String, session_id: String) -> TransferHandle {
+        let handle = TransferHandle {
+            cancellation: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            wake: Arc::new(Notify::new()),
+        };
         let mut transfers = self.transfers.lock().await;
         // Transfers queue up independently: starting one must not cancel
         // the session's other in-flight transfers.
@@ -110,12 +139,12 @@ impl TransferManager {
             transfer_id,
             ActiveTransfer {
                 session_id,
-                cancellation: Arc::clone(&cancellation),
+                handle: handle.clone(),
             },
         ) {
-            previous.cancellation.store(true, Ordering::Release);
+            previous.handle.cancellation.store(true, Ordering::Release);
         }
-        cancellation
+        handle
     }
 
     pub async fn finish(&self, transfer_id: &str) {
@@ -124,7 +153,26 @@ impl TransferManager {
 
     pub async fn cancel(&self, transfer_id: &str) -> bool {
         if let Some(transfer) = self.transfers.lock().await.get(transfer_id) {
-            transfer.cancellation.store(true, Ordering::Release);
+            transfer.handle.cancellation.store(true, Ordering::Release);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub async fn pause(&self, transfer_id: &str) -> bool {
+        if let Some(transfer) = self.transfers.lock().await.get(transfer_id) {
+            transfer.handle.paused.store(true, Ordering::Release);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub async fn resume(&self, transfer_id: &str) -> bool {
+        if let Some(transfer) = self.transfers.lock().await.get(transfer_id) {
+            transfer.handle.paused.store(false, Ordering::Release);
+            transfer.handle.wake.notify_one();
             true
         } else {
             false
@@ -134,14 +182,10 @@ impl TransferManager {
     pub async fn cancel_session(&self, session_id: &str) {
         for transfer in self.transfers.lock().await.values() {
             if transfer.session_id == session_id {
-                transfer.cancellation.store(true, Ordering::Release);
+                transfer.handle.cancellation.store(true, Ordering::Release);
             }
         }
     }
-}
-
-pub fn is_cancelled(cancellation: &AtomicBool) -> bool {
-    cancellation.load(Ordering::Acquire)
 }
 
 pub fn emit_transfer<R: Runtime>(app_handle: &AppHandle<R>, event: TransferEvent) {
@@ -152,15 +196,15 @@ pub fn emit_transfer<R: Runtime>(app_handle: &AppHandle<R>, event: TransferEvent
 
 #[cfg(test)]
 mod tests {
-    use super::{is_cancelled, TransferManager};
+    use super::TransferManager;
 
     #[tokio::test]
     async fn cancels_an_active_transfer() {
         let manager = TransferManager::default();
-        let cancellation = manager.begin("transfer-1".into(), "session-1".into()).await;
+        let handle = manager.begin("transfer-1".into(), "session-1".into()).await;
 
         assert!(manager.cancel("transfer-1").await);
-        assert!(is_cancelled(&cancellation));
+        assert!(handle.is_cancelled());
         manager.finish("transfer-1").await;
         assert!(!manager.cancel("transfer-1").await);
     }
@@ -173,14 +217,36 @@ mod tests {
         manager.begin("transfer-2".into(), "session-1".into()).await;
 
         assert!(
-            !is_cancelled(&first),
+            !first.is_cancelled(),
             "a queued transfer must not cancel its session peers"
         );
         assert!(
             manager.cancel("transfer-1").await,
             "each transfer stays individually cancellable"
         );
-        assert!(is_cancelled(&first));
+        assert!(first.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn pauses_and_resumes_a_transfer() {
+        let manager = TransferManager::default();
+        let handle = manager.begin("transfer-1".into(), "session-1".into()).await;
+
+        assert!(manager.pause("transfer-1").await);
+        assert!(handle.is_paused());
+
+        let waiter = tokio::spawn({
+            let handle = handle.clone();
+            async move {
+                handle.wait_until_resumed().await;
+                handle.is_paused()
+            }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        assert!(manager.resume("transfer-1").await);
+
+        assert!(!waiter.await.expect("waiter task"));
+        assert!(!handle.is_paused());
     }
 
     #[test]
