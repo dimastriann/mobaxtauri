@@ -16,6 +16,7 @@ import {
   LuTerminal,
   LuMonitor,
   LuLayoutDashboard,
+  LuStethoscope,
   LuSettings,
 } from 'react-icons/lu';
 import TerminalContainer from './components/Terminal';
@@ -28,6 +29,7 @@ import HealthBar from './components/HealthBar';
 import NewSessionModal from './components/NewSessionModal';
 import PromptModal from './components/PromptModal';
 import SettingsModal from './components/SettingsModal';
+import ConnectionDiagnosticsModal from './components/ConnectionDiagnosticsModal';
 import CommandPalette from './components/CommandPalette';
 import { useExportImport } from './hooks/useExportImport';
 import { useIdleLock } from './hooks/useIdleLock';
@@ -100,6 +102,10 @@ function App() {
   const [mainView, setMainView] = useState<'dashboard' | 'terminals' | 'files'>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [diagnosticsSession, setDiagnosticsSession] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(loadKeyboardShortcuts);
   const [paneSessionIds, setPaneSessionIds] = useState<string[]>([]);
@@ -654,6 +660,13 @@ function App() {
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
+      <ConnectionDiagnosticsModal
+        isOpen={diagnosticsSession !== null}
+        sessionId={diagnosticsSession?.id ?? null}
+        sessionName={diagnosticsSession?.name ?? ''}
+        onClose={() => setDiagnosticsSession(null)}
+      />
+
       <CommandPalette
         isOpen={commandPaletteOpen}
         sessions={sessions}
@@ -775,6 +788,19 @@ function App() {
                   setSidebarMenu(null);
                   openNewInstance(id);
                   setMainView('terminals');
+                }}
+              />
+              <ContextMenuItem
+                icon={LuStethoscope}
+                label={t('diagnostics.open')}
+                onClick={() => {
+                  const configId = sidebarMenu.id!;
+                  const name = sidebarMenu.name ?? configId;
+                  const current = useSessionStore.getState();
+                  const openId =
+                    findOpenInstanceId(current.sessions, current.openTabs, configId) ?? configId;
+                  setSidebarMenu(null);
+                  setDiagnosticsSession({ id: openId, name });
                 }}
               />
               <ContextMenuItem
