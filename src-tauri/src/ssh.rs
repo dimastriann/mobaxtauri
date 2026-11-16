@@ -1,4 +1,5 @@
 use crate::auth_prompts::{AuthPromptService, SshAuthPromptField};
+use crate::diagnostics::{ConnectReport, ConnectTimings};
 use crate::known_hosts::{HostKeyAction, KnownHostsService};
 use crate::session_types::{
     emit_ssh_host_key, emit_ssh_session_state, SshDisconnectReason, SshHostKeyEvent,
@@ -31,6 +32,10 @@ pub struct ClientHandler<R: Runtime> {
     /// by the server maps to the local `(host, port)` the channel is
     /// tunneled to. Shared with the [`crate::port_forward::ForwardManager`].
     pub remote_forwards: RemoteForwardTargets,
+    /// Last host key presented by the server: `(key type, SHA256 fingerprint)`.
+    pub host_key: Arc<std::sync::Mutex<Option<(String, String)>>>,
+    /// Optional authentication banner sent by the server.
+    pub auth_banner: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 /// Map behind remote forwarding: server-side listen address/port → local
@@ -44,6 +49,15 @@ pub type AppClientHandler = ClientHandler<tauri::Wry>;
 
 impl<R: Runtime> Handler for ClientHandler<R> {
     type Error = russh::Error;
+
+    async fn auth_banner(
+        &mut self,
+        banner: &str,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        *self.auth_banner.lock().unwrap() = Some(banner.to_string());
+        Ok(())
+    }
 
     async fn check_server_key(
         &mut self,
@@ -66,6 +80,7 @@ impl<R: Runtime> Handler for ClientHandler<R> {
             .fingerprint(russh::keys::HashAlg::Sha256)
             .to_string();
         let key_type = server_public_key.algorithm().to_string();
+        *self.host_key.lock().unwrap() = Some((key_type.clone(), fingerprint.clone()));
         let action = self
             .known_hosts
             .resolve(&self.app_handle, &self.host, self.port, &fingerprint)
@@ -404,7 +419,7 @@ impl SshSession {
     // Roadmap tracks the too_many_arguments baseline; a params struct is a
     // planned follow-up.
     #[allow(clippy::too_many_arguments)]
-    pub async fn connect<R: Runtime>(
+    pub async fn connect_with_report<R: Runtime>(
         app_handle: AppHandle<R>,
         session_id: String,
         host: String,
@@ -429,9 +444,11 @@ impl SshSession {
             russh::ChannelId,
             russh::Channel<russh::client::Msg>,
             SftpSession,
+            ConnectReport,
         ),
         Box<dyn std::error::Error>,
     > {
+        let total_started = std::time::Instant::now();
         // Let russh send protocol-level keepalives. Channel data (including an
         // empty payload) is subject to terminal flow control and can time out
         // while a full-screen application is producing heavy output.
@@ -446,6 +463,8 @@ impl SshSession {
         spawn_terminal_output(app_handle.clone(), session_id.clone(), terminal_output_rx);
         let prompt_app_handle = app_handle.clone();
         let prompt_session_id = session_id.clone();
+        let host_key = Arc::new(std::sync::Mutex::new(None));
+        let auth_banner = Arc::new(std::sync::Mutex::new(None));
         let sh = ClientHandler {
             app_handle,
             session_id,
@@ -455,6 +474,8 @@ impl SshSession {
             known_hosts,
             terminal_output,
             remote_forwards,
+            host_key: host_key.clone(),
+            auth_banner: auth_banner.clone(),
         };
 
         let mut session = match jump_stream {
@@ -468,8 +489,12 @@ impl SshSession {
             }
         };
         log::info!("TCP connected. Authenticating...");
+        let tcp_ms = total_started.elapsed().as_millis() as u64;
+        let auth_started = std::time::Instant::now();
 
         let mut authenticated = false;
+        let mut auth_attempted = Vec::new();
+        let mut auth_used: Option<String> = None;
         // Capture what will be attempted before the values are moved into
         // the authentication calls; the failure message names them.
         let agent_attempted = use_agent;
@@ -477,16 +502,21 @@ impl SshSession {
         let password_attempted = password.is_some();
 
         if use_agent {
+            auth_attempted.push("agent".into());
             log::info!("Attempting SSH agent authentication...");
             match connect_agent_client().await {
                 Ok(mut agent) => {
                     authenticated = authenticate_with_agent(&mut session, &user, &mut agent).await;
+                    if authenticated {
+                        auth_used = Some("agent".into());
+                    }
                 }
                 Err(error) => log::warn!("{error}"),
             }
         }
 
         if let Some(key_path) = private_key_path.as_ref() {
+            auth_attempted.push("publickey".into());
             log::info!("Attempting public key authentication with {}", key_path);
             // A key that cannot be read, parsed, or decrypted is a
             // configuration problem: fail explicitly rather than silently
@@ -501,7 +531,10 @@ impl SshSession {
                             .authenticate_publickey(user.clone(), key_alg)
                             .await?
                         {
-                            AuthResult::Success => authenticated = true,
+                            AuthResult::Success => {
+                                authenticated = true;
+                                auth_used = Some("publickey".into());
+                            }
                             other => {
                                 log::info!("Public key auth rejected: {other:?}");
                             }
@@ -517,11 +550,13 @@ impl SshSession {
 
         if !authenticated {
             if let Some(pwd) = password.as_deref() {
+                auth_attempted.push("password".into());
                 log::info!("Attempting password authentication...");
                 let auth_res = session.authenticate_password(user.clone(), pwd).await?;
                 log::info!("Password auth result: {:?}", auth_res);
                 if let AuthResult::Success = auth_res {
                     authenticated = true;
+                    auth_used = Some("password".into());
                 }
             }
         }
@@ -529,6 +564,7 @@ impl SshSession {
         let mut keyboard_interactive_attempted = false;
         if !authenticated && allow_keyboard_interactive {
             keyboard_interactive_attempted = true;
+            auth_attempted.push("keyboard-interactive".into());
             log::info!("Attempting keyboard-interactive authentication...");
             match authenticate_keyboard_interactive(
                 &mut session,
@@ -539,7 +575,10 @@ impl SshSession {
             )
             .await
             {
-                Ok(true) => authenticated = true,
+                Ok(true) => {
+                    authenticated = true;
+                    auth_used = Some("keyboard-interactive".into());
+                }
                 Ok(false) => log::info!("Keyboard-interactive authentication was rejected"),
                 Err(error) => return Err(error.into()),
             }
@@ -557,6 +596,8 @@ impl SshSession {
             .into());
         }
 
+        let auth_ms = auth_started.elapsed().as_millis() as u64;
+        let shell_started = std::time::Instant::now();
         log::info!("Opening channel...");
         // Open a channel and request a PTY/Shell
         let channel = session.channel_open_session().await?;
@@ -572,6 +613,8 @@ impl SshSession {
         log::info!("Requesting Shell...");
         channel.request_shell(true).await?;
         log::info!("Shell session established.");
+        let shell_ms = shell_started.elapsed().as_millis() as u64;
+        let sftp_started = std::time::Instant::now();
 
         if let Some(payload) = startup_command.as_deref().and_then(startup_command_payload) {
             log::info!("Sending the session startup command");
@@ -583,8 +626,78 @@ impl SshSession {
         sftp_channel.request_subsystem(true, "sftp").await?;
         let sftp = SftpSession::new(sftp_channel.into_stream()).await?;
         log::info!("SFTP session initialized.");
+        let sftp_ms = sftp_started.elapsed().as_millis() as u64;
+        let host_key = host_key.lock().unwrap().clone();
+        let (host_key_type, host_key_fingerprint) = match host_key {
+            Some((key_type, fingerprint)) => (Some(key_type), Some(fingerprint)),
+            None => (None, None),
+        };
+        let report = ConnectReport {
+            timings: ConnectTimings {
+                tcp_ms,
+                auth_ms,
+                shell_ms,
+                sftp_ms,
+                total_ms: total_started.elapsed().as_millis() as u64,
+            },
+            auth_attempted,
+            auth_used,
+            server_banner: auth_banner.lock().unwrap().clone().unwrap_or_default(),
+            host_key_type,
+            host_key_fingerprint,
+        };
 
-        Ok((session, channel_id, channel, sftp))
+        Ok((session, channel_id, channel, sftp, report))
+    }
+}
+
+impl SshSession {
+    /// Compatibility wrapper for callers that do not need the diagnostics report.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn connect<R: Runtime>(
+        app_handle: AppHandle<R>,
+        session_id: String,
+        host: String,
+        port: u16,
+        user: String,
+        password: Option<String>,
+        private_key_path: Option<String>,
+        key_passphrase: Option<String>,
+        use_agent: bool,
+        allow_keyboard_interactive: bool,
+        auth_prompts: AuthPromptService,
+        startup_command: Option<String>,
+        jump_stream: Option<russh::ChannelStream<russh::client::Msg>>,
+        known_hosts: Arc<KnownHostsService>,
+        remote_forwards: RemoteForwardTargets,
+    ) -> Result<
+        (
+            russh::client::Handle<ClientHandler<R>>,
+            russh::ChannelId,
+            russh::Channel<russh::client::Msg>,
+            SftpSession,
+        ),
+        Box<dyn std::error::Error>,
+    > {
+        Self::connect_with_report(
+            app_handle,
+            session_id,
+            host,
+            port,
+            user,
+            password,
+            private_key_path,
+            key_passphrase,
+            use_agent,
+            allow_keyboard_interactive,
+            auth_prompts,
+            startup_command,
+            jump_stream,
+            known_hosts,
+            remote_forwards,
+        )
+        .await
+        .map(|(handle, channel_id, channel, sftp, _report)| (handle, channel_id, channel, sftp))
     }
 }
 

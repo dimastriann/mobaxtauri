@@ -1,5 +1,6 @@
 pub mod auth_prompts;
 mod credentials;
+pub mod diagnostics;
 mod health;
 pub mod known_hosts;
 pub mod local_fs;
@@ -47,6 +48,7 @@ pub struct AppState {
     pub ssh_sessions: SessionManager,
     pub sftp_sessions: Mutex<HashMap<String, std::sync::Arc<russh_sftp::client::SftpSession>>>,
     pub sftp_homes: Mutex<HashMap<String, String>>,
+    pub diagnostics: crate::diagnostics::DiagnosticsService,
 }
 
 #[tauri::command]
@@ -364,7 +366,10 @@ async fn ssh_connect(
     forwards.clear_remote_targets(&session_id).await;
     let remote_forwards = forwards.remote_targets(&session_id).await;
 
-    let connect_future = SshSession::connect(
+    let diagnostic_host = host.clone();
+    let diagnostic_user = user.clone();
+    let diagnostic_jump = jump_session_id.clone();
+    let connect_future = SshSession::connect_with_report(
         app_handle.clone(),
         session_id.clone(),
         host,
@@ -382,7 +387,7 @@ async fn ssh_connect(
         remote_forwards,
     );
 
-    let (handle, channel_id, channel, sftp) =
+    let (handle, channel_id, channel, sftp, report) =
         match tokio::time::timeout(connection_timeout, connect_future).await {
             Ok(Ok(res)) => res,
             Ok(Err(e)) => {
@@ -430,11 +435,35 @@ async fn ssh_connect(
             channel,
         )
         .await;
+    let sftp_home = sftp.canonicalize(".").await.ok();
     state
         .sftp_sessions
         .lock()
         .await
         .insert(session_id.clone(), std::sync::Arc::new(sftp));
+
+    let connected_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    state
+        .diagnostics
+        .record(crate::diagnostics::ConnectionDiagnostics {
+            session_id: session_id.clone(),
+            host: diagnostic_host,
+            port,
+            user: diagnostic_user,
+            connected_at,
+            timings: report.timings,
+            auth_attempted: report.auth_attempted,
+            auth_used: report.auth_used,
+            server_banner: report.server_banner,
+            host_key_type: report.host_key_type,
+            host_key_fingerprint: report.host_key_fingerprint,
+            jump_session_id: diagnostic_jump,
+            sftp_home,
+        })
+        .await;
 
     emit_ssh_session_state(
         &app_handle,
@@ -445,6 +474,18 @@ async fn ssh_connect(
     );
 
     Ok(format!("Connected to session {}", session_id))
+}
+
+#[tauri::command]
+async fn ssh_diagnostics(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<crate::diagnostics::ConnectionDiagnostics, String> {
+    state
+        .diagnostics
+        .get(&session_id)
+        .await
+        .ok_or_else(|| "No diagnostics are available for this session yet".to_string())
 }
 
 #[tauri::command]
@@ -1409,6 +1450,7 @@ pub fn run() {
             ssh_sessions: SessionManager::default(),
             sftp_sessions: Mutex::new(HashMap::new()),
             sftp_homes: Mutex::new(HashMap::new()),
+            diagnostics: crate::diagnostics::DiagnosticsService::default(),
         })
         .manage(PersistenceService::default())
         .manage(CredentialService::default())
@@ -1467,6 +1509,7 @@ pub fn run() {
             ssh_key_deploy,
             ssh_send_data,
             ssh_disconnect,
+            ssh_diagnostics,
             ssh_resize,
             sftp_list_dir,
             sftp_set_permissions,

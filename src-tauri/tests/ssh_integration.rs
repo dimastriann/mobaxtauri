@@ -929,6 +929,8 @@ async fn password_auth_connects_and_shell_echoes_over_the_wire() {
         known_hosts: ctx.trusted_known_hosts(),
         terminal_output,
         remote_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        host_key: Arc::new(std::sync::Mutex::new(None)),
+        auth_banner: Arc::new(std::sync::Mutex::new(None)),
     };
     let mut session = russh::client::connect(
         Arc::new(russh::client::Config::default()),
@@ -1012,6 +1014,45 @@ async fn download_resumes_from_the_partial_file() {
         "resume sidecar is removed after success"
     );
     let _ = std::fs::remove_dir_all(local_path.parent().unwrap());
+}
+
+#[tokio::test]
+async fn connection_report_captures_auth_and_timing() {
+    let ctx = TestContext::start("diagnostics", HostTrust::Trusted, AuthorizedKey::None).await;
+    let (_handle, _channel_id, _channel, _sftp, report) = SshSession::connect_with_report(
+        ctx.handle.clone(),
+        format!(
+            "it-report-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ),
+        "127.0.0.1".to_string(),
+        ctx.port,
+        USER.to_string(),
+        Some(PASSWORD.to_string()),
+        None,
+        None,
+        false,
+        true,
+        AuthPromptService::default(),
+        None,
+        None,
+        ctx.trusted_known_hosts(),
+        ctx.remote_targets.clone(),
+    )
+    .await
+    .expect("diagnostic session connects");
+
+    assert_eq!(report.auth_used.as_deref(), Some("password"));
+    assert!(report
+        .auth_attempted
+        .iter()
+        .any(|method| method == "password"));
+    assert!(report.host_key_fingerprint.is_some());
+    assert!(report.host_key_type.is_some());
+    assert!(report.timings.total_ms >= report.timings.auth_ms);
 }
 
 #[tokio::test]
@@ -1372,6 +1413,8 @@ async fn connect_unauthenticated(
         known_hosts: ctx.trusted_known_hosts(),
         terminal_output: mpsc::unbounded_channel().0,
         remote_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        host_key: Arc::new(std::sync::Mutex::new(None)),
+        auth_banner: Arc::new(std::sync::Mutex::new(None)),
     };
     russh::client::connect(
         Arc::new(russh::client::Config::default()),
