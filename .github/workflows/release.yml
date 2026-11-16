@@ -43,6 +43,10 @@ jobs:
         run: npm run test -- --run
 
       - name: run backend tests
+        env:
+          # Windows release runners have intermittently crashed with
+          # STATUS_ACCESS_VIOLATION when the lib tests run in parallel.
+          RUST_TEST_THREADS: 1
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - uses: tauri-apps/tauri-action@v0
