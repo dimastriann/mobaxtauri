@@ -1,11 +1,14 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Flex, HStack, Text } from '@chakra-ui/react';
+import { ask } from '@tauri-apps/plugin-dialog';
 import FilePane, { type PaneEntry } from './FilePane';
 import TransferQueue from './TransferQueue';
 import { useSftpStore } from '../store/useSftpStore';
 import { useLocalFilesStore } from '../store/useLocalFilesStore';
 import { useSessionStore } from '../store/useSessionStore';
 import { useTranslation } from '../store/useLocaleStore';
+import { joinLocalPath } from '../utils/localPath';
+import PromptModal from './PromptModal';
 import { toaster } from './ui/toaster';
 
 const LOCAL_DRAG_MIME = 'application/x-mobaxtauri-local';
@@ -38,6 +41,13 @@ const SftpWorkspace: React.FC = () => {
   const cdLocal = useLocalFilesStore((state) => state.cd);
   const localUp = useLocalFilesStore((state) => state.cdUp);
   const refreshLocal = useLocalFilesStore((state) => state.refresh);
+  const createLocalDir = useLocalFilesStore((state) => state.createDir);
+  const renameLocalEntry = useLocalFilesStore((state) => state.rename);
+  const removeLocalEntries = useLocalFilesStore((state) => state.removeMany);
+
+  const [localPrompt, setLocalPrompt] = useState<
+    { kind: 'new-folder' } | { kind: 'rename'; entry: PaneEntry } | null
+  >(null);
 
   const sshSessions = openTabs
     .map((id) => sessions.find((session) => session.id === id))
@@ -100,6 +110,67 @@ const SftpWorkspace: React.FC = () => {
           .slice(0, 3)
           .map((failure) => `${failure.name}: ${failure.message}`)
           .join('\n'),
+        type: 'error',
+      });
+    }
+  };
+
+  const deleteLocalEntries = async (entries: PaneEntry[]) => {
+    if (entries.length === 0) return;
+    const confirmed = await ask(t('files.deleteConfirm', { count: entries.length }), {
+      title: t('files.deleteTitle'),
+      kind: 'warning',
+      okLabel: t('files.delete'),
+      cancelLabel: t('common.cancel'),
+    });
+    if (!confirmed) return;
+    try {
+      const result = await removeLocalEntries(
+        entries.map((entry) => ({ path: entry.path, recursive: entry.isDir })),
+      );
+      if (result.failures.length > 0) {
+        toaster.create({
+          title: t('files.deleteFailed'),
+          description: result.failures
+            .slice(0, 3)
+            .map((failure) => `${failure.path}: ${failure.message}`)
+            .join('\n'),
+          type: 'error',
+        });
+      } else {
+        toaster.create({
+          title: t('files.deleted', { count: result.removed.length }),
+          type: 'success',
+        });
+      }
+    } catch (error) {
+      toaster.create({
+        title: t('files.operationFailed'),
+        description: String(error),
+        type: 'error',
+      });
+    }
+  };
+
+  const confirmLocalPrompt = async (values: Record<string, string>) => {
+    const prompt = localPrompt;
+    const name = values.name?.trim();
+    setLocalPrompt(null);
+    if (!prompt || !name) return;
+    try {
+      if (prompt.kind === 'new-folder') {
+        if (!localPath) return;
+        await createLocalDir(joinLocalPath(localPath, name));
+      } else {
+        const entry = prompt.entry;
+        const separatorIndex = Math.max(entry.path.lastIndexOf('/'), entry.path.lastIndexOf('\\'));
+        const parent = separatorIndex >= 0 ? entry.path.slice(0, separatorIndex + 1) : '';
+        await renameLocalEntry(entry.path, `${parent}${name}`);
+      }
+    } catch (error) {
+      toaster.create({
+        title: t('files.operationFailed'),
+        description: String(error),
         type: 'error',
       });
     }
@@ -198,15 +269,43 @@ const SftpWorkspace: React.FC = () => {
             dragMime={LOCAL_DRAG_MIME}
             acceptMime={REMOTE_DRAG_MIME}
             onDropEntries={(entries) => void downloadRemoteEntries(entries)}
-            actions={(selected) => (
+            toolbar={
               <Button
                 size="xs"
-                variant="subtle"
-                colorPalette="blue"
-                onClick={() => void uploadLocalEntries(selected)}
+                variant="ghost"
+                onClick={() => setLocalPrompt({ kind: 'new-folder' })}
               >
-                {t('files.uploadSelected', { count: selected.length })}
+                {t('files.newFolder')}
               </Button>
+            }
+            actions={(selected) => (
+              <>
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  colorPalette="blue"
+                  onClick={() => void uploadLocalEntries(selected)}
+                >
+                  {t('files.uploadSelected', { count: selected.length })}
+                </Button>
+                {selected.length === 1 && (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => setLocalPrompt({ kind: 'rename', entry: selected[0] })}
+                  >
+                    {t('files.rename')}
+                  </Button>
+                )}
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  colorPalette="red"
+                  onClick={() => void deleteLocalEntries(selected)}
+                >
+                  {t('files.delete')}
+                </Button>
+              </>
             )}
           />
           <FilePane
@@ -246,6 +345,21 @@ const SftpWorkspace: React.FC = () => {
           />
         </Flex>
       )}
+
+      <PromptModal
+        isOpen={localPrompt !== null}
+        title={localPrompt?.kind === 'rename' ? t('files.renameTitle') : t('files.newFolderTitle')}
+        fields={[
+          {
+            key: 'name',
+            label: t('files.name'),
+            placeholder:
+              localPrompt?.kind === 'rename' ? localPrompt.entry.name : t('files.namePlaceholder'),
+          },
+        ]}
+        onConfirm={(values) => void confirmLocalPrompt(values)}
+        onClose={() => setLocalPrompt(null)}
+      />
     </Flex>
   );
 };

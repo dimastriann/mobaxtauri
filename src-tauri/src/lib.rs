@@ -1138,6 +1138,13 @@ async fn local_remove(path: String, recursive: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn local_remove_many(
+    entries: Vec<crate::local_fs::LocalRemoveRequest>,
+) -> Result<crate::local_fs::LocalRemoveManyResult, String> {
+    Ok(crate::local_fs::remove_many(entries).await)
+}
+
+#[tauri::command]
 async fn sftp_local_entries(
     paths: Vec<String>,
 ) -> Result<Vec<crate::sftp_utils::LocalEntry>, String> {
@@ -1456,6 +1463,7 @@ pub fn run() {
             local_create_dir,
             local_rename,
             local_remove,
+            local_remove_many,
             write_text_file,
             read_text_file,
             load_app_data,

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { LocalFileEntry, LocalListing } from '../types/localFiles';
+import type { LocalFileEntry, LocalListing, LocalRemoveManyResult } from '../types/localFiles';
 
 interface LocalFilesState {
   currentPath: string | null;
@@ -13,6 +13,9 @@ interface LocalFilesState {
   cd: (path: string) => Promise<void>;
   cdUp: () => Promise<void>;
   refresh: () => Promise<void>;
+  createDir: (path: string) => Promise<void>;
+  rename: (oldPath: string, newPath: string) => Promise<void>;
+  removeMany: (entries: { path: string; recursive: boolean }[]) => Promise<LocalRemoveManyResult>;
 }
 
 export const useLocalFilesStore = create<LocalFilesState>((set, get) => ({
@@ -50,5 +53,38 @@ export const useLocalFilesStore = create<LocalFilesState>((set, get) => ({
 
   refresh: async () => {
     await get().fetchDirectory(get().currentPath);
+  },
+
+  createDir: async (path) => {
+    try {
+      await invoke('local_create_dir', { path });
+      await get().refresh();
+    } catch (error) {
+      set({ error: String(error) });
+      throw error;
+    }
+  },
+
+  rename: async (oldPath, newPath) => {
+    try {
+      await invoke('local_rename', { oldPath, newPath });
+      await get().refresh();
+    } catch (error) {
+      set({ error: String(error) });
+      throw error;
+    }
+  },
+
+  removeMany: async (entries) => {
+    try {
+      const result = await invoke<LocalRemoveManyResult>('local_remove_many', {
+        entries,
+      });
+      await get().refresh();
+      return result;
+    } catch (error) {
+      set({ error: String(error) });
+      throw error;
+    }
   },
 }));

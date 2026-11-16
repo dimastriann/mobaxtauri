@@ -33,6 +33,7 @@ interface FilePaneProps {
   dragMime?: string;
   acceptMime?: string;
   onDropEntries?: (entries: PaneEntry[]) => void;
+  toolbar?: React.ReactNode;
   actions?: (selected: PaneEntry[]) => React.ReactNode;
 }
 
@@ -65,6 +66,7 @@ const FilePane: React.FC<FilePaneProps> = ({
   dragMime,
   acceptMime,
   onDropEntries,
+  toolbar,
   actions,
 }) => {
   const [pathDraft, setPathDraft] = useState(path ?? '');
@@ -164,6 +166,11 @@ const FilePane: React.FC<FilePaneProps> = ({
           aria-label={pathPlaceholder}
           fontFamily="monospace"
         />
+        {toolbar && (
+          <HStack gap={1} wrap="wrap">
+            {toolbar}
+          </HStack>
+        )}
         {actions && selectedEntries.length > 0 && (
           <HStack gap={1} wrap="wrap">
             {actions(selectedEntries)}

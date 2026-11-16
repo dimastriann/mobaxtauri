@@ -4,7 +4,7 @@
 //! lists and mutates them. Symlinks are classified but recursive deletion
 //! removes the link itself rather than following it.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -18,6 +18,27 @@ pub struct LocalEntry {
     pub is_symlink: bool,
     pub size: u64,
     pub modified: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalRemoveRequest {
+    pub path: String,
+    pub recursive: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalRemoveFailure {
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalRemoveManyResult {
+    pub removed: Vec<String>,
+    pub failures: Vec<LocalRemoveFailure>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -160,9 +181,24 @@ pub async fn remove(path: &Path, recursive: bool) -> Result<(), String> {
     }
 }
 
+pub async fn remove_many(requests: Vec<LocalRemoveRequest>) -> LocalRemoveManyResult {
+    let mut removed = Vec::new();
+    let mut failures = Vec::new();
+    for request in requests {
+        match remove(Path::new(&request.path), request.recursive).await {
+            Ok(()) => removed.push(request.path),
+            Err(message) => failures.push(LocalRemoveFailure {
+                path: request.path,
+                message,
+            }),
+        }
+    }
+    LocalRemoveManyResult { removed, failures }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{create_dir, list_dir, remove, rename};
+    use super::{create_dir, list_dir, remove, remove_many, rename, LocalRemoveRequest};
 
     fn temp_root(name: &str) -> std::path::PathBuf {
         let unique = std::time::SystemTime::now()
@@ -232,6 +268,28 @@ mod tests {
         assert!(rename(&root.join("a.txt"), &root.join("b.txt"))
             .await
             .is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn remove_many_continues_after_a_failure() {
+        let root = temp_root("remove-many");
+        std::fs::write(root.join("a.txt"), b"a").expect("write a");
+        let missing = root.join("missing.txt");
+        let result = remove_many(vec![
+            LocalRemoveRequest {
+                path: root.join("a.txt").to_string_lossy().into_owned(),
+                recursive: false,
+            },
+            LocalRemoveRequest {
+                path: missing.to_string_lossy().into_owned(),
+                recursive: false,
+            },
+        ])
+        .await;
+        assert_eq!(result.removed.len(), 1);
+        assert_eq!(result.failures.len(), 1);
+        assert!(!root.join("a.txt").exists());
         let _ = std::fs::remove_dir_all(root);
     }
 

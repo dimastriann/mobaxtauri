@@ -99,16 +99,14 @@ describe('useSftpStore', () => {
     vi.mocked(invoke).mockResolvedValue(undefined);
     useSftpStore.setState({ currentPath: '/srv' });
 
-    const result = await useSftpStore
-      .getState()
-      .downloadEntriesTo(
-        'session-1',
-        [
-          { name: 'report.bin', isDir: false },
-          { name: 'logs', isDir: true },
-        ],
-        '/tmp/out',
-      );
+    const result = await useSftpStore.getState().downloadEntriesTo(
+      'session-1',
+      [
+        { name: 'report.bin', isDir: false },
+        { name: 'logs', isDir: true },
+      ],
+      '/tmp/out',
+    );
 
     expect(result).toEqual({ downloaded: 2, failures: [] });
     expect(invoke).toHaveBeenCalledWith('sftp_download_file', {

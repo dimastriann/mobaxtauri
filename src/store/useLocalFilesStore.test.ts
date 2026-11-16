@@ -45,6 +45,30 @@ describe('useLocalFilesStore', () => {
     expect(useLocalFilesStore.getState().currentPath).toBe('/home');
   });
 
+  it('mutates local entries and refreshes the listing', async () => {
+    mocks.invoke.mockResolvedValueOnce(listing);
+    await useLocalFilesStore.getState().fetchDirectory();
+
+    mocks.invoke.mockResolvedValueOnce(undefined);
+    mocks.invoke.mockResolvedValueOnce(listing);
+    await useLocalFilesStore.getState().createDir('/home/user/new');
+
+    expect(mocks.invoke).toHaveBeenCalledWith('local_create_dir', { path: '/home/user/new' });
+    expect(mocks.invoke).toHaveBeenLastCalledWith('local_list_dir', {
+      path: '/home/user',
+    });
+
+    mocks.invoke.mockResolvedValueOnce({ removed: ['/home/user/docs'], failures: [] });
+    mocks.invoke.mockResolvedValueOnce(listing);
+    const result = await useLocalFilesStore
+      .getState()
+      .removeMany([{ path: '/home/user/docs', recursive: true }]);
+    expect(result.removed).toEqual(['/home/user/docs']);
+    expect(mocks.invoke).toHaveBeenCalledWith('local_remove_many', {
+      entries: [{ path: '/home/user/docs', recursive: true }],
+    });
+  });
+
   it('surfaces local listing failures', async () => {
     mocks.invoke.mockRejectedValueOnce('permission denied');
     await useLocalFilesStore.getState().fetchDirectory('/root');

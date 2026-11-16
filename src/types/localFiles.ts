@@ -15,3 +15,13 @@ export interface LocalListing {
   parent: string | null;
   entries: LocalFileEntry[];
 }
+
+export interface LocalRemoveFailure {
+  path: string;
+  message: string;
+}
+
+export interface LocalRemoveManyResult {
+  removed: string[];
+  failures: LocalRemoveFailure[];
+}
