@@ -17,10 +17,16 @@ vi.mock('../store/useSessionStore', () => ({
 const mockedUseSessionStore = useSessionStore as unknown as Mock;
 const mockedUseSftpStore = useSftpStore as unknown as Mock;
 
+const setSftpStore = (state: Record<string, unknown>) => {
+  mockedUseSftpStore.mockImplementation((selector?: (store: Record<string, unknown>) => unknown) =>
+    selector ? selector(state) : state,
+  );
+};
+
 describe('SftpSidebar', () => {
   it('should render the placeholder when no files are present', () => {
     mockedUseSessionStore.mockReturnValue('session-1');
-    mockedUseSftpStore.mockReturnValue({
+    setSftpStore({
       currentPath: '/',
       files: [],
       isLoading: false,
@@ -42,7 +48,7 @@ describe('SftpSidebar', () => {
 
   it('supports ctrl-click and shift-click multi selection', () => {
     mockedUseSessionStore.mockReturnValue('session-1');
-    mockedUseSftpStore.mockReturnValue({
+    setSftpStore({
       currentPath: '/home',
       files: [
         { name: 'a.txt', is_dir: false, is_file: true, size: 1, modified: 0, mode: 0o100644 },
@@ -81,7 +87,7 @@ describe('SftpSidebar', () => {
 
   it('clears the selection when the list background is clicked', () => {
     mockedUseSessionStore.mockReturnValue('session-1');
-    mockedUseSftpStore.mockReturnValue({
+    setSftpStore({
       currentPath: '/home',
       files: [
         { name: 'a.txt', is_dir: false, is_file: true, size: 1, modified: 0, mode: 0o100644 },
@@ -108,7 +114,7 @@ describe('SftpSidebar', () => {
 
   it('filters the current directory by file name', () => {
     mockedUseSessionStore.mockReturnValue('session-1');
-    mockedUseSftpStore.mockReturnValue({
+    setSftpStore({
       currentPath: '/home',
       files: [
         { name: 'app.log', is_dir: false, is_file: true, size: 1, modified: 0, mode: 0o100644 },
@@ -137,7 +143,7 @@ describe('SftpSidebar', () => {
 
   it('offers a batch delete action for a multi-selection', () => {
     mockedUseSessionStore.mockReturnValue('session-1');
-    mockedUseSftpStore.mockReturnValue({
+    setSftpStore({
       currentPath: '/home',
       files: [
         { name: 'a.txt', is_dir: false, is_file: true, size: 1, modified: 0, mode: 0o100644 },
@@ -165,7 +171,7 @@ describe('SftpSidebar', () => {
   });
 
   it('should render file names when files are present', () => {
-    mockedUseSftpStore.mockReturnValue({
+    setSftpStore({
       currentPath: '/home',
       files: [
         { name: 'test.txt', is_dir: false, is_file: true, size: 1024, modified: 0 },
