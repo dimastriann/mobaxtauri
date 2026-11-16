@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 use tauri::{AppHandle, Emitter, Runtime};
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::{oneshot, Mutex, Notify};
 
 pub const SFTP_TRANSFER_EVENT: &str = "sftp-transfer";
 
@@ -95,6 +95,8 @@ pub struct TransferHandle {
     cancellation: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     wake: Arc<Notify>,
+    cancel_wake: Arc<Notify>,
+    slot_acquired: Arc<AtomicBool>,
 }
 
 impl TransferHandle {
@@ -106,6 +108,15 @@ impl TransferHandle {
         self.paused.load(Ordering::Acquire)
     }
 
+    /// Waits until a queued transfer is cancelled. Used while waiting for a
+    /// concurrency slot so cancellation does not have to wait for a slot.
+    pub async fn cancelled(&self) {
+        if self.is_cancelled() {
+            return;
+        }
+        self.cancel_wake.notified().await;
+    }
+
     /// Blocks while the transfer is paused. Cancellation is checked by the
     /// caller after this returns, so a paused transfer can still be cancelled.
     pub async fn wait_until_resumed(&self) {
@@ -115,9 +126,38 @@ impl TransferHandle {
     }
 }
 
-#[derive(Default)]
+const DEFAULT_CONCURRENCY: usize = 3;
+const MAX_CONCURRENCY: usize = 4;
+const MIN_CONCURRENCY: usize = 1;
+
+struct TransferQueue {
+    running: usize,
+    limit: usize,
+    waiters: VecDeque<oneshot::Sender<()>>,
+}
+
+impl Default for TransferQueue {
+    fn default() -> Self {
+        Self {
+            running: 0,
+            limit: DEFAULT_CONCURRENCY,
+            waiters: VecDeque::new(),
+        }
+    }
+}
+
 pub struct TransferManager {
     transfers: Mutex<HashMap<String, ActiveTransfer>>,
+    queue: Mutex<TransferQueue>,
+}
+
+impl Default for TransferManager {
+    fn default() -> Self {
+        Self {
+            transfers: Mutex::new(HashMap::new()),
+            queue: Mutex::new(TransferQueue::default()),
+        }
+    }
 }
 
 struct ActiveTransfer {
@@ -131,6 +171,8 @@ impl TransferManager {
             cancellation: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
             wake: Arc::new(Notify::new()),
+            cancel_wake: Arc::new(Notify::new()),
+            slot_acquired: Arc::new(AtomicBool::new(false)),
         };
         let mut transfers = self.transfers.lock().await;
         // Transfers queue up independently: starting one must not cancel
@@ -143,20 +185,73 @@ impl TransferManager {
             },
         ) {
             previous.handle.cancellation.store(true, Ordering::Release);
+            previous.handle.cancel_wake.notify_one();
+        }
+        drop(transfers);
+
+        let receiver = {
+            let mut queue = self.queue.lock().await;
+            if queue.running < queue.limit {
+                queue.running += 1;
+                handle.slot_acquired.store(true, Ordering::Release);
+                None
+            } else {
+                let (sender, receiver) = oneshot::channel();
+                queue.waiters.push_back(sender);
+                Some(receiver)
+            }
+        };
+        if let Some(receiver) = receiver {
+            tokio::select! {
+                result = receiver => {
+                    if result.is_ok() {
+                        handle.slot_acquired.store(true, Ordering::Release);
+                    }
+                }
+                _ = handle.cancelled() => {}
+            }
         }
         handle
     }
 
     pub async fn finish(&self, transfer_id: &str) {
-        self.transfers.lock().await.remove(transfer_id);
+        let removed = self.transfers.lock().await.remove(transfer_id);
+        let acquired = removed
+            .map(|transfer| transfer.handle.slot_acquired.load(Ordering::Acquire))
+            .unwrap_or(false);
+        if !acquired {
+            return;
+        }
+        let mut queue = self.queue.lock().await;
+        queue.running = queue.running.saturating_sub(1);
+        while let Some(waiter) = queue.waiters.pop_front() {
+            if waiter.send(()).is_ok() {
+                queue.running += 1;
+                break;
+            }
+        }
     }
 
     pub async fn cancel(&self, transfer_id: &str) -> bool {
         if let Some(transfer) = self.transfers.lock().await.get(transfer_id) {
             transfer.handle.cancellation.store(true, Ordering::Release);
+            transfer.handle.cancel_wake.notify_one();
             true
         } else {
             false
+        }
+    }
+
+    pub async fn set_concurrency(&self, limit: usize) {
+        let mut queue = self.queue.lock().await;
+        queue.limit = limit.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
+        while queue.running < queue.limit {
+            let Some(waiter) = queue.waiters.pop_front() else {
+                break;
+            };
+            if waiter.send(()).is_ok() {
+                queue.running += 1;
+            }
         }
     }
 
@@ -183,6 +278,7 @@ impl TransferManager {
         for transfer in self.transfers.lock().await.values() {
             if transfer.session_id == session_id {
                 transfer.handle.cancellation.store(true, Ordering::Release);
+                transfer.handle.cancel_wake.notify_one();
             }
         }
     }
@@ -197,6 +293,7 @@ pub fn emit_transfer<R: Runtime>(app_handle: &AppHandle<R>, event: TransferEvent
 #[cfg(test)]
 mod tests {
     use super::TransferManager;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn cancels_an_active_transfer() {
@@ -247,6 +344,30 @@ mod tests {
 
         assert!(!waiter.await.expect("waiter task"));
         assert!(!handle.is_paused());
+    }
+
+    #[tokio::test]
+    async fn limits_concurrent_transfers_and_wakes_waiters() {
+        let manager = Arc::new(TransferManager::default());
+        manager.set_concurrency(1).await;
+        let first = manager.begin("transfer-1".into(), "session-1".into()).await;
+
+        let mut second = tokio::spawn({
+            let manager = Arc::clone(&manager);
+            async move { manager.begin("transfer-2".into(), "session-1".into()).await }
+        });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), &mut second)
+                .await
+                .is_err(),
+            "the second transfer must wait for a slot"
+        );
+
+        manager.finish("transfer-1").await;
+        let second = second.await.expect("second transfer should start");
+        assert!(!first.is_cancelled());
+        assert!(!second.is_cancelled());
+        manager.finish("transfer-2").await;
     }
 
     #[test]

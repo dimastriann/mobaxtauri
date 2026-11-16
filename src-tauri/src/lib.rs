@@ -679,6 +679,18 @@ async fn sftp_resume_transfer(
 }
 
 #[tauri::command]
+async fn sftp_set_transfer_concurrency(
+    transfers: State<'_, TransferManager>,
+    limit: u8,
+) -> Result<u8, String> {
+    if !(1..=4).contains(&limit) {
+        return Err("Concurrent transfers must be between 1 and 4".into());
+    }
+    transfers.set_concurrency(limit as usize).await;
+    Ok(limit)
+}
+
+#[tauri::command]
 // Tauri commands receive named keyword arguments over IPC, so a params
 // struct would change the wire contract; the argument list mirrors the
 // event/transfer contract instead.
@@ -1492,7 +1504,8 @@ pub fn run() {
             export_terminal_recording,
             sftp_cancel_transfer,
             sftp_pause_transfer,
-            sftp_resume_transfer
+            sftp_resume_transfer,
+            sftp_set_transfer_concurrency
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
