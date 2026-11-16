@@ -29,6 +29,7 @@ import SettingsModal from './components/SettingsModal';
 import CommandPalette from './components/CommandPalette';
 import { useExportImport } from './hooks/useExportImport';
 import { useIdleLock } from './hooks/useIdleLock';
+import { useSftpTransferEvents } from './hooks/useSftpTransferEvents';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './components/ContextMenu';
 import { findOpenInstanceId, Session, useSessionStore } from './store/useSessionStore';
 import { useTerminalAppearanceStore } from './store/useTerminalAppearanceStore';
@@ -69,6 +70,7 @@ interface PromptConfig {
 function App() {
   const { t } = useTranslation();
   useIdleLock();
+  useSftpTransferEvents();
   const [isModalOpen, setModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<Session | undefined>(undefined);
   const [duplicateSource, setDuplicateSource] = useState<Session | undefined>(undefined);

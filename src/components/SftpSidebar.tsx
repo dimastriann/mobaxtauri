@@ -8,7 +8,6 @@ import {
   Spinner,
   IconButton,
   Flex,
-  Button,
   Input,
 } from '@chakra-ui/react';
 import {
@@ -54,17 +53,16 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { useSftpStore } from '../store/useSftpStore';
 import { useSessionStore } from '../store/useSessionStore';
 import { SSH_SESSION_STATE_EVENT, type SshSessionStateEvent } from '../types/ssh';
-import { SFTP_TRANSFER_EVENT, type SftpTransferEvent } from '../types/sftp';
 import type { SftpPathVariantsPayload } from '../types/sftp';
 import { type SftpFile } from '../store/useSftpStore';
 import { formatFileSize } from '../utils/formatFileSize';
-import { formatEta, formatTransferSpeed } from '../utils/transferMetrics';
 import { toaster } from './ui/toaster';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from './ContextMenu';
 import SftpEditorModal from './SftpEditorModal';
 import SftpConflictModal from './SftpConflictModal';
 import SftpPropertiesModal from './SftpPropertiesModal';
 import PromptModal from './PromptModal';
+import TransferQueue from './TransferQueue';
 import { useTranslation } from '../store/useLocaleStore';
 
 const formatMtime = (secs: number | null): string => {
@@ -185,11 +183,6 @@ const SftpSidebar: React.FC = () => {
     createFile,
     downloadFolder,
     reset,
-    transfers,
-    updateTransfer,
-    cancelTransfer,
-    retryTransfer,
-    dismissTransfer,
     conflictPrompt,
     resolveConflict,
     dismissConflict,
@@ -210,7 +203,6 @@ const SftpSidebar: React.FC = () => {
   const [filterQuery, setFilterQuery] = useState('');
   const panelRef = useRef<HTMLDivElement | null>(null);
   const lastSelectedIndexRef = useRef<number | null>(null);
-  const lastNotifiedTransferRef = useRef<{ id: string; status: string } | null>(null);
 
   const selectedFiles = files.filter((file) => selectedNames.has(file.name));
   const normalizedFilter = filterQuery.trim().toLocaleLowerCase();
@@ -335,44 +327,6 @@ const SftpSidebar: React.FC = () => {
       if (unlisten) unlisten();
     };
   }, [activeSessionId, reset]);
-
-  useEffect(() => {
-    const unlisten = listen<SftpTransferEvent>(SFTP_TRANSFER_EVENT, ({ payload }) => {
-      {
-        updateTransfer(payload);
-
-        if (
-          (payload.status === 'completed' || payload.status === 'failed') &&
-          (lastNotifiedTransferRef.current?.id !== payload.transferId ||
-            lastNotifiedTransferRef.current?.status !== payload.status)
-        ) {
-          lastNotifiedTransferRef.current = {
-            id: payload.transferId,
-            status: payload.status,
-          };
-
-          if (payload.status === 'completed') {
-            toaster.create({
-              title: t('sftp.transferCompleted'),
-              description: t('sftp.transferCompletedDetail', {
-                size: formatFileSize(payload.transferred),
-              }),
-              type: 'success',
-            });
-          } else if (payload.status === 'failed') {
-            toaster.create({
-              title: t('sftp.transferFailed'),
-              description: payload.message || t('sftp.transferFailedDetail'),
-              type: 'error',
-            });
-          }
-        }
-      }
-    });
-    return () => {
-      unlisten.then((dispose) => dispose());
-    };
-  }, [updateTransfer, t]);
 
   // OS-level drag & drop: route drops landing on this panel to uploads.
   // The Tauri drag event position is physical pixels, so it is converted
@@ -943,99 +897,7 @@ const SftpSidebar: React.FC = () => {
         )}
       </HStack>
 
-      {transfers.length > 0 && (
-        <VStack
-          align="stretch"
-          gap={0}
-          px={2}
-          py={1}
-          borderBottom="1px solid"
-          borderColor="border.subtle"
-          bg="bg.muted"
-          maxH="160px"
-          overflowY="auto"
-          className="custom-scrollbar"
-        >
-          <Text fontSize="10px" color="fg.subtle" fontWeight="bold" pt={1}>
-            {t('sftp.transfersHeading', {
-              active: transfers.filter((entry) => entry.status === 'running').length,
-            })}
-          </Text>
-          {transfers.map((entry) => {
-            const percent =
-              entry.percent !== undefined && entry.percent !== null
-                ? Math.min(100, entry.percent)
-                : entry.total
-                  ? Math.min(100, (entry.transferred / entry.total) * 100)
-                  : 25;
-            const failed = entry.status === 'failed';
-            const done = entry.status === 'completed';
-            const speed =
-              entry.status === 'running' ? formatTransferSpeed(entry.bytesPerSec) : null;
-            const eta = entry.status === 'running' ? formatEta(entry.etaSeconds) : null;
-            return (
-              <Box key={entry.transferId} py={1}>
-                <HStack justify="space-between" gap={2}>
-                  <Text fontSize="10px" color={failed ? 'red.fg' : 'fg.muted'} truncate flex={1}>
-                    {entry.kind.replace(/_/g, ' ')} ? {entry.label}{' '}
-                    {formatFileSize(entry.transferred)}
-                    {entry.total ? ` / ${formatFileSize(entry.total)}` : ''}
-                    {entry.percent !== undefined && entry.percent !== null
-                      ? ` (${entry.percent}%)`
-                      : ''}
-                    {entry.resumed ? ` | ${t('sftp.transfer.resumed')}` : ''}
-                    {speed ? ` | ${speed}` : ''}
-                    {eta ? ` | ${t('sftp.eta', { eta })}` : ''}
-                  </Text>
-                  {entry.status === 'running' ? (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => void cancelTransfer(entry.transferId)}
-                    >
-                      {t('sftp.transfer.cancel')}
-                    </Button>
-                  ) : failed ? (
-                    <HStack gap={1}>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        colorPalette="blue"
-                        onClick={() => void retryTransfer(entry.transferId)}
-                      >
-                        {t('sftp.transfer.retry')}
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        colorPalette="gray"
-                        onClick={() => dismissTransfer(entry.transferId)}
-                      >
-                        {t('sftp.transfer.dismiss')}
-                      </Button>
-                      <Text fontSize="10px" color="red.fg">
-                        {entry.status}
-                      </Text>
-                    </HStack>
-                  ) : (
-                    <Text fontSize="10px" color="green.fg">
-                      {entry.status}
-                    </Text>
-                  )}
-                </HStack>
-                <Box h="2px" bg="bg.emphasized" borderRadius="full" overflow="hidden" mt={1}>
-                  <Box
-                    h="full"
-                    bg={failed ? 'red.fg' : done ? 'green.fg' : 'blue.fg'}
-                    width={`${percent}%`}
-                    transition="width 120ms linear"
-                  />
-                </Box>
-              </Box>
-            );
-          })}
-        </VStack>
-      )}
+      <TransferQueue />
 
       {/* File List */}
       <VStack
