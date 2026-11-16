@@ -5,6 +5,7 @@ import {
   LuPencil,
   LuX,
   LuFolderPlus,
+  LuFolderTree,
   LuCode,
   LuTag,
   LuCopy,
@@ -19,6 +20,7 @@ import {
 } from 'react-icons/lu';
 import TerminalContainer from './components/Terminal';
 import Dashboard from './components/Dashboard';
+import SftpWorkspace from './components/SftpWorkspace';
 import TabBar from './components/TabBar';
 import Sidebar from './components/Sidebar';
 import TitleBar from './components/TitleBar';
@@ -95,7 +97,7 @@ function App() {
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'sftp' | 'snippets' | 'tunnels'>(
     'sessions',
   );
-  const [mainView, setMainView] = useState<'dashboard' | 'terminals'>('dashboard');
+  const [mainView, setMainView] = useState<'dashboard' | 'terminals' | 'files'>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -544,6 +546,21 @@ function App() {
           >
             <LuTerminal size={22} />
           </Flex>
+          <Flex
+            p={3}
+            borderRadius="xl"
+            cursor="pointer"
+            color={mainView === 'files' ? 'brand.500' : 'fg.muted'}
+            bg={mainView === 'files' ? 'brand.subtle' : 'transparent'}
+            _hover={{
+              bg: mainView === 'files' ? 'brand.subtle' : 'bg.muted',
+              color: mainView === 'files' ? 'brand.500' : 'fg',
+            }}
+            onClick={() => setMainView('files')}
+            title={t('files.title')}
+          >
+            <LuFolderTree size={22} />
+          </Flex>
           <Flex flex={1} />
           <Flex
             p={3}
@@ -576,7 +593,11 @@ function App() {
           />
         </Box>
 
-        <Flex flex={1} overflow="hidden" display={mainView !== 'dashboard' ? 'flex' : 'none'}>
+        <Box display={mainView === 'files' ? 'flex' : 'none'} flex={1} minH={0}>
+          <SftpWorkspace />
+        </Box>
+
+        <Flex flex={1} overflow="hidden" display={mainView === 'terminals' ? 'flex' : 'none'}>
           <Sidebar
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}

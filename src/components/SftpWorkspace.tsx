@@ -1,0 +1,195 @@
+import React, { useEffect } from 'react';
+import { Flex, HStack, Text } from '@chakra-ui/react';
+import FilePane, { type PaneEntry } from './FilePane';
+import TransferQueue from './TransferQueue';
+import { useSftpStore } from '../store/useSftpStore';
+import { useLocalFilesStore } from '../store/useLocalFilesStore';
+import { useSessionStore } from '../store/useSessionStore';
+import { useTranslation } from '../store/useLocaleStore';
+
+const joinRemotePath = (base: string, name: string): string =>
+  base.endsWith('/') ? `${base}${name}` : `${base}/${name}`;
+
+const SftpWorkspace: React.FC = () => {
+  const { t } = useTranslation();
+  const sessions = useSessionStore((state) => state.sessions);
+  const openTabs = useSessionStore((state) => state.openTabs);
+  const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const setActiveSession = useSessionStore((state) => state.setActiveSession);
+
+  const remotePath = useSftpStore((state) => state.currentPath);
+  const remoteFiles = useSftpStore((state) => state.files);
+  const remoteLoading = useSftpStore((state) => state.isLoading);
+  const remoteError = useSftpStore((state) => state.error);
+  const fetchRemote = useSftpStore((state) => state.fetchDirectory);
+  const cdRemote = useSftpStore((state) => state.cd);
+  const openRemoteFile = useSftpStore((state) => state.openFile);
+
+  const localPath = useLocalFilesStore((state) => state.currentPath);
+  const localParent = useLocalFilesStore((state) => state.parent);
+  const localEntries = useLocalFilesStore((state) => state.entries);
+  const localLoading = useLocalFilesStore((state) => state.isLoading);
+  const localError = useLocalFilesStore((state) => state.error);
+  const fetchLocal = useLocalFilesStore((state) => state.fetchDirectory);
+  const cdLocal = useLocalFilesStore((state) => state.cd);
+  const localUp = useLocalFilesStore((state) => state.cdUp);
+  const refreshLocal = useLocalFilesStore((state) => state.refresh);
+
+  const sshSessions = openTabs
+    .map((id) => sessions.find((session) => session.id === id))
+    .filter((session): session is NonNullable<typeof session> => session?.type === 'ssh');
+  const activeSession = sshSessions.find((session) => session.id === activeSessionId) ?? null;
+  const activeFileSessionId = activeSession?.id ?? null;
+
+  useEffect(() => {
+    void fetchLocal();
+  }, [fetchLocal]);
+
+  useEffect(() => {
+    if (!activeFileSessionId) return;
+    useSftpStore.getState().reset();
+    void fetchRemote(activeFileSessionId, '/');
+  }, [activeFileSessionId, fetchRemote]);
+
+  const localPaneEntries: PaneEntry[] = localEntries.map((entry) => ({
+    key: entry.path,
+    name: entry.name,
+    path: entry.path,
+    isDir: entry.isDir,
+    isFile: entry.isFile,
+    isSymlink: entry.isSymlink,
+    size: entry.size,
+    modified: entry.modified,
+  }));
+
+  const remotePaneEntries: PaneEntry[] = remoteFiles.map((file) => ({
+    key: file.name,
+    name: file.name,
+    path: joinRemotePath(remotePath, file.name),
+    isDir: file.is_dir,
+    isFile: file.is_file,
+    size: file.size,
+    modified: file.modified,
+    permissions: file.permissions,
+  }));
+
+  return (
+    <Flex direction="column" flex={1} minH={0} bg="bg.panel" overflow="hidden">
+      <HStack
+        px={4}
+        py={2}
+        justify="space-between"
+        borderBottom="1px solid"
+        borderColor="border.subtle"
+        bg="bg.muted"
+      >
+        <HStack gap={3}>
+          <Text fontSize="14px" fontWeight="bold" color="fg">
+            {t('files.title')}
+          </Text>
+          <select
+            aria-label={t('files.session')}
+            value={activeSession?.id ?? ''}
+            onChange={(event) => {
+              if (event.target.value) setActiveSession(event.target.value);
+            }}
+            disabled={sshSessions.length === 0}
+            style={{
+              width: 220,
+              height: 26,
+              background: 'transparent',
+              border: '1px solid var(--chakra-colors-border-subtle)',
+              borderRadius: 4,
+              padding: '0 6px',
+              fontSize: 12,
+              color: 'inherit',
+            }}
+          >
+            <option value="" style={{ background: 'var(--chakra-colors-bg-panel)' }}>
+              {t('files.chooseSession')}
+            </option>
+            {sshSessions.map((session) => (
+              <option
+                key={session.id}
+                value={session.id}
+                style={{ background: 'var(--chakra-colors-bg-panel)' }}
+              >
+                {session.name}
+              </option>
+            ))}
+          </select>
+        </HStack>
+      </HStack>
+
+      <TransferQueue maxHeight="150px" />
+
+      {!activeSession ? (
+        <Flex flex={1} align="center" justify="center" direction="column" gap={2}>
+          <Text fontSize="13px" color="fg.muted">
+            {t('files.chooseSession')}
+          </Text>
+          <Text fontSize="11px" color="fg.subtle">
+            {t('files.chooseSessionHint')}
+          </Text>
+        </Flex>
+      ) : activeSession.status !== 'connected' ? (
+        <Flex flex={1} align="center" justify="center" direction="column" gap={2}>
+          <Text fontSize="13px" color="red.fg">
+            {t('files.sessionNotConnected')}
+          </Text>
+          <Text fontSize="11px" color="fg.subtle">
+            {t('files.sessionNotConnectedHint')}
+          </Text>
+        </Flex>
+      ) : (
+        <Flex flex={1} minH={0} gap="1px" bg="border.subtle">
+          <FilePane
+            key={`local-${localPath ?? 'home'}`}
+            title={t('files.local')}
+            path={localPath}
+            parent={localParent}
+            entries={localPaneEntries}
+            isLoading={localLoading}
+            error={localError}
+            emptyLabel={t('files.empty')}
+            pathPlaceholder={t('files.pathPlaceholder')}
+            upLabel={t('files.up')}
+            refreshLabel={t('files.refresh')}
+            onOpen={(entry) => {
+              if (entry.isDir) void cdLocal(entry.path);
+            }}
+            onUp={() => void localUp()}
+            onRefresh={() => void refreshLocal()}
+            onPathSubmit={(path) => {
+              if (path) void cdLocal(path);
+            }}
+          />
+          <FilePane
+            key={`remote-${activeSession.id}-${remotePath}`}
+            title={t('files.remote')}
+            path={remotePath}
+            parent={remotePath === '/' ? null : remotePath.replace(/\/[^/]+\/?$/, '') || '/'}
+            entries={remotePaneEntries}
+            isLoading={remoteLoading}
+            error={remoteError}
+            emptyLabel={t('files.empty')}
+            pathPlaceholder={t('files.pathPlaceholder')}
+            upLabel={t('files.up')}
+            refreshLabel={t('files.refresh')}
+            onOpen={(entry) => {
+              if (entry.isDir) void cdRemote(activeSession.id, entry.path);
+              else void openRemoteFile(activeSession.id, entry.path);
+            }}
+            onUp={() => void cdRemote(activeSession.id, '..')}
+            onRefresh={() => void fetchRemote(activeSession.id)}
+            onPathSubmit={(path) => {
+              if (path) void fetchRemote(activeSession.id, path);
+            }}
+          />
+        </Flex>
+      )}
+    </Flex>
+  );
+};
+
+export default SftpWorkspace;
