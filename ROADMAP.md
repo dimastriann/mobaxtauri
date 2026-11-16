@@ -67,6 +67,15 @@ This roadmap communicates direction rather than fixed deadlines. Priorities may 
 - [x] Lock the credential vault manually or after an idle timeout
 - [x] Export and import trusted hosts
 
+## v0.13.0: files, transfer control, diagnostics
+
+- [x] Full-width dual-pane local/remote Files workspace
+- [x] Drag-and-drop and button transfers between panes
+- [x] Local new-folder, rename, and multi-select delete
+- [x] Pause, resume, and concurrent-transfer controls
+- [x] Connection diagnostics with copy/save reports
+- [x] Trusted host-key fingerprints and auth method visibility
+
 ## Later: broader workflows
 
 - [x] SSH agent support
