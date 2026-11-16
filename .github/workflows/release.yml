@@ -74,10 +74,9 @@ jobs:
 
       - name: Upload Portable Executable to Release (Windows Only)
         if: matrix.platform == 'windows-latest'
-        uses: softprops/action-gh-release@v3
-        with:
-          files: src-tauri/target/release/MobaXTauri_Portable.exe
-          tag_name: v${{ steps.tauri_build.outputs.appVersion }}
-          draft: true
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "v${{ steps.tauri_build.outputs.appVersion }}" `
+            "src-tauri/target/release/MobaXTauri_Portable.exe" --clobber
