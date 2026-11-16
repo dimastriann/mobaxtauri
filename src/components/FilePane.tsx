@@ -30,6 +30,9 @@ interface FilePaneProps {
   onUp: () => void;
   onRefresh: () => void;
   onPathSubmit: (path: string) => void;
+  dragMime?: string;
+  acceptMime?: string;
+  onDropEntries?: (entries: PaneEntry[]) => void;
   actions?: (selected: PaneEntry[]) => React.ReactNode;
 }
 
@@ -59,10 +62,14 @@ const FilePane: React.FC<FilePaneProps> = ({
   onUp,
   onRefresh,
   onPathSubmit,
+  dragMime,
+  acceptMime,
+  onDropEntries,
   actions,
 }) => {
   const [pathDraft, setPathDraft] = useState(path ?? '');
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(() => new Set());
+  const [dragOver, setDragOver] = useState(false);
   const lastIndexRef = useRef<number | null>(null);
 
   const selectedEntries = entries.filter((entry) => selectedPaths.has(entry.path));
@@ -164,7 +171,33 @@ const FilePane: React.FC<FilePaneProps> = ({
         )}
       </Flex>
 
-      <Box flex={1} minH={0} overflowY="auto" className="custom-scrollbar">
+      <Box
+        flex={1}
+        minH={0}
+        overflowY="auto"
+        className="custom-scrollbar"
+        bg={dragOver ? 'blue.subtle' : undefined}
+        onDragOver={(event) => {
+          if (!acceptMime || !event.dataTransfer.types.includes(acceptMime)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(event) => {
+          if (!acceptMime || !onDropEntries) return;
+          const raw = event.dataTransfer.getData(acceptMime);
+          if (!raw) return;
+          event.preventDefault();
+          setDragOver(false);
+          try {
+            const entries = JSON.parse(raw) as PaneEntry[];
+            if (Array.isArray(entries)) onDropEntries(entries);
+          } catch {
+            // Ignore malformed drag payloads from other applications.
+          }
+        }}
+      >
         {isLoading ? (
           <Flex align="center" justify="center" h="full" minH="120px">
             <Spinner size="sm" />
@@ -206,6 +239,13 @@ const FilePane: React.FC<FilePaneProps> = ({
                   _hover={{ bg: selected ? 'blue.subtle' : 'bg.muted' }}
                   onClick={(event) => selectEntry(entry, index, event)}
                   onDoubleClick={() => onOpen(entry)}
+                  draggable={Boolean(dragMime)}
+                  onDragStart={(event) => {
+                    if (!dragMime) return;
+                    const dragged = selectedPaths.has(entry.path) ? selectedEntries : [entry];
+                    event.dataTransfer.setData(dragMime, JSON.stringify(dragged));
+                    event.dataTransfer.effectAllowed = 'copy';
+                  }}
                 >
                   <Icon
                     as={entry.isSymlink ? LuLink : entry.isDir ? LuFolder : LuFile}

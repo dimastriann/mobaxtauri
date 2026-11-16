@@ -93,6 +93,39 @@ describe('useSftpStore', () => {
     expect(state.isLoading).toBe(false);
   });
 
+  it('downloads selected remote entries into a local directory', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    useSftpStore.setState({ currentPath: '/srv' });
+
+    const result = await useSftpStore
+      .getState()
+      .downloadEntriesTo(
+        'session-1',
+        [
+          { name: 'report.bin', isDir: false },
+          { name: 'logs', isDir: true },
+        ],
+        '/tmp/out',
+      );
+
+    expect(result).toEqual({ downloaded: 2, failures: [] });
+    expect(invoke).toHaveBeenCalledWith('sftp_download_file', {
+      sessionId: 'session-1',
+      remotePath: '/srv/report.bin',
+      localPath: '/tmp/out/report.bin',
+      transferId: expect.stringMatching(/^download-/),
+    });
+    expect(invoke).toHaveBeenCalledWith('sftp_download_folder', {
+      sessionId: 'session-1',
+      remotePath: '/srv/logs',
+      localPath: '/tmp/out/logs',
+      transferId: expect.stringMatching(/^folder-/),
+      conflictPolicy: 'rename',
+    });
+  });
+
   it('retries a failed transfer using its remembered request', async () => {
     const { invoke } = await import('@tauri-apps/api/core');
     const { save } = await import('@tauri-apps/plugin-dialog');

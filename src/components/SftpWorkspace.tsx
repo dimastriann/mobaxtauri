@@ -1,11 +1,15 @@
 import React, { useEffect } from 'react';
-import { Flex, HStack, Text } from '@chakra-ui/react';
+import { Button, Flex, HStack, Text } from '@chakra-ui/react';
 import FilePane, { type PaneEntry } from './FilePane';
 import TransferQueue from './TransferQueue';
 import { useSftpStore } from '../store/useSftpStore';
 import { useLocalFilesStore } from '../store/useLocalFilesStore';
 import { useSessionStore } from '../store/useSessionStore';
 import { useTranslation } from '../store/useLocaleStore';
+import { toaster } from './ui/toaster';
+
+const LOCAL_DRAG_MIME = 'application/x-mobaxtauri-local';
+const REMOTE_DRAG_MIME = 'application/x-mobaxtauri-remote';
 
 const joinRemotePath = (base: string, name: string): string =>
   base.endsWith('/') ? `${base}${name}` : `${base}/${name}`;
@@ -72,6 +76,34 @@ const SftpWorkspace: React.FC = () => {
     modified: file.modified,
     permissions: file.permissions,
   }));
+
+  const uploadLocalEntries = async (entries: PaneEntry[]) => {
+    if (!activeSession || entries.length === 0) return;
+    await useSftpStore.getState().uploadPaths(
+      activeSession.id,
+      entries.map((entry) => entry.path),
+    );
+  };
+
+  const downloadRemoteEntries = async (entries: PaneEntry[]) => {
+    if (!activeSession || !localPath || entries.length === 0) return;
+    const result = await useSftpStore.getState().downloadEntriesTo(
+      activeSession.id,
+      entries.map((entry) => ({ name: entry.name, isDir: entry.isDir })),
+      localPath,
+    );
+    await refreshLocal();
+    if (result.failures.length > 0) {
+      toaster.create({
+        title: t('files.transferFailed'),
+        description: result.failures
+          .slice(0, 3)
+          .map((failure) => `${failure.name}: ${failure.message}`)
+          .join('\n'),
+        type: 'error',
+      });
+    }
+  };
 
   return (
     <Flex direction="column" flex={1} minH={0} bg="bg.panel" overflow="hidden">
@@ -163,6 +195,19 @@ const SftpWorkspace: React.FC = () => {
             onPathSubmit={(path) => {
               if (path) void cdLocal(path);
             }}
+            dragMime={LOCAL_DRAG_MIME}
+            acceptMime={REMOTE_DRAG_MIME}
+            onDropEntries={(entries) => void downloadRemoteEntries(entries)}
+            actions={(selected) => (
+              <Button
+                size="xs"
+                variant="subtle"
+                colorPalette="blue"
+                onClick={() => void uploadLocalEntries(selected)}
+              >
+                {t('files.uploadSelected', { count: selected.length })}
+              </Button>
+            )}
           />
           <FilePane
             key={`remote-${activeSession.id}-${remotePath}`}
@@ -185,6 +230,19 @@ const SftpWorkspace: React.FC = () => {
             onPathSubmit={(path) => {
               if (path) void fetchRemote(activeSession.id, path);
             }}
+            dragMime={REMOTE_DRAG_MIME}
+            acceptMime={LOCAL_DRAG_MIME}
+            onDropEntries={(entries) => void uploadLocalEntries(entries)}
+            actions={(selected) => (
+              <Button
+                size="xs"
+                variant="subtle"
+                colorPalette="blue"
+                onClick={() => void downloadRemoteEntries(selected)}
+              >
+                {t('files.downloadSelected', { count: selected.length })}
+              </Button>
+            )}
           />
         </Flex>
       )}

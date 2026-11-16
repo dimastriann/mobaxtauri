@@ -68,6 +68,11 @@ interface SftpState {
     sessionId: string,
     files: SftpFile[],
   ) => Promise<SftpBatchDownloadResult | null>;
+  downloadEntriesTo: (
+    sessionId: string,
+    entries: { name: string; isDir: boolean }[],
+    localDirectory: string,
+  ) => Promise<SftpBatchDownloadResult>;
   uploadFile: (sessionId: string) => Promise<void>;
   uploadFolder: (sessionId: string) => Promise<void>;
   uploadPaths: (sessionId: string, paths: string[]) => Promise<void>;
@@ -613,6 +618,55 @@ export const useSftpStore = create<SftpState>((set, get) => {
         }
       }
       await get().fetchDirectory(sessionId);
+      return result;
+    },
+
+    downloadEntriesTo: async (sessionId, entries, localDirectory) => {
+      const result: SftpBatchDownloadResult = { downloaded: 0, failures: [] };
+      const remotePath = get().currentPath;
+      for (const [index, entry] of entries.entries()) {
+        const sourcePath = remotePath.endsWith('/')
+          ? `${remotePath}${entry.name}`
+          : `${remotePath}/${entry.name}`;
+        const localPath = joinLocalPath(localDirectory, entry.name);
+        try {
+          if (entry.isDir) {
+            const transferId = `folder-${Date.now()}-${index}`;
+            rememberTransfer(transferId, {
+              kind: 'folder_download',
+              sessionId,
+              sourcePath,
+              destPath: localPath,
+              conflictPolicy: 'rename',
+            });
+            await invoke('sftp_download_folder', {
+              sessionId,
+              remotePath: sourcePath,
+              localPath,
+              transferId,
+              conflictPolicy: 'rename',
+            });
+          } else {
+            const transferId = `download-${Date.now()}-${index}`;
+            rememberTransfer(transferId, {
+              kind: 'download',
+              sessionId,
+              sourcePath,
+              destPath: localPath,
+            });
+            await invoke('sftp_download_file', {
+              sessionId,
+              remotePath: sourcePath,
+              localPath,
+              transferId,
+            });
+          }
+          result.downloaded += 1;
+        } catch (err) {
+          result.failures.push({ name: entry.name, message: String(err) });
+        }
+      }
+      set({ isLoading: false });
       return result;
     },
 
