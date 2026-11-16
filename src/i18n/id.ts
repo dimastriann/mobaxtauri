@@ -13,6 +13,10 @@ export const id: Record<TranslationKey, string> = {
   'ssh.autoReconnectHelper': 'Coba lagi otomatis saat kredensial tersedia tanpa prompt.',
   'ssh.autoReconnectMax': 'Batas waktu tunggu koneksi ulang',
   'ssh.autoReconnectMaxHelper': 'Jeda dimulai dari 1 detik dan berlipat hingga batas ini.',
+  'ssh.transferConcurrency': 'Transfer bersamaan',
+  'ssh.transferConcurrencyValue': '{count} transfer',
+  'ssh.transferConcurrencyHelper':
+    'Transfer berikutnya menunggu dalam antrean hingga slot tersedia.',
   'ssh.vault.heading': 'Vault Kredensial',
   'ssh.vault.helper':
     'Vault terkunci setelah tidak ada aktivitas keyboard atau mouse. Mengunci tidak memutus sesi yang terbuka.',
@@ -71,6 +75,9 @@ export const id: Record<TranslationKey, string> = {
   'sftp.menu.duplicate': 'Duplikat',
   'sftp.transfersHeading': 'TRANSFER ({active} aktif)',
   'sftp.transfer.retry': 'Coba Lagi',
+  'sftp.transfer.pause': 'Jeda',
+  'sftp.transfer.resume': 'Lanjutkan',
+  'sftp.transfer.paused': 'Dijeda',
   'sftp.transfer.dismiss': 'Tutup',
   'sftp.transfer.resumed': 'Dilanjutkan',
   'sftp.transfer.cancel': 'Batal',

@@ -8,6 +8,7 @@ import {
   type FailedTransferRequest,
   type PersistedFailedTransfer,
 } from '../utils/failedTransfers';
+import { loadTransferConcurrency, saveTransferConcurrency } from '../utils/transferConcurrency';
 import {
   SFTP_TARGET_EXISTS_MARKER,
   type SftpConflictPolicy,
@@ -55,6 +56,7 @@ interface SftpState {
   history: string[]; // For going back
   /** Every transfer seen in this session, in arrival order. */
   transfers: SftpTransferEvent[];
+  transferConcurrency: number;
   conflictPrompt: SftpConflictPrompt | null;
 
   fetchDirectory: (sessionId: string, path?: string) => Promise<void>;
@@ -87,6 +89,9 @@ interface SftpState {
   retryTransfer: (transferId: string) => Promise<void>;
   dismissTransfer: (transferId: string) => void;
   cancelTransfer: (transferId: string) => Promise<void>;
+  pauseTransfer: (transferId: string) => Promise<void>;
+  resumeTransfer: (transferId: string) => Promise<void>;
+  setTransferConcurrency: (limit: number) => Promise<number>;
   resolveConflict: (policy: SftpConflictPolicy) => Promise<void>;
   dismissConflict: () => void;
 }
@@ -210,6 +215,7 @@ export const useSftpStore = create<SftpState>((set, get) => {
     error: null,
     history: [],
     transfers: hydratedFailedTransfers.map((entry) => entry.event),
+    transferConcurrency: loadTransferConcurrency(),
     conflictPrompt: null,
 
     updateTransfer: (transfer) => {
@@ -217,7 +223,11 @@ export const useSftpStore = create<SftpState>((set, get) => {
         (entry) => entry.transferId !== transfer.transferId,
       );
       set({ transfers: [...withoutEntry, transfer] });
-      if (transfer.status === 'running') {
+      if (
+        transfer.status === 'running' ||
+        transfer.status === 'queued' ||
+        transfer.status === 'paused'
+      ) {
         set({ isLoading: true });
         return;
       }
@@ -407,6 +417,42 @@ export const useSftpStore = create<SftpState>((set, get) => {
 
     cancelTransfer: async (transferId) => {
       await invoke('sftp_cancel_transfer', { transferId });
+    },
+
+    pauseTransfer: async (transferId) => {
+      const entry = get().transfers.find((transfer) => transfer.transferId === transferId);
+      if (!entry) return;
+      try {
+        const paused = await invoke<boolean>('sftp_pause_transfer', { transferId });
+        if (paused) get().updateTransfer({ ...entry, status: 'paused' });
+      } catch (error) {
+        set({ error: String(error) });
+      }
+    },
+
+    resumeTransfer: async (transferId) => {
+      const entry = get().transfers.find((transfer) => transfer.transferId === transferId);
+      if (!entry) return;
+      try {
+        const resumed = await invoke<boolean>('sftp_resume_transfer', { transferId });
+        if (resumed) get().updateTransfer({ ...entry, status: 'running' });
+      } catch (error) {
+        set({ error: String(error) });
+      }
+    },
+
+    setTransferConcurrency: async (limit) => {
+      const normalized = saveTransferConcurrency(limit);
+      try {
+        const applied = await invoke<number>('sftp_set_transfer_concurrency', {
+          limit: normalized,
+        });
+        set({ transferConcurrency: applied });
+        return applied;
+      } catch (error) {
+        set({ error: String(error) });
+        return get().transferConcurrency;
+      }
     },
 
     fetchDirectory: async (sessionId, path) => {

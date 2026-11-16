@@ -41,6 +41,7 @@ import type { KnownHost } from '../types/ssh';
 import SshKeyManager from './SshKeyManager';
 import { useSessionStore } from '../store/useSessionStore';
 import { useCredentialStore } from '../store/useCredentialStore';
+import { useSftpStore } from '../store/useSftpStore';
 import { useTerminalAppearanceStore } from '../store/useTerminalAppearanceStore';
 import { useTranslation } from '../store/useLocaleStore';
 import { LOCALES, type Locale } from '../i18n';
@@ -609,6 +610,8 @@ const SshSettings: React.FC = () => {
   const [autoLockMinutes, setAutoLockMinutes] = useState(loadAutoLockMinutes);
   const isVaultUnlocked = useCredentialStore((state) => state.isUnlocked);
   const lockVault = useCredentialStore((state) => state.lock);
+  const transferConcurrency = useSftpStore((state) => state.transferConcurrency);
+  const setTransferConcurrency = useSftpStore((state) => state.setTransferConcurrency);
 
   const saveDefaultPort = (val: string) => {
     setDefaultPort(val);
@@ -728,6 +731,25 @@ const SshSettings: React.FC = () => {
         </HStack>
         <Text fontSize="11px" color="fg.muted" mt={1}>
           {t('ssh.autoReconnectMaxHelper')}
+        </Text>
+      </Box>
+      <Box borderTop="1px solid" borderColor="border.subtle" pt={3}>
+        <Text fontSize="13px" color="fg" mb={1}>
+          {t('ssh.transferConcurrency')}
+        </Text>
+        <select
+          aria-label={t('ssh.transferConcurrency')}
+          value={transferConcurrency}
+          onChange={(event) => void setTransferConcurrency(Number(event.target.value))}
+        >
+          {[1, 2, 3, 4].map((limit) => (
+            <option key={limit} value={limit}>
+              {t('ssh.transferConcurrencyValue', { count: limit })}
+            </option>
+          ))}
+        </select>
+        <Text fontSize="11px" color="fg.muted" mt={1}>
+          {t('ssh.transferConcurrencyHelper')}
         </Text>
       </Box>
       <Box borderTop="1px solid" borderColor="border.subtle" pt={3}>

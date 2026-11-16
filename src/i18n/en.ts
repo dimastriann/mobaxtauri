@@ -16,6 +16,10 @@ export const en = {
   'ssh.autoReconnectHelper': 'Retry automatically when credentials are available without a prompt.',
   'ssh.autoReconnectMax': 'Maximum reconnect delay',
   'ssh.autoReconnectMaxHelper': 'Backoff starts at 1 second and doubles up to this limit.',
+  'ssh.transferConcurrency': 'Concurrent transfers',
+  'ssh.transferConcurrencyValue': '{count} transfer(s)',
+  'ssh.transferConcurrencyHelper':
+    'Additional transfers wait in the queue until a slot is available.',
   'ssh.vault.heading': 'Credential Vault',
   'ssh.vault.helper':
     'The vault locks after a period without keyboard or mouse activity. Locking does not disconnect open sessions.',
@@ -74,6 +78,9 @@ export const en = {
   'sftp.menu.duplicate': 'Duplicate',
   'sftp.transfersHeading': 'TRANSFERS ({active} active)',
   'sftp.transfer.retry': 'Retry',
+  'sftp.transfer.pause': 'Pause',
+  'sftp.transfer.resume': 'Resume',
+  'sftp.transfer.paused': 'Paused',
   'sftp.transfer.dismiss': 'Dismiss',
   'sftp.transfer.resumed': 'Resumed',
   'sftp.transfer.cancel': 'Cancel',

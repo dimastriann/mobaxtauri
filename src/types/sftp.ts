@@ -8,7 +8,13 @@ export const SFTP_FILE_CHANGED_MARKER = 'SFTP FILE CHANGED';
 
 export type SftpConflictPolicy = 'overwrite' | 'rename' | 'skip';
 
-export type SftpTransferStatus = 'running' | 'completed' | 'cancelled' | 'failed';
+export type SftpTransferStatus =
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'cancelled'
+  | 'failed';
 
 export type SftpTransferKind = 'upload' | 'download' | 'copy' | 'folder_upload' | 'folder_download';
 

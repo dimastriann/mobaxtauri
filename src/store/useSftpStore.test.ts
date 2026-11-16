@@ -153,6 +153,37 @@ describe('useSftpStore', () => {
     );
   });
 
+  it('pauses and resumes an active transfer', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockResolvedValue(true);
+    useSftpStore.getState().updateTransfer({
+      transferId: 'transfer-1',
+      sessionId: 'session-1',
+      kind: 'upload',
+      label: 'file.bin',
+      status: 'running',
+      transferred: 64,
+      total: 128,
+      message: null,
+    });
+
+    await useSftpStore.getState().pauseTransfer('transfer-1');
+    expect(invoke).toHaveBeenCalledWith('sftp_pause_transfer', { transferId: 'transfer-1' });
+    expect(useSftpStore.getState().transfers[0].status).toBe('paused');
+
+    await useSftpStore.getState().resumeTransfer('transfer-1');
+    expect(invoke).toHaveBeenCalledWith('sftp_resume_transfer', { transferId: 'transfer-1' });
+    expect(useSftpStore.getState().transfers[0].status).toBe('running');
+  });
+
+  it('applies the transfer concurrency setting', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockResolvedValueOnce(2);
+    await expect(useSftpStore.getState().setTransferConcurrency(2)).resolves.toBe(2);
+    expect(invoke).toHaveBeenCalledWith('sftp_set_transfer_concurrency', { limit: 2 });
+    expect(useSftpStore.getState().transferConcurrency).toBe(2);
+  });
+
   it('queues concurrent transfers and delegates cancellation per id', async () => {
     const { invoke } = await import('@tauri-apps/api/core');
     vi.mocked(invoke).mockResolvedValueOnce(undefined);

@@ -13,6 +13,8 @@ const TransferQueue: React.FC<TransferQueueProps> = ({ maxHeight = '160px' }) =>
   const { t } = useTranslation();
   const transfers = useSftpStore((state) => state.transfers);
   const cancelTransfer = useSftpStore((state) => state.cancelTransfer);
+  const pauseTransfer = useSftpStore((state) => state.pauseTransfer);
+  const resumeTransfer = useSftpStore((state) => state.resumeTransfer);
   const retryTransfer = useSftpStore((state) => state.retryTransfer);
   const dismissTransfer = useSftpStore((state) => state.dismissTransfer);
 
@@ -33,7 +35,10 @@ const TransferQueue: React.FC<TransferQueueProps> = ({ maxHeight = '160px' }) =>
     >
       <Text fontSize="10px" color="fg.subtle" fontWeight="bold" pt={1}>
         {t('sftp.transfersHeading', {
-          active: transfers.filter((entry) => entry.status === 'running').length,
+          active: transfers.filter(
+            (entry) =>
+              entry.status === 'running' || entry.status === 'queued' || entry.status === 'paused',
+          ).length,
         })}
       </Text>
       {transfers.map((entry) => {
@@ -45,6 +50,8 @@ const TransferQueue: React.FC<TransferQueueProps> = ({ maxHeight = '160px' }) =>
               : 25;
         const failed = entry.status === 'failed';
         const done = entry.status === 'completed';
+        const paused = entry.status === 'paused';
+        const active = entry.status === 'running' || entry.status === 'queued' || paused;
         const speed = entry.status === 'running' ? formatTransferSpeed(entry.bytesPerSec) : null;
         const eta = entry.status === 'running' ? formatEta(entry.etaSeconds) : null;
         return (
@@ -59,15 +66,37 @@ const TransferQueue: React.FC<TransferQueueProps> = ({ maxHeight = '160px' }) =>
                 {entry.resumed ? ` | ${t('sftp.transfer.resumed')}` : ''}
                 {speed ? ` | ${speed}` : ''}
                 {eta ? ` | ${t('sftp.eta', { eta })}` : ''}
+                {paused ? ` | ${t('sftp.transfer.paused')}` : ''}
               </Text>
-              {entry.status === 'running' ? (
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  onClick={() => void cancelTransfer(entry.transferId)}
-                >
-                  {t('sftp.transfer.cancel')}
-                </Button>
+              {active ? (
+                <HStack gap={1}>
+                  {entry.status === 'running' && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => void pauseTransfer(entry.transferId)}
+                    >
+                      {t('sftp.transfer.pause')}
+                    </Button>
+                  )}
+                  {paused && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      colorPalette="blue"
+                      onClick={() => void resumeTransfer(entry.transferId)}
+                    >
+                      {t('sftp.transfer.resume')}
+                    </Button>
+                  )}
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => void cancelTransfer(entry.transferId)}
+                  >
+                    {t('sftp.transfer.cancel')}
+                  </Button>
+                </HStack>
               ) : failed ? (
                 <HStack gap={1}>
                   <Button
@@ -91,7 +120,7 @@ const TransferQueue: React.FC<TransferQueueProps> = ({ maxHeight = '160px' }) =>
                   </Text>
                 </HStack>
               ) : (
-                <Text fontSize="10px" color="green.fg">
+                <Text fontSize="10px" color={done ? 'green.fg' : 'fg.muted'}>
                   {entry.status}
                 </Text>
               )}
@@ -99,7 +128,17 @@ const TransferQueue: React.FC<TransferQueueProps> = ({ maxHeight = '160px' }) =>
             <Box h="2px" bg="bg.emphasized" borderRadius="full" overflow="hidden" mt={1}>
               <Box
                 h="full"
-                bg={failed ? 'red.fg' : done ? 'green.fg' : 'blue.fg'}
+                bg={
+                  failed
+                    ? 'red.fg'
+                    : done
+                      ? 'green.fg'
+                      : paused
+                        ? 'orange.fg'
+                        : entry.status === 'queued'
+                          ? 'gray.fg'
+                          : 'blue.fg'
+                }
                 width={`${percent}%`}
                 transition="width 120ms linear"
               />

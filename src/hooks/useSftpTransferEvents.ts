@@ -4,6 +4,7 @@ import { useSftpStore } from '../store/useSftpStore';
 import { useTranslation } from '../store/useLocaleStore';
 import { SFTP_TRANSFER_EVENT, type SftpTransferEvent } from '../types/sftp';
 import { formatFileSize } from '../utils/formatFileSize';
+import { loadTransferConcurrency } from '../utils/transferConcurrency';
 import { toaster } from '../components/ui/toaster';
 
 /**
@@ -14,6 +15,11 @@ import { toaster } from '../components/ui/toaster';
 export function useSftpTransferEvents(): void {
   const { t } = useTranslation();
   const lastNotified = useRef<{ id: string; status: string } | null>(null);
+
+  useEffect(() => {
+    const limit = loadTransferConcurrency();
+    void useSftpStore.getState().setTransferConcurrency(limit);
+  }, []);
 
   useEffect(() => {
     const unlisten = listen<SftpTransferEvent>(SFTP_TRANSFER_EVENT, ({ payload }) => {
