@@ -2,6 +2,7 @@ pub mod auth_prompts;
 mod credentials;
 mod health;
 pub mod known_hosts;
+pub mod local_fs;
 mod persistence;
 pub mod port_forward;
 mod recording;
@@ -36,6 +37,7 @@ use crate::ssh_keys::SshKeyService;
 use crate::transfers::TransferManager;
 use bytes::Bytes;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1103,6 +1105,39 @@ async fn sftp_create_dir(
 }
 
 #[tauri::command]
+async fn local_list_dir(
+    app_handle: AppHandle,
+    path: Option<String>,
+) -> Result<crate::local_fs::LocalListing, String> {
+    let requested = path
+        .map(PathBuf::from)
+        .filter(|value| !value.as_os_str().is_empty());
+    let target = match requested {
+        Some(target) => target,
+        None => app_handle
+            .path()
+            .home_dir()
+            .map_err(|error| format!("Failed to resolve the home directory: {error}"))?,
+    };
+    crate::local_fs::list_dir(&target).await
+}
+
+#[tauri::command]
+async fn local_create_dir(path: String) -> Result<(), String> {
+    crate::local_fs::create_dir(&PathBuf::from(path)).await
+}
+
+#[tauri::command]
+async fn local_rename(old_path: String, new_path: String) -> Result<(), String> {
+    crate::local_fs::rename(&PathBuf::from(old_path), &PathBuf::from(new_path)).await
+}
+
+#[tauri::command]
+async fn local_remove(path: String, recursive: bool) -> Result<(), String> {
+    crate::local_fs::remove(&PathBuf::from(path), recursive).await
+}
+
+#[tauri::command]
 async fn sftp_local_entries(
     paths: Vec<String>,
 ) -> Result<Vec<crate::sftp_utils::LocalEntry>, String> {
@@ -1417,6 +1452,10 @@ pub fn run() {
             sftp_download_folder,
             sftp_upload_folder,
             sftp_local_entries,
+            local_list_dir,
+            local_create_dir,
+            local_rename,
+            local_remove,
             write_text_file,
             read_text_file,
             load_app_data,
