@@ -61,6 +61,8 @@ import {
 } from '../utils/reconnectPolicy';
 import { AUTO_LOCK_OPTIONS, loadAutoLockMinutes, saveAutoLockMinutes } from '../utils/idleLock';
 import { loadBandwidthLimitKbps } from '../utils/bandwidthLimit';
+import type { SessionLogEntry } from '../types/sessionLogs';
+import { formatFileSize } from '../utils/formatFileSize';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -820,6 +822,7 @@ const SshSettings: React.FC = () => {
         </HStack>
       </Box>
       <TrustedHostsSettings />
+      <SessionLogsSettings />
     </Stack>
   );
 };
@@ -992,6 +995,97 @@ const TrustedHostsSettings: React.FC = () => {
           ))}
         </VStack>
       )}
+    </Box>
+  );
+};
+
+const SessionLogsSettings: React.FC = () => {
+  const { t } = useTranslation();
+  const [logs, setLogs] = useState<SessionLogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    void invoke<SessionLogEntry[]>('session_logs_list')
+      .then((entries) => setLogs(entries))
+      .catch((loadError) => setError(String(loadError)))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const openFolder = async () => {
+    try {
+      await invoke('session_logs_open_folder');
+      setError(null);
+    } catch (openError) {
+      setError(String(openError));
+    }
+  };
+
+  const clear = async () => {
+    const confirmed = await ask(t('ssh.sessionLogs.clearConfirm', { count: logs.length }), {
+      title: t('ssh.sessionLogs.clearTitle'),
+      kind: 'warning',
+      okLabel: t('ssh.sessionLogs.clear'),
+      cancelLabel: t('common.cancel'),
+    });
+    if (!confirmed) return;
+    try {
+      const removed = await invoke<number>('session_logs_clear');
+      setLogs([]);
+      setNotice(t('ssh.sessionLogs.cleared', { count: removed }));
+      setError(null);
+    } catch (clearError) {
+      setError(String(clearError));
+    }
+  };
+
+  const totalBytes = logs.reduce((total, entry) => total + entry.size, 0);
+
+  return (
+    <Box borderTop="1px solid" borderColor="border.subtle" pt={3}>
+      <HStack gap={2} mb={1} justify="space-between">
+        <Text fontSize="14px" fontWeight="bold" color="fg">
+          {t('ssh.sessionLogs.heading')}
+        </Text>
+        <HStack gap={1}>
+          <Button size="xs" variant="subtle" onClick={() => void openFolder()}>
+            {t('ssh.sessionLogs.openFolder')}
+          </Button>
+          <Button
+            size="xs"
+            variant="subtle"
+            colorPalette="red"
+            disabled={logs.length === 0}
+            onClick={() => void clear()}
+          >
+            {t('ssh.sessionLogs.clear')}
+          </Button>
+        </HStack>
+      </HStack>
+      <Text fontSize="11px" color="fg.muted" mb={2}>
+        {t('ssh.sessionLogs.helper')}
+      </Text>
+      {notice && (
+        <Text fontSize="11px" color="green.fg" mb={2} role="status">
+          {notice}
+        </Text>
+      )}
+      {error && (
+        <Text fontSize="11px" color="red.fg" role="alert">
+          {t('ssh.sessionLogs.loadFailed')}: {error}
+        </Text>
+      )}
+      <Text fontSize="11px" color="fg.muted">
+        {isLoading
+          ? t('ssh.sessionLogs.loading')
+          : logs.length === 0
+            ? t('ssh.sessionLogs.empty')
+            : t('ssh.sessionLogs.summary', {
+                count: logs.length,
+                size: formatFileSize(totalBytes),
+              })}
+      </Text>
     </Box>
   );
 };

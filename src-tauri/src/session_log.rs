@@ -251,6 +251,11 @@ impl SessionLogService {
         Self { dir }
     }
 
+    /// The directory logs are written to, for the open-folder command.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     /// Create the log file for one session and apply retention afterwards
     /// so the newest file (this session) survives within the budget.
     pub async fn start(&self, session_id: &str) -> Result<SessionLogWriter, String> {

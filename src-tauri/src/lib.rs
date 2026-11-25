@@ -1510,6 +1510,43 @@ async fn export_terminal_recording(
     recording::export_svg(path, title, lines).await
 }
 
+/// Session log service pointed at the app data log directory.
+fn session_log_service<R: tauri::Runtime>(
+    app_handle: &AppHandle<R>,
+) -> Result<crate::session_log::SessionLogService, String> {
+    app_handle
+        .path()
+        .app_data_dir()
+        .map(|dir| crate::session_log::SessionLogService::new(crate::session_log::logs_dir(&dir)))
+        .map_err(|error| format!("Failed to resolve session log directory: {error}"))
+}
+
+#[tauri::command]
+async fn session_logs_list(
+    app_handle: AppHandle,
+) -> Result<Vec<crate::session_log::SessionLogEntry>, String> {
+    session_log_service(&app_handle)?.list().await
+}
+
+#[tauri::command]
+async fn session_logs_clear(app_handle: AppHandle) -> Result<usize, String> {
+    session_log_service(&app_handle)?.clear().await
+}
+
+#[tauri::command]
+async fn session_logs_open_folder(app_handle: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let service = session_log_service(&app_handle)?;
+    let dir = service.dir().to_path_buf();
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|error| format!("Failed to create session log directory: {error}"))?;
+    app_handle
+        .opener()
+        .open_path(dir.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|error| format!("Failed to open session log folder: {error:?}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tauri::command]
 fn quit_app(app_handle: AppHandle) {
@@ -1624,7 +1661,10 @@ pub fn run() {
             sftp_pause_transfer,
             sftp_resume_transfer,
             sftp_set_transfer_concurrency,
-            sftp_set_bandwidth_limit
+            sftp_set_bandwidth_limit,
+            session_logs_list,
+            session_logs_clear,
+            session_logs_open_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

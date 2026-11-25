@@ -614,6 +614,19 @@ export const en = {
     'Importing this backup will trust every host key it contains. Continue?',
   'ssh.trustedHosts.importFilter': 'Trusted hosts backup',
 
+  'ssh.sessionLogs.heading': 'Session Logs',
+  'ssh.sessionLogs.helper':
+    'Plain-text logs recorded by sessions with logging enabled. Retention keeps the newest 30 files and at most 50 MB.',
+  'ssh.sessionLogs.loading': 'Loading session logs…',
+  'ssh.sessionLogs.empty': 'No session logs yet.',
+  'ssh.sessionLogs.loadFailed': 'Failed to load session logs',
+  'ssh.sessionLogs.summary': '{count} log file(s), {size}',
+  'ssh.sessionLogs.openFolder': 'Open folder',
+  'ssh.sessionLogs.clear': 'Clear logs',
+  'ssh.sessionLogs.clearTitle': 'Clear Session Logs',
+  'ssh.sessionLogs.clearConfirm': 'Delete all {count} session log file(s)?',
+  'ssh.sessionLogs.cleared': 'Deleted {count} session log file(s).',
+
   'terminal.applyNote':
     'Theme and font changes apply immediately. Scrollback applies to new terminal sessions.',
 } as const;

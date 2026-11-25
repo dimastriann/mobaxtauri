@@ -611,6 +611,19 @@ export const id: Record<TranslationKey, string> = {
     'Mengimpor cadangan ini akan mempercayai semua kunci host di dalamnya. Lanjutkan?',
   'ssh.trustedHosts.importFilter': 'Cadangan host tepercaya',
 
+  'ssh.sessionLogs.heading': 'Log Sesi',
+  'ssh.sessionLogs.helper':
+    'Log teks biasa yang direkam sesi dengan logging aktif. Retensi menyimpan 30 file terbaru dan maksimal 50 MB.',
+  'ssh.sessionLogs.loading': 'Memuat log sesi…',
+  'ssh.sessionLogs.empty': 'Belum ada log sesi.',
+  'ssh.sessionLogs.loadFailed': 'Gagal memuat log sesi',
+  'ssh.sessionLogs.summary': '{count} file log, {size}',
+  'ssh.sessionLogs.openFolder': 'Buka folder',
+  'ssh.sessionLogs.clear': 'Hapus log',
+  'ssh.sessionLogs.clearTitle': 'Hapus Log Sesi',
+  'ssh.sessionLogs.clearConfirm': 'Hapus semua {count} file log sesi?',
+  'ssh.sessionLogs.cleared': '{count} file log sesi dihapus.',
+
   'terminal.applyNote':
     'Perubahan tema dan font langsung berlaku. Jumlah baris gulir berlaku untuk sesi terminal baru.',
 };
