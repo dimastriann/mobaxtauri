@@ -7,6 +7,7 @@ pub mod local_fs;
 mod persistence;
 pub mod port_forward;
 mod recording;
+pub mod session_log;
 mod session_manager;
 mod session_types;
 mod sftp_conflict;
