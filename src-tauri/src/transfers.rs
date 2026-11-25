@@ -9,6 +9,7 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::{oneshot, Mutex, Notify};
+use tokio::time::Instant;
 
 pub const SFTP_TRANSFER_EVENT: &str = "sftp-transfer";
 
@@ -147,9 +148,50 @@ impl Default for TransferQueue {
     }
 }
 
+#[derive(Debug)]
+struct BandwidthBudget {
+    /// Bytes per second; zero means unlimited.
+    limit: u64,
+    tokens: f64,
+    last: Instant,
+}
+
+impl BandwidthBudget {
+    fn new(limit: u64) -> Self {
+        Self {
+            limit,
+            tokens: 0.0,
+            last: Instant::now(),
+        }
+    }
+
+    fn refill(&mut self, now: Instant) {
+        let elapsed = now.duration_since(self.last).as_secs_f64();
+        self.last = now;
+        self.tokens = (self.tokens + elapsed * self.limit as f64).min(self.limit as f64);
+    }
+
+    /// Consumes bytes and returns how long the caller must sleep, if any.
+    fn consume(&mut self, bytes: u64, now: Instant) -> Option<Duration> {
+        if self.limit == 0 {
+            return None;
+        }
+        self.refill(now);
+        let bytes = bytes as f64;
+        if self.tokens >= bytes {
+            self.tokens -= bytes;
+            return None;
+        }
+        let missing = bytes - self.tokens;
+        self.tokens -= bytes;
+        Some(Duration::from_secs_f64(missing / self.limit as f64))
+    }
+}
+
 pub struct TransferManager {
     transfers: Mutex<HashMap<String, ActiveTransfer>>,
     queue: Mutex<TransferQueue>,
+    bandwidth: Mutex<BandwidthBudget>,
 }
 
 impl Default for TransferManager {
@@ -157,7 +199,33 @@ impl Default for TransferManager {
         Self {
             transfers: Mutex::new(HashMap::new()),
             queue: Mutex::new(TransferQueue::default()),
+            bandwidth: Mutex::new(BandwidthBudget::new(0)),
         }
+    }
+}
+
+impl TransferManager {
+    pub async fn set_bandwidth_limit(&self, limit_kbps: u64) {
+        let mut budget = self.bandwidth.lock().await;
+        budget.limit = limit_kbps.saturating_mul(1024);
+        budget.tokens = 0.0;
+        budget.last = Instant::now();
+    }
+
+    pub async fn throttle(&self, bytes: u64) {
+        if bytes == 0 {
+            return;
+        }
+        let mut budget = self.bandwidth.lock().await;
+        if budget.limit == 0 {
+            return;
+        }
+        let now = Instant::now();
+        let Some(duration) = budget.consume(bytes, now) else {
+            return;
+        };
+        drop(budget);
+        tokio::time::sleep(duration).await;
     }
 }
 
@@ -293,7 +361,7 @@ pub fn emit_transfer<R: Runtime>(app_handle: &AppHandle<R>, event: TransferEvent
 
 #[cfg(test)]
 mod tests {
-    use super::TransferManager;
+    use super::{BandwidthBudget, TransferManager};
     use std::sync::Arc;
 
     #[tokio::test]
@@ -369,6 +437,45 @@ mod tests {
         assert!(!first.is_cancelled());
         assert!(!second.is_cancelled());
         manager.finish("transfer-2").await;
+    }
+
+    #[test]
+    fn unlimited_bandwidth_bypasses_throttling() {
+        let mut budget = BandwidthBudget::new(0);
+        let now = tokio::time::Instant::now();
+        assert_eq!(budget.consume(1024, now), None);
+        assert_eq!(budget.consume(2048, now), None);
+    }
+
+    #[test]
+    fn limited_budget_consumes_tokens_and_schedules_sleep() {
+        let mut budget = BandwidthBudget::new(1024);
+        let now = tokio::time::Instant::now();
+        let first = budget.consume(512, now).expect("empty budget must sleep");
+        assert!(
+            first.as_millis() >= 499,
+            "first sleep should be about 512 ms: {first:?}"
+        );
+        let second = budget
+            .consume(1024, now)
+            .expect("second consume must sleep");
+        assert!(second.as_millis() > 500);
+    }
+
+    #[tokio::test]
+    async fn shared_transfers_use_one_budget() {
+        let manager = Arc::new(TransferManager::default());
+        manager.set_bandwidth_limit(1024).await;
+        let first = tokio::spawn({
+            let manager = Arc::clone(&manager);
+            async move { manager.throttle(512).await }
+        });
+        let second = tokio::spawn({
+            let manager = Arc::clone(&manager);
+            async move { manager.throttle(512).await }
+        });
+        first.await.expect("first throttle");
+        second.await.expect("second throttle");
     }
 
     #[test]

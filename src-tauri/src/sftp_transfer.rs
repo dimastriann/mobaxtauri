@@ -718,6 +718,7 @@ pub async fn download_folder<R: Runtime>(
                     break;
                 }
                 transferred += count as u64;
+                transfers.throttle(count as u64).await;
                 emit_transfer(
                     app_handle,
                     TransferEvent {
@@ -1067,6 +1068,7 @@ pub async fn upload_folder<R: Runtime>(
                     break;
                 }
                 transferred += count as u64;
+                transfers.throttle(count as u64).await;
                 emit_transfer(
                     app_handle,
                     TransferEvent {
