@@ -9,6 +9,7 @@ import { useSessionStore } from '../store/useSessionStore';
 import { useTranslation } from '../store/useLocaleStore';
 import { joinLocalPath } from '../utils/localPath';
 import PromptModal from './PromptModal';
+import SyncPreviewModal from './SyncPreviewModal';
 import { toaster } from './ui/toaster';
 
 const LOCAL_DRAG_MIME = 'application/x-mobaxtauri-local';
@@ -48,6 +49,7 @@ const SftpWorkspace: React.FC = () => {
   const [localPrompt, setLocalPrompt] = useState<
     { kind: 'new-folder' } | { kind: 'rename'; entry: PaneEntry } | null
   >(null);
+  const [syncOpen, setSyncOpen] = useState(false);
 
   const sshSessions = openTabs
     .map((id) => sessions.find((session) => session.id === id))
@@ -190,6 +192,15 @@ const SftpWorkspace: React.FC = () => {
           <Text fontSize="14px" fontWeight="bold" color="fg">
             {t('files.title')}
           </Text>
+          <Button
+            size="xs"
+            variant="subtle"
+            colorPalette="blue"
+            onClick={() => setSyncOpen(true)}
+            disabled={!activeSession || activeSession.status !== 'connected'}
+          >
+            {t('sync.title')}
+          </Button>
           <select
             aria-label={t('files.session')}
             value={activeSession?.id ?? ''}
@@ -346,6 +357,18 @@ const SftpWorkspace: React.FC = () => {
         </Flex>
       )}
 
+      <SyncPreviewModal
+        isOpen={syncOpen}
+        sessionId={activeFileSessionId}
+        sessionName={activeSession?.name ?? ''}
+        localPath={localPath}
+        remotePath={remotePath}
+        onClose={() => setSyncOpen(false)}
+        onApplied={async () => {
+          await refreshLocal();
+          if (activeFileSessionId) await fetchRemote(activeFileSessionId);
+        }}
+      />
       <PromptModal
         isOpen={localPrompt !== null}
         title={localPrompt?.kind === 'rename' ? t('files.renameTitle') : t('files.newFolderTitle')}
