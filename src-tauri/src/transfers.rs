@@ -462,6 +462,40 @@ mod tests {
         assert!(second.as_millis() > 500);
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn budget_refills_with_elapsed_time_and_caps_at_one_second() {
+        let mut budget = BandwidthBudget::new(1024);
+        tokio::time::advance(std::time::Duration::from_millis(500)).await;
+        assert_eq!(
+            budget.consume(512, tokio::time::Instant::now()),
+            None,
+            "half a second of accrued tokens covers 512 bytes without sleeping"
+        );
+        tokio::time::advance(std::time::Duration::from_secs(10)).await;
+        assert_eq!(
+            budget.consume(1024, tokio::time::Instant::now()),
+            None,
+            "accrued tokens must cap at one second's worth of the limit"
+        );
+        let sleep = budget
+            .consume(512, tokio::time::Instant::now())
+            .expect("spending beyond the cap must schedule a sleep");
+        assert_eq!(sleep.as_millis(), 500);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn throttle_sleeps_for_the_overdraft() {
+        let manager = TransferManager::default();
+        manager.set_bandwidth_limit(1024).await;
+        let start = tokio::time::Instant::now();
+        manager.throttle(2 * 1024 * 1024).await;
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= std::time::Duration::from_secs(2),
+            "a 2 MB burst at 1024 KB/s must sleep about 2 s: {elapsed:?}"
+        );
+    }
+
     #[tokio::test]
     async fn shared_transfers_use_one_budget() {
         let manager = Arc::new(TransferManager::default());

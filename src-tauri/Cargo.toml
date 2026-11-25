@@ -46,3 +46,5 @@ zeroize = "1"
 tauri = { version = "2", features = ["test"] }
 # Stream plumbing for the in-process SSH agent server.
 futures = "0.3"
+# Paused-clock control for bandwidth throttling tests.
+tokio = { version = "1.50.0", features = ["test-util"] }
