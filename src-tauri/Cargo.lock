@@ -3534,7 +3534,7 @@ dependencies = [
 
 [[package]]
 name = "mobaxtauri"
-version = "0.13.1"
+version = "0.14.0"
 dependencies = [
  "argon2 0.5.3",
  "async-trait",
