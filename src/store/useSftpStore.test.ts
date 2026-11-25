@@ -184,6 +184,14 @@ describe('useSftpStore', () => {
     expect(useSftpStore.getState().transferConcurrency).toBe(2);
   });
 
+  it('applies the bandwidth limit setting', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockResolvedValueOnce(512);
+    await expect(useSftpStore.getState().setBandwidthLimit(512)).resolves.toBe(512);
+    expect(invoke).toHaveBeenCalledWith('sftp_set_bandwidth_limit', { limitKbps: 512 });
+    expect(useSftpStore.getState().bandwidthLimitKbps).toBe(512);
+  });
+
   it('queues concurrent transfers and delegates cancellation per id', async () => {
     const { invoke } = await import('@tauri-apps/api/core');
     vi.mocked(invoke).mockResolvedValueOnce(undefined);

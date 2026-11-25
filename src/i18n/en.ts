@@ -20,6 +20,9 @@ export const en = {
   'ssh.transferConcurrencyValue': '{count} transfer(s)',
   'ssh.transferConcurrencyHelper':
     'Additional transfers wait in the queue until a slot is available.',
+  'ssh.bandwidthLimit': 'Bandwidth limit (KB/s)',
+  'ssh.bandwidthLimitHelper':
+    'Caps the combined transfer speed across all sessions. 0 means unlimited.',
   'ssh.vault.heading': 'Credential Vault',
   'ssh.vault.helper':
     'The vault locks after a period without keyboard or mouse activity. Locking does not disconnect open sessions.',

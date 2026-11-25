@@ -5,6 +5,7 @@ import { useTranslation } from '../store/useLocaleStore';
 import { SFTP_TRANSFER_EVENT, type SftpTransferEvent } from '../types/sftp';
 import { formatFileSize } from '../utils/formatFileSize';
 import { loadTransferConcurrency } from '../utils/transferConcurrency';
+import { loadBandwidthLimitKbps } from '../utils/bandwidthLimit';
 import { toaster } from '../components/ui/toaster';
 
 /**
@@ -19,6 +20,8 @@ export function useSftpTransferEvents(): void {
   useEffect(() => {
     const limit = loadTransferConcurrency();
     void useSftpStore.getState().setTransferConcurrency(limit);
+    const bandwidth = loadBandwidthLimitKbps();
+    void useSftpStore.getState().setBandwidthLimit(bandwidth);
   }, []);
 
   useEffect(() => {

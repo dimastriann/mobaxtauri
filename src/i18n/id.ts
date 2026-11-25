@@ -17,6 +17,9 @@ export const id: Record<TranslationKey, string> = {
   'ssh.transferConcurrencyValue': '{count} transfer',
   'ssh.transferConcurrencyHelper':
     'Transfer berikutnya menunggu dalam antrean hingga slot tersedia.',
+  'ssh.bandwidthLimit': 'Batas bandwidth (KB/s)',
+  'ssh.bandwidthLimitHelper':
+    'Membatasi kecepatan transfer gabungan di semua sesi. 0 berarti tanpa batas.',
   'ssh.vault.heading': 'Vault Kredensial',
   'ssh.vault.helper':
     'Vault terkunci setelah tidak ada aktivitas keyboard atau mouse. Mengunci tidak memutus sesi yang terbuka.',

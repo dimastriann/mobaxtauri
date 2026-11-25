@@ -60,6 +60,7 @@ import {
   type ReconnectSettings,
 } from '../utils/reconnectPolicy';
 import { AUTO_LOCK_OPTIONS, loadAutoLockMinutes, saveAutoLockMinutes } from '../utils/idleLock';
+import { loadBandwidthLimitKbps } from '../utils/bandwidthLimit';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -612,6 +613,8 @@ const SshSettings: React.FC = () => {
   const lockVault = useCredentialStore((state) => state.lock);
   const transferConcurrency = useSftpStore((state) => state.transferConcurrency);
   const setTransferConcurrency = useSftpStore((state) => state.setTransferConcurrency);
+  const setBandwidthLimit = useSftpStore((state) => state.setBandwidthLimit);
+  const [bandwidthDraft, setBandwidthDraft] = useState(() => String(loadBandwidthLimitKbps()));
 
   const saveDefaultPort = (val: string) => {
     setDefaultPort(val);
@@ -636,6 +639,15 @@ const SshSettings: React.FC = () => {
 
   const updateAutoLock = (value: string) => {
     setAutoLockMinutes(saveAutoLockMinutes(Number(value)));
+  };
+
+  const commitBandwidth = () => {
+    const value = Number(bandwidthDraft);
+    if (bandwidthDraft.trim() === '' || !Number.isFinite(value)) {
+      setBandwidthDraft(String(loadBandwidthLimitKbps()));
+      return;
+    }
+    void setBandwidthLimit(value).then((applied) => setBandwidthDraft(String(applied)));
   };
 
   return (
@@ -750,6 +762,29 @@ const SshSettings: React.FC = () => {
         </select>
         <Text fontSize="11px" color="fg.muted" mt={1}>
           {t('ssh.transferConcurrencyHelper')}
+        </Text>
+      </Box>
+      <Box borderTop="1px solid" borderColor="border.subtle" pt={3}>
+        <Text fontSize="13px" color="fg" mb={1}>
+          {t('ssh.bandwidthLimit')}
+        </Text>
+        <Input
+          size="sm"
+          w="120px"
+          type="number"
+          min={0}
+          max={102400}
+          value={bandwidthDraft}
+          onChange={(event) => setBandwidthDraft(event.target.value)}
+          onBlur={commitBandwidth}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commitBandwidth();
+          }}
+          aria-label={t('ssh.bandwidthLimit')}
+          variant="subtle"
+        />
+        <Text fontSize="11px" color="fg.muted" mt={1}>
+          {t('ssh.bandwidthLimitHelper')}
         </Text>
       </Box>
       <Box borderTop="1px solid" borderColor="border.subtle" pt={3}>

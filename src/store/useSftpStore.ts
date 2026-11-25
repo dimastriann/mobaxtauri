@@ -9,6 +9,7 @@ import {
   type PersistedFailedTransfer,
 } from '../utils/failedTransfers';
 import { loadTransferConcurrency, saveTransferConcurrency } from '../utils/transferConcurrency';
+import { loadBandwidthLimitKbps, saveBandwidthLimitKbps } from '../utils/bandwidthLimit';
 import {
   SFTP_TARGET_EXISTS_MARKER,
   type SftpConflictPolicy,
@@ -57,6 +58,7 @@ interface SftpState {
   /** Every transfer seen in this session, in arrival order. */
   transfers: SftpTransferEvent[];
   transferConcurrency: number;
+  bandwidthLimitKbps: number;
   conflictPrompt: SftpConflictPrompt | null;
 
   fetchDirectory: (sessionId: string, path?: string) => Promise<void>;
@@ -92,6 +94,7 @@ interface SftpState {
   pauseTransfer: (transferId: string) => Promise<void>;
   resumeTransfer: (transferId: string) => Promise<void>;
   setTransferConcurrency: (limit: number) => Promise<number>;
+  setBandwidthLimit: (limitKbps: number) => Promise<number>;
   resolveConflict: (policy: SftpConflictPolicy) => Promise<void>;
   dismissConflict: () => void;
 }
@@ -216,6 +219,7 @@ export const useSftpStore = create<SftpState>((set, get) => {
     history: [],
     transfers: hydratedFailedTransfers.map((entry) => entry.event),
     transferConcurrency: loadTransferConcurrency(),
+    bandwidthLimitKbps: loadBandwidthLimitKbps(),
     conflictPrompt: null,
 
     updateTransfer: (transfer) => {
@@ -452,6 +456,20 @@ export const useSftpStore = create<SftpState>((set, get) => {
       } catch (error) {
         set({ error: String(error) });
         return get().transferConcurrency;
+      }
+    },
+
+    setBandwidthLimit: async (limitKbps) => {
+      const normalized = saveBandwidthLimitKbps(limitKbps);
+      try {
+        const applied = await invoke<number>('sftp_set_bandwidth_limit', {
+          limitKbps: normalized,
+        });
+        set({ bandwidthLimitKbps: applied });
+        return applied;
+      } catch (error) {
+        set({ error: String(error) });
+        return get().bandwidthLimitKbps;
       }
     },
 
