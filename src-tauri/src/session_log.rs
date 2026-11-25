@@ -537,13 +537,14 @@ mod tests {
         prune_dir(&dir, usize::MAX, 10)
             .await
             .expect("prune succeeds");
-        let remaining: Vec<u128> = std::fs::read_dir(&dir)
+        let mut remaining: Vec<u128> = std::fs::read_dir(&dir)
             .expect("read dir")
             .map(|entry| {
                 let name = entry.expect("entry").file_name();
                 log_timestamp(&name.to_string_lossy()).expect("timestamp")
             })
             .collect();
+        remaining.sort_unstable();
         assert_eq!(remaining, vec![3, 4]);
         let _ = std::fs::remove_dir_all(&dir);
     }
