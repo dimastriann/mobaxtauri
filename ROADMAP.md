@@ -76,6 +76,12 @@ This roadmap communicates direction rather than fixed deadlines. Priorities may 
 - [x] Connection diagnostics with copy/save reports
 - [x] Trusted host-key fingerprints and auth method visibility
 
+## v0.14.0: sync, bandwidth, session logs
+
+- [x] One-way directory sync (push/pull) with a dry-run preview and per-entry results
+- [x] Global transfer bandwidth limit with a KB/s setting applied on startup
+- [x] Opt-in plain-text session logs with ANSI stripping, retention, and open-folder/clear management
+
 ## Later: broader workflows
 
 - [x] SSH agent support
