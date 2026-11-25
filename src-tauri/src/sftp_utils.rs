@@ -119,6 +119,26 @@ pub fn format_permissions(permissions: Option<u32>, is_dir: bool) -> String {
     format!("{dir_char}{u_r}{u_w}{u_x}{g_r}{g_w}{g_x}{o_r}{o_w}{o_x}")
 }
 
+/// One regular file from a remote folder walk.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteFile {
+    /// Absolute POSIX path of the remote file.
+    pub path: String,
+    /// Path relative to the remote walk root, using '/' separators.
+    pub relative_path: String,
+    pub size: u64,
+    /// Seconds since the Unix epoch, when the server exposes it.
+    pub modified: Option<u64>,
+}
+
+/// Remote filesystem tree collected by the recursive folder-download walker.
+pub struct RemoteTree {
+    pub files: Vec<RemoteFile>,
+    /// Directories as relative paths with '/' separators; the empty string
+    /// is the root itself. Sorted, so a parent always precedes its children.
+    pub dirs: Vec<String>,
+}
+
 /// One regular file from a folder walk.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalFile {
@@ -190,6 +210,50 @@ pub async fn collect_local_tree(root: &std::path::Path) -> Result<LocalTree, Str
     }
     dirs.sort();
     Ok(LocalTree { files, dirs })
+}
+
+/// Walk a remote directory recursively, collecting regular files with their
+/// absolute paths, sizes, and every directory including empty ones. Symlinks
+/// and special files are skipped, mirroring the local walker.
+pub async fn collect_remote_tree(
+    sftp: &russh_sftp::client::SftpSession,
+    root: &str,
+) -> Result<RemoteTree, String> {
+    let mut files: Vec<RemoteFile> = Vec::new();
+    let mut dirs: Vec<String> = vec![String::new()];
+    let mut stack: Vec<(String, String)> = vec![(root.to_string(), String::new())];
+    while let Some((dir, rel)) = stack.pop() {
+        let entries = sftp
+            .read_dir(&dir)
+            .await
+            .map_err(|e| format!("Failed to read remote directory {dir}: {e:?}"))?;
+        for entry in entries {
+            let name = entry.file_name();
+            if name == "." || name == ".." {
+                continue;
+            }
+            let child = join_sftp_path(&dir, &name);
+            let child_rel = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            let metadata = entry.metadata();
+            if metadata.is_dir() {
+                dirs.push(child_rel.clone());
+                stack.push((child, child_rel));
+            } else if metadata.is_regular() {
+                files.push(RemoteFile {
+                    path: child,
+                    relative_path: child_rel,
+                    size: metadata.len(),
+                    modified: metadata.mtime.map(u64::from),
+                });
+            }
+        }
+    }
+    dirs.sort();
+    Ok(RemoteTree { files, dirs })
 }
 
 /// One dropped filesystem path classified for upload dispatch: directories

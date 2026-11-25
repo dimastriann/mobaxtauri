@@ -534,13 +534,6 @@ pub async fn copy_file<R: Runtime>(
     result
 }
 
-struct RemoteFile {
-    path: String,
-    relative_path: String,
-    size: u64,
-    modified: Option<u64>,
-}
-
 // Tauri commands receive named keyword arguments over IPC, so a params
 // struct would change the wire contract; the argument list mirrors the
 // event/transfer contract instead.
@@ -572,48 +565,6 @@ pub async fn download_folder<R: Runtime>(
     // percentage is stable for the whole walk. Every directory — including
     // empty ones — is created locally so downloads preserve the structure
     // exactly like the upload side.
-    async fn collect_files(
-        sftp: &SftpSession,
-        root: &str,
-    ) -> Result<(Vec<RemoteFile>, Vec<String>), String> {
-        let mut files: Vec<RemoteFile> = Vec::new();
-        let mut dirs: Vec<String> = vec![String::new()];
-        let mut stack: Vec<(String, String)> = vec![(root.to_string(), String::new())];
-        while let Some((dir, rel)) = stack.pop() {
-            let entries = sftp
-                .read_dir(&dir)
-                .await
-                .map_err(|e| format!("Failed to read remote directory {dir}: {e:?}"))?;
-            for entry in entries {
-                let name = entry.file_name();
-                if name == "." || name == ".." {
-                    continue;
-                }
-                let child = sftp_utils::join_sftp_path(&dir, &name);
-                let child_rel = if rel.is_empty() {
-                    name.clone()
-                } else {
-                    format!("{rel}/{name}")
-                };
-                let metadata = entry.metadata();
-                if metadata.is_dir() {
-                    dirs.push(child_rel.clone());
-                    stack.push((child, child_rel));
-                } else if metadata.is_regular() {
-                    files.push(RemoteFile {
-                        path: child,
-                        relative_path: child_rel,
-                        size: metadata.len(),
-                        modified: metadata.mtime.map(u64::from),
-                    });
-                }
-            }
-        }
-        dirs.sort();
-        Ok((files, dirs))
-    }
-
-    emit_queued(app_handle, &transfer_id, &session_id, kind, &label, None);
     let handle = transfers
         .begin(transfer_id.clone(), session_id.clone())
         .await;
@@ -624,7 +575,9 @@ pub async fn download_folder<R: Runtime>(
     let mut resumed = false;
 
     let result = async {
-        let (files, dirs) = collect_files(sftp, &remote_root).await?;
+        let tree = sftp_utils::collect_remote_tree(sftp, &remote_root).await?;
+        let files = tree.files;
+        let dirs = tree.dirs;
         let total = files.iter().map(|file| file.size).sum::<u64>();
         final_total = Some(total);
 

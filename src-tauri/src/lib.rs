@@ -14,6 +14,7 @@ pub mod sftp_folder_resume;
 pub mod sftp_permissions;
 pub mod sftp_remove;
 pub mod sftp_resume;
+pub mod sftp_sync;
 pub mod sftp_transfer;
 mod sftp_utils;
 pub mod ssh;
