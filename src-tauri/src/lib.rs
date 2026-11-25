@@ -16,7 +16,7 @@ pub mod sftp_remove;
 pub mod sftp_resume;
 pub mod sftp_sync;
 pub mod sftp_transfer;
-mod sftp_utils;
+pub mod sftp_utils;
 pub mod ssh;
 pub mod ssh_keys;
 pub mod terminal_theme;
@@ -978,6 +978,57 @@ async fn sftp_upload_folder(
     .await
 }
 
+#[tauri::command]
+async fn sftp_sync_plan(
+    state: State<'_, AppState>,
+    session_id: String,
+    local_path: String,
+    remote_path: String,
+    direction: String,
+    conflict_policy: String,
+    delete_target_only: bool,
+) -> Result<crate::sftp_sync::SyncPlan, String> {
+    let direction = crate::sftp_sync::parse_direction(&direction)
+        .ok_or_else(|| "Direction must be push or pull".to_string())?;
+    let conflict_policy = crate::sftp_sync::parse_conflict_policy(&conflict_policy)
+        .ok_or_else(|| "Conflict policy must be overwrite, skip, or rename".to_string())?;
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
+        .get(&session_id)
+        .cloned()
+        .ok_or("SFTP session not found")?;
+    let remote_tree = crate::sftp_utils::collect_remote_tree(&sftp, &remote_path).await?;
+    crate::sftp_sync::plan_sync(
+        std::path::Path::new(&local_path),
+        &remote_path,
+        remote_tree,
+        direction,
+        conflict_policy,
+        delete_target_only,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn sftp_sync_apply(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    transfers: State<'_, TransferManager>,
+    session_id: String,
+    plan: crate::sftp_sync::SyncPlan,
+) -> Result<crate::sftp_sync::SyncApplyResult, String> {
+    let sftp = state
+        .sftp_sessions
+        .lock()
+        .await
+        .get(&session_id)
+        .cloned()
+        .ok_or("SFTP session not found")?;
+    crate::sftp_sync::apply_sync(&app_handle, &sftp, &transfers, &session_id, plan).await
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SftpReadFileContent {
@@ -1530,6 +1581,8 @@ pub fn run() {
             sftp_path_variants,
             sftp_download_folder,
             sftp_upload_folder,
+            sftp_sync_plan,
+            sftp_sync_apply,
             sftp_local_entries,
             local_list_dir,
             local_create_dir,

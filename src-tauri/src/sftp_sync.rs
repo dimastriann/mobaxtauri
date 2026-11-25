@@ -7,6 +7,7 @@
 use crate::sftp_utils::{collect_local_tree, LocalFile, LocalTree, RemoteTree};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use tauri::Runtime;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -62,6 +63,47 @@ pub struct SyncPlan {
     pub create_count: usize,
     pub update_count: usize,
     pub delete_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncApplyFailure {
+    pub relative_path: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncApplyResult {
+    pub applied_create: usize,
+    pub applied_update: usize,
+    pub applied_delete: usize,
+    pub failures: Vec<SyncApplyFailure>,
+}
+
+fn conflict_policy_string(policy: SyncConflictPolicy) -> Option<String> {
+    match policy {
+        SyncConflictPolicy::Overwrite => Some("overwrite".into()),
+        SyncConflictPolicy::Skip => Some("skip".into()),
+        SyncConflictPolicy::Rename => Some("rename".into()),
+    }
+}
+
+pub fn parse_direction(direction: &str) -> Option<SyncDirection> {
+    match direction {
+        "push" => Some(SyncDirection::Push),
+        "pull" => Some(SyncDirection::Pull),
+        _ => None,
+    }
+}
+
+pub fn parse_conflict_policy(policy: &str) -> Option<SyncConflictPolicy> {
+    match policy {
+        "overwrite" => Some(SyncConflictPolicy::Overwrite),
+        "skip" => Some(SyncConflictPolicy::Skip),
+        "rename" => Some(SyncConflictPolicy::Rename),
+        _ => None,
+    }
 }
 
 fn is_safe_relative_path(path: &str) -> bool {
@@ -330,6 +372,204 @@ pub fn plan_sync_from_trees(
         update_count,
         delete_count,
     })
+}
+
+/// Revalidate the submitted plan against fresh trees and apply it. The
+/// caller is expected to have shown the dry-run preview already; a changed
+/// source aborts without touching anything.
+#[allow(clippy::too_many_arguments)]
+pub async fn apply_sync<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    sftp: &russh_sftp::client::SftpSession,
+    transfers: &crate::transfers::TransferManager,
+    session_id: &str,
+    plan: SyncPlan,
+) -> Result<SyncApplyResult, String> {
+    let local_root = std::path::PathBuf::from(&plan.local_root);
+    let remote_root = plan.remote_root.clone();
+    let local_tree = collect_local_tree(&local_root).await?;
+    let remote_tree = crate::sftp_utils::collect_remote_tree(sftp, &remote_root).await?;
+    let fresh_plan = plan_sync_from_trees(
+        plan.local_root.clone(),
+        local_tree.clone(),
+        &remote_root,
+        remote_tree.clone(),
+        plan.direction,
+        plan.conflict_policy,
+        plan.delete_target_only,
+    )?;
+    if fresh_plan != plan {
+        return Err("Sync source changed. Run the preview again.".into());
+    }
+
+    let mut result = SyncApplyResult {
+        applied_create: 0,
+        applied_update: 0,
+        applied_delete: 0,
+        failures: Vec::new(),
+    };
+    let mut files = Vec::new();
+    let mut deletions = Vec::new();
+    for entry in plan.entries {
+        match entry.action {
+            SyncAction::Create | SyncAction::Update => files.push(entry),
+            SyncAction::Delete => deletions.push(entry),
+        }
+    }
+    deletions.sort_by(|left, right| {
+        left.kind
+            .cmp(&right.kind)
+            .then_with(|| left.relative_path.cmp(&right.relative_path))
+    });
+
+    // Create source directories in the target tree before copying files.
+    match plan.direction {
+        SyncDirection::Push => {
+            let remote_dirs: std::collections::HashSet<&str> =
+                remote_tree.dirs.iter().map(|dir| dir.as_str()).collect();
+            let mut missing = local_tree
+                .dirs
+                .iter()
+                .filter(|dir| !dir.is_empty() && !remote_dirs.contains(&dir.as_str()))
+                .map(|dir| dir.to_string())
+                .collect::<Vec<_>>();
+            missing.sort();
+            for relative in missing {
+                let remote_dir = crate::sftp_utils::join_sftp_path(&remote_root, &relative);
+                if let Err(error) = sftp.create_dir(&remote_dir).await {
+                    result.failures.push(SyncApplyFailure {
+                        relative_path: relative,
+                        message: format!("Failed to create remote directory: {error:?}"),
+                    });
+                }
+            }
+        }
+        SyncDirection::Pull => {
+            let local_dirs: std::collections::HashSet<&str> =
+                local_tree.dirs.iter().map(|dir| dir.as_str()).collect();
+            let mut missing = remote_tree
+                .dirs
+                .iter()
+                .filter(|dir| !dir.is_empty() && !local_dirs.contains(&dir.as_str()))
+                .map(|dir| dir.to_string())
+                .collect::<Vec<_>>();
+            missing.sort();
+            for relative in missing {
+                let local_dir = local_root.join(&relative);
+                if let Err(error) = tokio::fs::create_dir_all(&local_dir).await {
+                    result.failures.push(SyncApplyFailure {
+                        relative_path: relative,
+                        message: format!("Failed to create local directory: {error}"),
+                    });
+                }
+            }
+        }
+    }
+
+    for entry in files {
+        let relative = entry.relative_path.clone();
+        let transfer_id = format!(
+            "sync-{}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or_default(),
+            relative.replace('/', "-")
+        );
+        let transfer_result = match plan.direction {
+            SyncDirection::Push => {
+                let local_path = local_root.join(&relative);
+                let remote_path = crate::sftp_utils::join_sftp_path(&remote_root, &relative);
+                crate::sftp_transfer::upload_file(
+                    app_handle,
+                    sftp,
+                    transfers,
+                    session_id.to_string(),
+                    local_path.to_string_lossy().into_owned(),
+                    remote_path,
+                    transfer_id,
+                    conflict_policy_string(plan.conflict_policy),
+                )
+                .await
+            }
+            SyncDirection::Pull => {
+                let remote_path = crate::sftp_utils::join_sftp_path(&remote_root, &relative);
+                let local_path = local_root.join(&relative);
+                let resolved = crate::sftp_conflict::resolve_destination_local(
+                    &local_path,
+                    Some(match plan.conflict_policy {
+                        SyncConflictPolicy::Overwrite => {
+                            crate::sftp_conflict::ConflictPolicy::Overwrite
+                        }
+                        SyncConflictPolicy::Skip => crate::sftp_conflict::ConflictPolicy::Skip,
+                        SyncConflictPolicy::Rename => crate::sftp_conflict::ConflictPolicy::Rename,
+                    }),
+                )
+                .await?;
+                let Some(resolved) = resolved else {
+                    result.applied_update += if entry.action == SyncAction::Create {
+                        0
+                    } else {
+                        1
+                    };
+                    continue;
+                };
+                crate::sftp_transfer::download_file(
+                    app_handle,
+                    sftp,
+                    transfers,
+                    session_id.to_string(),
+                    remote_path,
+                    resolved.to_string_lossy().into_owned(),
+                    transfer_id,
+                )
+                .await
+            }
+        };
+        match transfer_result {
+            Ok(()) => match entry.action {
+                SyncAction::Create => result.applied_create += 1,
+                SyncAction::Update => result.applied_update += 1,
+                SyncAction::Delete => {}
+            },
+            Err(message) if message.contains("Transfer cancelled") => {
+                return Err(message);
+            }
+            Err(message) => {
+                result.failures.push(SyncApplyFailure {
+                    relative_path: relative,
+                    message,
+                });
+            }
+        }
+    }
+
+    for entry in deletions {
+        let relative = entry.relative_path.clone();
+        let deletion_result = match plan.direction {
+            SyncDirection::Push => {
+                let remote_path = crate::sftp_utils::join_sftp_path(&remote_root, &relative);
+                match entry.kind {
+                    SyncEntryKind::File => sftp.remove_file(&remote_path).await,
+                    SyncEntryKind::Directory => sftp.remove_dir(&remote_path).await,
+                }
+                .map_err(|error| format!("Failed to remove remote entry: {error:?}"))
+            }
+            SyncDirection::Pull => {
+                let local_path = local_root.join(&relative);
+                crate::local_fs::remove(&local_path, entry.kind == SyncEntryKind::Directory).await
+            }
+        };
+        match deletion_result {
+            Ok(()) => result.applied_delete += 1,
+            Err(message) => result.failures.push(SyncApplyFailure {
+                relative_path: relative,
+                message,
+            }),
+        }
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]

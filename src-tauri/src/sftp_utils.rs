@@ -132,6 +132,7 @@ pub struct RemoteFile {
 }
 
 /// Remote filesystem tree collected by the recursive folder-download walker.
+#[derive(Clone)]
 pub struct RemoteTree {
     pub files: Vec<RemoteFile>,
     /// Directories as relative paths with '/' separators; the empty string
@@ -150,6 +151,7 @@ pub struct LocalFile {
 }
 
 /// Local filesystem tree collected by the recursive folder-upload walker.
+#[derive(Clone)]
 pub struct LocalTree {
     pub files: Vec<LocalFile>,
     /// Directories as relative paths with '/' separators; the empty string

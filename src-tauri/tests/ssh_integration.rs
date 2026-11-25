@@ -1652,6 +1652,200 @@ async fn folder_upload_conflict_policy_renames_the_target() {
     );
 }
 
+#[tokio::test]
+async fn sync_push_applies_create_update_and_delete() {
+    use mobaxtauri_lib::sftp_sync::{apply_sync, plan_sync, SyncConflictPolicy, SyncDirection};
+
+    let ctx = TestContext::start("sync-push", HostTrust::Trusted, AuthorizedKey::None).await;
+    let sftp = ctx.connected_sftp().await;
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+    let source = temp_dir("sync-push-src");
+
+    std::fs::create_dir_all(source.join("sub")).expect("create local dir");
+    std::fs::write(source.join("new.txt"), b"new").expect("write new");
+    std::fs::write(source.join("changed.txt"), b"changed").expect("write changed");
+    std::fs::write(source.join("same.txt"), b"same").expect("write same");
+
+    let remote_root = "/sync-push";
+    std::fs::create_dir_all(ctx.sftp_root.join("sync-push").join("target-only-dir"))
+        .expect("create remote target-only dir");
+    std::fs::write(ctx.sftp_root.join("sync-push").join("changed.txt"), b"old")
+        .expect("seed remote changed");
+    std::fs::write(ctx.sftp_root.join("sync-push").join("same.txt"), b"same")
+        .expect("seed remote same");
+    std::fs::write(
+        ctx.sftp_root.join("sync-push").join("target-only.txt"),
+        b"target-only",
+    )
+    .expect("seed remote target-only file");
+    std::fs::write(
+        ctx.sftp_root
+            .join("sync-push")
+            .join("target-only-dir")
+            .join("nested.txt"),
+        b"nested",
+    )
+    .expect("seed remote target-only nested file");
+
+    let plan = plan_sync(
+        &source,
+        remote_root,
+        mobaxtauri_lib::sftp_utils::collect_remote_tree(&sftp, remote_root)
+            .await
+            .expect("remote tree"),
+        SyncDirection::Push,
+        SyncConflictPolicy::Overwrite,
+        true,
+    )
+    .await
+    .expect("sync plan succeeds");
+
+    assert_eq!(plan.create_count, 1);
+    assert_eq!(plan.update_count, 1);
+    assert_eq!(plan.delete_count, 3);
+
+    let result = apply_sync(&ctx.handle, &sftp, &transfers, "it-session", plan)
+        .await
+        .expect("sync apply succeeds");
+
+    assert_eq!(result.applied_create, 1);
+    assert_eq!(result.applied_update, 1);
+    assert_eq!(result.applied_delete, 3);
+    assert!(result.failures.is_empty());
+
+    let target = ctx.sftp_root.join("sync-push");
+    assert_eq!(
+        std::fs::read(target.join("new.txt")).expect("uploaded new file"),
+        b"new"
+    );
+    assert_eq!(
+        std::fs::read(target.join("changed.txt")).expect("updated file"),
+        b"changed"
+    );
+    assert_eq!(
+        std::fs::read(target.join("same.txt")).expect("unchanged file"),
+        b"same"
+    );
+    assert!(!target.join("target-only.txt").exists());
+    assert!(!target.join("target-only-dir").exists());
+    assert!(target.join("sub").is_dir());
+    let _ = std::fs::remove_dir_all(source);
+}
+
+#[tokio::test]
+async fn sync_pull_applies_create_update_and_delete() {
+    use mobaxtauri_lib::sftp_sync::{apply_sync, plan_sync, SyncConflictPolicy, SyncDirection};
+
+    let ctx = TestContext::start("sync-pull", HostTrust::Trusted, AuthorizedKey::None).await;
+    let sftp = ctx.connected_sftp().await;
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+    let target = temp_dir("sync-pull-dst").join("out");
+
+    std::fs::create_dir_all(target.join("target-only-dir")).expect("create local target-only dir");
+    std::fs::write(target.join("changed.txt"), b"old").expect("seed local changed");
+    std::fs::write(target.join("same.txt"), b"same").expect("seed local same");
+    std::fs::write(target.join("target-only.txt"), b"target-only")
+        .expect("seed local target-only file");
+    std::fs::write(target.join("target-only-dir").join("nested.txt"), b"nested")
+        .expect("seed local target-only nested file");
+
+    let remote_root = "/sync-pull";
+    let remote = ctx.sftp_root.join("sync-pull");
+    std::fs::create_dir_all(remote.join("sub")).expect("create remote dir");
+    std::fs::write(remote.join("new.txt"), b"new").expect("seed remote new");
+    std::fs::write(remote.join("changed.txt"), b"changed").expect("seed remote changed");
+    std::fs::write(remote.join("same.txt"), b"same").expect("seed remote same");
+
+    let plan = plan_sync(
+        &target,
+        remote_root,
+        mobaxtauri_lib::sftp_utils::collect_remote_tree(&sftp, remote_root)
+            .await
+            .expect("remote tree"),
+        SyncDirection::Pull,
+        SyncConflictPolicy::Overwrite,
+        true,
+    )
+    .await
+    .expect("sync plan succeeds");
+
+    assert_eq!(plan.create_count, 1);
+    assert_eq!(plan.update_count, 1);
+    assert_eq!(plan.delete_count, 3);
+
+    let result = apply_sync(&ctx.handle, &sftp, &transfers, "it-session", plan)
+        .await
+        .expect("sync apply succeeds");
+
+    assert_eq!(result.applied_create, 1);
+    assert_eq!(result.applied_update, 1);
+    assert_eq!(result.applied_delete, 3);
+    assert!(result.failures.is_empty());
+
+    assert_eq!(
+        std::fs::read(target.join("new.txt")).expect("downloaded new file"),
+        b"new"
+    );
+    assert_eq!(
+        std::fs::read(target.join("changed.txt")).expect("updated file"),
+        b"changed"
+    );
+    assert_eq!(
+        std::fs::read(target.join("same.txt")).expect("unchanged file"),
+        b"same"
+    );
+    assert!(!target.join("target-only.txt").exists());
+    assert!(!target.join("target-only-dir").exists());
+    assert!(target.join("sub").is_dir());
+    let _ = std::fs::remove_dir_all(target.parent().expect("target parent"));
+}
+
+#[tokio::test]
+async fn sync_push_aborts_when_the_source_changes() {
+    use mobaxtauri_lib::sftp_sync::{apply_sync, plan_sync, SyncConflictPolicy, SyncDirection};
+
+    let ctx = TestContext::start("sync-abort", HostTrust::Trusted, AuthorizedKey::None).await;
+    let sftp = ctx.connected_sftp().await;
+    let transfers = mobaxtauri_lib::transfers::TransferManager::default();
+    let source = temp_dir("sync-abort-src");
+    std::fs::write(source.join("new.txt"), b"new").expect("write new");
+
+    let remote_root = "/sync-abort";
+    std::fs::create_dir_all(ctx.sftp_root.join("sync-abort")).expect("create remote root");
+    std::fs::write(
+        ctx.sftp_root.join("sync-abort").join("target.txt"),
+        b"target",
+    )
+    .expect("seed remote target");
+
+    let plan = plan_sync(
+        &source,
+        remote_root,
+        mobaxtauri_lib::sftp_utils::collect_remote_tree(&sftp, remote_root)
+            .await
+            .expect("remote tree"),
+        SyncDirection::Push,
+        SyncConflictPolicy::Overwrite,
+        false,
+    )
+    .await
+    .expect("sync plan succeeds");
+
+    std::fs::write(source.join("changed.txt"), b"changed").expect("change source after preview");
+
+    let result = apply_sync(&ctx.handle, &sftp, &transfers, "it-session", plan).await;
+    assert!(result.is_err());
+    assert!(
+        !ctx.sftp_root.join("sync-abort").join("new.txt").exists(),
+        "a stale plan must not apply any changes"
+    );
+    assert_eq!(
+        std::fs::read(ctx.sftp_root.join("sync-abort").join("target.txt")).expect("target stays"),
+        b"target"
+    );
+    let _ = std::fs::remove_dir_all(source);
+}
+
 fn modified_seconds(metadata: &std::fs::Metadata) -> Option<u64> {
     metadata
         .modified()
