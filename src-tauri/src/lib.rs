@@ -721,6 +721,18 @@ async fn sftp_resume_transfer(
 }
 
 #[tauri::command]
+async fn sftp_set_bandwidth_limit(
+    transfers: State<'_, TransferManager>,
+    limit_kbps: u64,
+) -> Result<u64, String> {
+    if limit_kbps > 102_400 {
+        return Err("Bandwidth limit must be at most 102400 KB/s".into());
+    }
+    transfers.set_bandwidth_limit(limit_kbps).await;
+    Ok(limit_kbps)
+}
+
+#[tauri::command]
 async fn sftp_set_transfer_concurrency(
     transfers: State<'_, TransferManager>,
     limit: u8,
@@ -1602,7 +1614,8 @@ pub fn run() {
             sftp_cancel_transfer,
             sftp_pause_transfer,
             sftp_resume_transfer,
-            sftp_set_transfer_concurrency
+            sftp_set_transfer_concurrency,
+            sftp_set_bandwidth_limit
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
