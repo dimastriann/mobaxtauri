@@ -537,6 +537,9 @@ export const id: Record<TranslationKey, string> = {
   'session.startupHelper':
     'Dijalankan di shell setelah terhubung; berguna untuk tmux, cd, atau setup lingkungan.',
   'session.startupPlaceholder': 'tmux attach || tmux new',
+  'session.logOutput': 'Catat output sesi ke file teks biasa',
+  'session.logOutputHelper':
+    'Merekam semua yang dicetak sesi — termasuk yang Anda ketik — ke folder log data aplikasi. Data sensitif bisa masuk ke log.',
 
   'sftp.eta': 'Sisa {eta}',
   'sftp.downloadSelected': 'Unduh {count} item',

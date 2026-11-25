@@ -28,6 +28,8 @@ export interface SshConnectRequest {
   credentialSessionId?: string | null;
   jumpSessionId?: string | null;
   startupCommand?: string | null;
+  /** Opt-in plain-text session logging to the app data log directory. */
+  logOutput?: boolean;
   connectionTimeoutSecs: number;
 }
 

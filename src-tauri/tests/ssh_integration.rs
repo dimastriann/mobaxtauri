@@ -788,6 +788,7 @@ impl TestContext {
             None,
             known_hosts,
             self.remote_targets.clone(),
+            None,
         )
         .await?;
         Ok(sftp)
@@ -852,6 +853,7 @@ impl TestContext {
                 None,
                 self.trusted_known_hosts(),
                 self.remote_targets.clone(),
+                None,
             ),
         )
         .await
@@ -888,6 +890,7 @@ impl TestContext {
                 None,
                 self.trusted_known_hosts(),
                 self.remote_targets.clone(),
+                None,
             ),
         )
         .await
@@ -1041,6 +1044,7 @@ async fn connection_report_captures_auth_and_timing() {
         None,
         ctx.trusted_known_hosts(),
         ctx.remote_targets.clone(),
+        None,
     )
     .await
     .expect("diagnostic session connects");
@@ -2063,6 +2067,69 @@ async fn folder_download_resumes_completed_and_partial_files() {
     let _ = std::fs::remove_dir_all(target.parent().expect("target parent"));
 }
 
+#[tokio::test]
+async fn opted_in_sessions_log_the_shell_banner_as_plain_text() {
+    use mobaxtauri_lib::session_log::SessionLogService;
+
+    let ctx = TestContext::start("session-log", HostTrust::Trusted, AuthorizedKey::None).await;
+    let log_dir = temp_dir("session-log-out");
+    let service = SessionLogService::new(log_dir.clone());
+    let writer = service.start("it-log").await.expect("start logging");
+
+    let (handle, _channel_id, _channel, sftp) = SshSession::connect(
+        ctx.handle.clone(),
+        "it-log".to_string(),
+        "127.0.0.1".to_string(),
+        ctx.port,
+        USER.to_string(),
+        Some(PASSWORD.to_string()),
+        None,
+        None,
+        false,
+        true,
+        AuthPromptService::default(),
+        None,
+        None,
+        ctx.trusted_known_hosts(),
+        ctx.remote_targets.clone(),
+        Some(writer),
+    )
+    .await
+    .expect("connects with session logging");
+    sftp.read_dir("/").await.expect("sftp session is live");
+
+    // Dropping the session closes the log through the output task.
+    drop(handle);
+
+    // Poll for the sealed file instead of guessing the task's latency.
+    let deadline = tokio::time::Instant::now() + TEST_TIMEOUT;
+    let content = loop {
+        if tokio::time::Instant::now() > deadline {
+            panic!("session log was not closed in time");
+        }
+        let logs = service.list().await.expect("list logs");
+        if let Some(entry) = logs.first() {
+            let bytes = std::fs::read(log_dir.join(&entry.file_name)).expect("read log");
+            if let Ok(text) = String::from_utf8(bytes) {
+                if text.contains("test-shell-ready") {
+                    break text;
+                }
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert!(
+        content.contains("test-shell-ready"),
+        "the shell banner must reach the plain-text log: {content:?}"
+    );
+    // No escape codes, CRLF pairs, or NUL bytes in the plain-text log.
+    assert!(!content.contains('\x1b'), "no ANSI escapes: {content:?}");
+    assert!(
+        !content.contains("\r\n"),
+        "normalized line endings: {content:?}"
+    );
+}
+
 /// Loopback echo service: every accepted connection is echoed back.
 async fn spawn_echo_server() -> (u16, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -2280,6 +2347,7 @@ async fn connects_through_a_bastion_session() {
         Some(channel.into_stream()),
         target.trusted_known_hosts(),
         target.remote_targets.clone(),
+        None,
     )
     .await
     .expect("connects through the bastion");

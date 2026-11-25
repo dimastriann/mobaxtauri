@@ -540,6 +540,9 @@ export const en = {
   'session.startupHelper':
     'Runs in the shell after connecting; useful for tmux, cd, or environment setup.',
   'session.startupPlaceholder': 'tmux attach || tmux new',
+  'session.logOutput': 'Log session output to a plain-text file',
+  'session.logOutputHelper':
+    'Records everything the session prints — including anything you type — to the app data logs folder. Sensitive data can end up in the log.',
 
   'sftp.eta': 'ETA {eta}',
   'sftp.downloadSelected': 'Download {count} items',

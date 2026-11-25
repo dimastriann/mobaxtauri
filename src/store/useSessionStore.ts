@@ -31,6 +31,8 @@ export interface Session {
   jumpSessionId?: string;
   /** Optional command sent to the shell immediately after connecting. */
   startupCommand?: string;
+  /** Opt-in plain-text session logging for this session's output. */
+  logOutput?: boolean;
   status: SessionStatus;
   error?: string;
   lastActivity?: number;

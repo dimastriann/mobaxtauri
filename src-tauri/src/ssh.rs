@@ -1,6 +1,7 @@
 use crate::auth_prompts::{AuthPromptService, SshAuthPromptField};
 use crate::diagnostics::{ConnectReport, ConnectTimings};
 use crate::known_hosts::{HostKeyAction, KnownHostsService};
+use crate::session_log::SessionLogWriter;
 use crate::session_types::{
     emit_ssh_host_key, emit_ssh_session_state, SshDisconnectReason, SshHostKeyEvent,
     SshSessionStatus,
@@ -438,6 +439,9 @@ impl SshSession {
         jump_stream: Option<russh::ChannelStream<russh::client::Msg>>,
         known_hosts: Arc<KnownHostsService>,
         remote_forwards: RemoteForwardTargets,
+        // Plain-text session log writer; `None` when the session did not
+        // opt in to logging.
+        log_writer: Option<SessionLogWriter>,
     ) -> Result<
         (
             russh::client::Handle<ClientHandler<R>>,
@@ -460,7 +464,12 @@ impl SshSession {
         let config = Arc::new(config);
         let shell_channel_id = Arc::new(std::sync::OnceLock::new());
         let (terminal_output, terminal_output_rx) = mpsc::unbounded_channel();
-        spawn_terminal_output(app_handle.clone(), session_id.clone(), terminal_output_rx);
+        spawn_terminal_output(
+            app_handle.clone(),
+            session_id.clone(),
+            terminal_output_rx,
+            log_writer,
+        );
         let prompt_app_handle = app_handle.clone();
         let prompt_session_id = session_id.clone();
         let host_key = Arc::new(std::sync::Mutex::new(None));
@@ -670,6 +679,7 @@ impl SshSession {
         jump_stream: Option<russh::ChannelStream<russh::client::Msg>>,
         known_hosts: Arc<KnownHostsService>,
         remote_forwards: RemoteForwardTargets,
+        log_writer: Option<SessionLogWriter>,
     ) -> Result<
         (
             russh::client::Handle<ClientHandler<R>>,
@@ -695,6 +705,7 @@ impl SshSession {
             jump_stream,
             known_hosts,
             remote_forwards,
+            log_writer,
         )
         .await
         .map(|(handle, channel_id, channel, sftp, _report)| (handle, channel_id, channel, sftp))
@@ -752,6 +763,7 @@ fn spawn_terminal_output<R: Runtime>(
     app_handle: AppHandle<R>,
     session_id: String,
     mut receiver: mpsc::UnboundedReceiver<Vec<u8>>,
+    mut log_writer: Option<SessionLogWriter>,
 ) {
     tokio::spawn(async move {
         let event_name = format!("ssh-data-{session_id}");
@@ -770,6 +782,14 @@ fn spawn_terminal_output<R: Runtime>(
             let complete_len = complete_utf8_len(&batch);
             let payload = String::from_utf8_lossy(&batch[..complete_len]).into_owned();
             pending = batch.split_off(complete_len);
+            if let Some(writer) = log_writer.as_mut() {
+                // The decoded payload keeps the log valid UTF-8 even when a
+                // multi-byte character is split; the carried tail is logged
+                // with the next batch.
+                if let Err(error) = writer.write_bytes(payload.as_bytes()).await {
+                    log::warn!("Failed to write session log for {session_id}: {error}");
+                }
+            }
             if let Err(error) = app_handle.emit(&event_name, payload) {
                 log::warn!("Failed to emit terminal output for {session_id}: {error}");
             }
@@ -777,7 +797,16 @@ fn spawn_terminal_output<R: Runtime>(
         // Receiver closed: flush any carried bytes so nothing is dropped.
         if !pending.is_empty() {
             let payload = String::from_utf8_lossy(&pending).into_owned();
+            if let Some(writer) = log_writer.as_mut() {
+                let _ = writer.write_bytes(payload.as_bytes()).await;
+            }
             let _ = app_handle.emit(&event_name, payload);
+        }
+        // The channel is gone, so the session is over: seal the log file.
+        if let Some(writer) = log_writer.as_mut() {
+            if let Err(error) = writer.close().await {
+                log::warn!("Failed to close session log for {session_id}: {error}");
+            }
         }
     });
 }

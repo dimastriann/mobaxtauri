@@ -45,6 +45,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const [allowKeyboardInteractive, setAllowKeyboardInteractive] = useState(true);
   const [jumpSessionId, setJumpSessionId] = useState<string | null>(null);
   const [startupCommand, setStartupCommand] = useState('');
+  const [logOutput, setLogOutput] = useState(false);
   const [port, setPort] = useState(() => {
     const saved = localStorage.getItem('ssh-default-port');
     return saved ? parseInt(saved, 10) : 22;
@@ -90,6 +91,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         setUsePrivateKey(!!source.privateKeyPath);
         setPrivateKeyPath(source.privateKeyPath || '');
         setStartupCommand(source.startupCommand || '');
+        setLogOutput(source.logOutput ?? false);
         setSavePassword(duplicateSource ? false : (source.savePassword ?? true));
         setPassword('');
       } else {
@@ -105,6 +107,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         setUsePrivateKey(false);
         setPrivateKeyPath('');
         setStartupCommand('');
+        setLogOutput(false);
         setSavePassword(true);
       }
     }
@@ -149,6 +152,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         allowKeyboardInteractive,
         privateKeyPath: !useAgent && usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
         startupCommand: startupCommand.trim() || undefined,
+        logOutput,
         savePassword: shouldSavePassword,
       });
       setIsConnecting(false);
@@ -195,6 +199,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
       allowKeyboardInteractive,
       privateKeyPath: !useAgent && usePrivateKey && privateKeyPath ? privateKeyPath : undefined,
       startupCommand: startupCommand.trim() || undefined,
+      logOutput,
       savePassword: shouldSavePassword,
       // Memory-only when the user declined vault saving (persisted stores
       // strip the password field); lets the terminal's own connect use it.
@@ -526,6 +531,21 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
               </HStack>
               <Text fontSize="12px" color="fg.muted" pl={6}>
                 {t('session.allowKbiHelper')}
+              </Text>
+
+              <HStack gap={2} mt={2}>
+                <input
+                  type="checkbox"
+                  id="log-session-output"
+                  checked={logOutput}
+                  onChange={(event) => setLogOutput(event.target.checked)}
+                />
+                <label htmlFor="log-session-output" style={{ fontSize: '14px', cursor: 'pointer' }}>
+                  {t('session.logOutput')}
+                </label>
+              </HStack>
+              <Text fontSize="12px" color="fg.muted" pl={6}>
+                {t('session.logOutputHelper')}
               </Text>
 
               <Field label={t('session.startup')} helperText={t('session.startupHelper')}>

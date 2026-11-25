@@ -382,6 +382,7 @@ const TerminalInstance: React.FC<TerminalInstanceProps> = ({
             credentialSessionId: session.configId ?? session.id,
             jumpSessionId: jumpInstance?.id ?? session.jumpSessionId ?? null,
             startupCommand: session.startupCommand ?? null,
+            logOutput: session.logOutput ?? false,
             useSavedCredential: Boolean(session.savePassword && !password && !session.password),
             connectionTimeoutSecs: getSshConnectionTimeoutSeconds(),
           } satisfies SshConnectRequest,

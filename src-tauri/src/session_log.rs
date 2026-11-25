@@ -10,6 +10,7 @@
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use tauri::{Manager, Runtime};
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 
@@ -35,6 +36,30 @@ pub struct SessionLogEntry {
 /// Directory under the app data root that holds every session log.
 pub fn logs_dir(app_data: &Path) -> PathBuf {
     app_data.join("logs").join("session-logs")
+}
+
+/// Open a log writer for one session under the app data directory.
+/// Logging is an enhancement: any failure disables logging for the session
+/// instead of blocking the connection, so the result stays an `Option`.
+pub async fn open_session_log<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    session_id: &str,
+) -> Option<SessionLogWriter> {
+    let app_data = match app_handle.path().app_data_dir() {
+        Ok(dir) => dir,
+        Err(error) => {
+            log::warn!("Session logging unavailable, cannot resolve app data: {error}");
+            return None;
+        }
+    };
+    let service = SessionLogService::new(logs_dir(&app_data));
+    match service.start(session_id).await {
+        Ok(writer) => Some(writer),
+        Err(error) => {
+            log::warn!("Session logging disabled for {session_id}: {error}");
+            None
+        }
+    }
 }
 
 /// Keep only characters that are safe in file names, and cap the length.

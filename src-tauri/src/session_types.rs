@@ -46,6 +46,10 @@ pub struct SshConnectRequest {
     /// Optional command typed into the shell immediately after connecting.
     #[serde(default)]
     pub startup_command: Option<String>,
+    /// Opt-in plain-text session log; the terminal output is recorded to
+    /// the app data log directory for the lifetime of the session.
+    #[serde(default)]
+    pub log_output: bool,
     #[serde(default = "default_connection_timeout_secs")]
     pub connection_timeout_secs: u64,
 }
@@ -172,6 +176,7 @@ mod tests {
             allow_keyboard_interactive: true,
             jump_session_id: None,
             startup_command: None,
+            log_output: false,
             connection_timeout_secs: timeout,
         }
     }
@@ -203,6 +208,7 @@ mod tests {
         assert_eq!(request.startup_command, None);
         assert_eq!(request.credential_session_id, None);
         assert!(request.allow_keyboard_interactive);
+        assert!(!request.log_output, "session logging is opt-in");
     }
 
     #[test]

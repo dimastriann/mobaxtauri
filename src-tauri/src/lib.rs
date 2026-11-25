@@ -300,6 +300,7 @@ async fn ssh_connect(
         allow_keyboard_interactive,
         jump_session_id,
         startup_command,
+        log_output,
         connection_timeout_secs: _,
     } = request;
     let credential_session_id = credential_session_id.unwrap_or_else(|| session_id.clone());
@@ -371,6 +372,12 @@ async fn ssh_connect(
     let diagnostic_host = host.clone();
     let diagnostic_user = user.clone();
     let diagnostic_jump = jump_session_id.clone();
+    // Opt-in session logging: a failed log file must not block connecting.
+    let log_writer = if log_output {
+        crate::session_log::open_session_log(&app_handle, &session_id).await
+    } else {
+        None
+    };
     let connect_future = SshSession::connect_with_report(
         app_handle.clone(),
         session_id.clone(),
@@ -387,6 +394,7 @@ async fn ssh_connect(
         jump_stream,
         Arc::new(known_hosts.inner().clone()),
         remote_forwards,
+        log_writer,
     );
 
     let (handle, channel_id, channel, sftp, report) =
